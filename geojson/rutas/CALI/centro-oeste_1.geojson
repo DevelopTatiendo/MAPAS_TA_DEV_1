@@ -1,0 +1,28 @@
+{
+  "type": "Feature",
+  "properties": {
+    "nombre": "CENTRO-OESTE 1",
+    "ciudad": "CALI",
+    "barrios": 16,
+    "fecha_actualizacion": "2025-01-29"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          3.4365185754940355,
+          -76.52933614564137
+        ],
+        [
+          3.433667439808876,
+          -76.53144937587118
+        ],
+        [
+          3.435048833177336,
+          -76.53446541585292
+        ]
+      ]
+    ]
+  }
+}

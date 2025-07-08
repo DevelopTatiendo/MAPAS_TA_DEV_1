@@ -1,0 +1,71 @@
+# Ignorar ambientes virtuales
+venv/
+env/
+ENV/
+ambiente_desarrollo
+*.virtualenv
+
+# Ignorar archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignorar archivos de distribución y construcción
+dist/
+build/
+*.egg-info/
+
+# Ignorar archivos de entorno
+.env
+.env.*
+
+# Ignorar archivos de IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignorar archivos generados por tu aplicación
+static/maps/*.html
+*.html
+*.pdf
+*.csv
+
+
+# Ignorar registros (logs)
+*.log
+*app.log
+
+# Configuración local de desarrollo
+instance/
+.webassets-cache
+
+# Ignorar checkpoints de Jupyter Notebook
+.ipynb_checkpoints
+
+# Ignorar archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos temporales
+*.tmp
+*.bak
+
+# Ignorar archivos de configuración de depuración
+*.prof
+*.lprof
+*.stackdump
+
+# Ignorar resultados de pruebas
+*.coverage
+coverage.xml
+*.cover
+
+# Ignorar configuraciones de herramientas de análisis
+.cache/
+.nox/
+.tox/
+pytest_cache/
+
+# Ignorar dependencias en contenedores
+docker-compose.override.yml

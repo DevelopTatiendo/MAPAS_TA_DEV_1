@@ -1,0 +1,28 @@
+{
+  "type": "Feature",
+  "properties": {
+    "nombre": "NORTE",
+    "ciudad": "CALI",
+    "barrios": 8,
+    "fecha_actualizacion": "2025-01-29"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          3.488092379790696,
+          -76.49631904713524
+        ],
+        [
+          3.489709621623436,
+          -76.49839487571263
+        ],
+        [
+          3.4885445833421693,
+          -76.49421751235008
+        ]
+      ]
+    ]
+  }
+}
