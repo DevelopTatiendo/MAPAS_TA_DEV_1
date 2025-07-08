@@ -14,7 +14,7 @@ import validators
 
 #serbot software de verificacion y certificacion de https
 # Configuración de entorno
-# FAVOR NO BORRAR ESTOS COMANDOS ambiente_desarrollo\Scripts\activate  python flask_server.py
+# FAVOR NO BORRAR ESTOS COMANDOS .venv\Scripts\activate  python flask_server.py
 
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Por defecto, "development"

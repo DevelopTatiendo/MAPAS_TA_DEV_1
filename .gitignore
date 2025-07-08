@@ -18,6 +18,7 @@ build/
 # Ignorar archivos de entorno
 .env
 .env.*
+.venv
 
 # Ignorar archivos de IDEs
 .vscode/
