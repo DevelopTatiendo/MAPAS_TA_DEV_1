@@ -208,11 +208,13 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
 
 
         # Guardar mapa
-        filepath = "static/maps/mapa_muestras.html"
+        filename = "mapa_muestras.html"
+        filepath = f"static/maps/{filename}"
         mapa.save(filepath)
+
         logging.info(f"Mapa guardado en {filepath}")
 
-        return filepath
+        return filename
 
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
