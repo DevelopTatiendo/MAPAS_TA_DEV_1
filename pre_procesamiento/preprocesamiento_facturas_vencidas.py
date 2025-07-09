@@ -61,34 +61,66 @@ def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
     # Obtener pedidos desde la base de datos
     df_fac = consultar_facturas_vencidas_db(centroope, edad_min, edad_max)
     
+    # Debug: Check columns after database query
+    #print("Columns after DB query:", df_fac.columns.tolist())
+    
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
+    
+    # Debug: Check columns in coordinates file
+    #print("Columns in coordinates file:", df_coord.columns.tolist())
 
     # Realizar el merge por 'id_barrio'
     df_fac_completo = pd.merge(df_fac, df_coord, how='left', on='id_barrio')
+    
+    # Debug: Check columns after merge
+    #print("Columns after merge:", df_fac_completo.columns.tolist())
 
-    # Mantener solo las columnas necesarias
-    df_fac_completo = df_fac_completo[[
-    "id_ruta_cobro",
-    "ruta_cobro",
-    "id_barrio",
-    "barrio",
-    "id_estrato",
-    "ciudad",
-    "id_centroope",
-    "num_factura",
-    "valor_mora",  # Alias de SUM(sa.saldo)
-    "edad",  # Alias de MAX(sa.edad_factura)
-    "id_contacto",
-    "fecha_venta",
-    'latitud',
-    'longitud'
-]]
+    # Handle the ruta_cobro column naming after merge
+    if 'ruta_cobro_x' in df_fac_completo.columns:
+        # Use the ruta_cobro from the database (ruta_cobro_x)
+        df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_x']
+    elif 'ruta_cobro_y' in df_fac_completo.columns:
+        # Use the ruta_cobro from coordinates file (ruta_cobro_y)
+        df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_y']
+    elif 'ruta_cobro' not in df_fac_completo.columns:
+        print("Warning: 'ruta_cobro' column not found after merge")
+        # Add a default ruta_cobro if it doesn't exist
+        df_fac_completo['ruta_cobro'] = 'SIN_RUTA'
+    
+    # Determine which barrio column to use
+    barrio_col = 'barrio_x' if 'barrio_x' in df_fac_completo.columns else 'barrio'
+    
+    # Select only available columns
+    available_columns = []
+    desired_columns = [
+        "id_ruta_cobro",
+        "ruta_cobro", 
+        "id_barrio",
+        barrio_col,
+        "id_estrato",
+        "ciudad",
+        "id_centroope",
+        "num_factura",
+        "valor_mora",
+        "edad",
+        "id_contacto",
+        "fecha_venta",
+        'latitud',
+        'longitud'
+    ]
+    
+    for col in desired_columns:
+        if col in df_fac_completo.columns:
+            available_columns.append(col)
+        else:
+            print(f"Warning: Column '{col}' not found in merged dataframe")
+    
+    df_fac_completo = df_fac_completo[available_columns]
     
     # Renombrar columnas para mayor claridad
-    df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
-    # print(df_fac_completo.head())
-    # print(df_fac_completo.shape)
+    if barrio_col == 'barrio_x':
+        df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
     
     df_fac_completo.drop_duplicates(subset=['id_contacto'], keep='first', inplace=True)
     
