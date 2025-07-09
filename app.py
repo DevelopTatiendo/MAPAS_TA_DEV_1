@@ -118,6 +118,7 @@ if submit_button or mostrar_estadisticas:
                 map_type = "visitas"
             elif tipo_mapa == "Facturas Vencidas":
                 filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
+        
                 map_type = "facturas"
             elif tipo_mapa == "Muestras":
                 filename = manejar_error(generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios)
