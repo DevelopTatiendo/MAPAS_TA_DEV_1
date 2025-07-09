@@ -47,13 +47,13 @@ def generar_mapa_facturas_vencidas(ciudad, edad_min, edad_max, ruta_cobro=None, 
         edad_max = int(edad_max)
 
         ruta_cobro_coordenadas = {
-            'CALI': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_CALI.csv",
-            'MEDELLIN': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_MEDELLIN.csv",
-            'MANIZALES': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_MANIZALES.csv",
-            'PEREIRA': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_PEREIRA.csv",
-            'BOGOTA': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_BOGOTA.csv",
-            'BARRANQUILLA': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_BARRANQUILLA.csv",
-            'BUCARAMANGA': "pre_procesamiento/data/BARRIOS_COORDENADAS_ruta_cobro_COMPLETO_BUCARAMANGA.csv"
+            'CALI': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_CALI.csv",
+            'MEDELLIN': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_MEDELLIN.csv",
+            'MANIZALES': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_MANIZALES.csv",
+            'PEREIRA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_PEREIRA.csv",
+            'BOGOTA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BOGOTA.csv",
+            'BARRANQUILLA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BARRANQUILLA.csv",
+            'BUCARAMANGA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BUCARAMANGA.csv"
         }
 
         coordenadas_ciudades = {
@@ -174,21 +174,57 @@ def generar_mapa_facturas_vencidas(ciudad, edad_min, edad_max, ruta_cobro=None, 
         promedio_mora_dia = total_mora / rango_dias if rango_dias > 0 else 0
         total_facturas = len(df_fac)
 
+        
         html_content = f"""
-        <div style="position: fixed; top: 20px; left: 20px; background-color: white; padding: 15px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 1000; font-family: Arial, sans-serif; min-width: 250px;">
+        <div style="
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+            min-width: 250px;
+        ">
             <h4 style="margin: 0 0 10px 0;">Resumen de Facturas Vencidas</h4>
             <table style="width: 100%; border-collapse: collapse;">
-                <tr><td>Ruta:</td><td><b>{ruta_cobro if ruta_cobro else "Todas"}</b></td></tr>
-                <tr><td>Edad:</td><td><b>{edad_min} - {edad_max} días</b></td></tr>
-                <tr><td>Prom. mora/día:</td><td><b>${promedio_mora_dia:,.0f}</b></td></tr>
-                <tr><td>Total barrios:</td><td><b>{cantidad_barrios}</b></td></tr>
-                <tr><td>Prom. mora/barrio:</td><td><b>${promedio_deuda_barrio:,.0f}</b></td></tr>
-                <tr><td>Total facturas:</td><td><b>{total_facturas}</b></td></tr>
-                <tr style="border-top: 1px solid #eee;"><td><b>Mora total:</b></td><td><b>${total_mora:,.0f}</b></td></tr>
+                <tr>
+                    <td style="padding: 3px 0;">Ruta:</td>
+                    <td style="padding: 3px 0;"><b>{ruta_cobro if ruta_cobro else "Todas"}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Rango de edad:</td>
+                    <td style="padding: 3px 0;"><b>{edad_min} - {edad_max} días</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Prom. mora/día:</td>
+                    <td style="padding: 3px 0;"><b>${promedio_mora_dia:,.0f}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Total barrios:</td>
+                    <td style="padding: 3px 0;"><b>{cantidad_barrios}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Prom. mora/barrio:</td>
+                    <td style="padding: 3px 0;"><b>${promedio_deuda_barrio:,.0f}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Total facturas:</td>
+                    <td style="padding: 3px 0;"><b>{total_facturas}</b></td>
+                </tr>
+                <tr style="border-top: 1px solid #eee;">
+                    <td style="padding: 5px 0;"><b>Mora total:</b></td>
+                    <td style="padding: 5px 0;"><b>${total_mora:,.0f}</b></td>
+                </tr>
             </table>
         </div>
         """
+
+
         mapa.get_root().html.add_child(folium.Element(html_content))
+
 
         heat_data = df_agrupado[['latitud', 'longitud', 'valor_mora']].values
         heat_data[:, 2] = np.log1p(heat_data[:, 2])

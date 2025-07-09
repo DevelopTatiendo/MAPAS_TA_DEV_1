@@ -1,4 +1,4 @@
-# MAPAS_TA_DEV_1 · Rama pruebas_dev_dl_1
+# MAPAS_TA_DEV_1 
 
 🌐 Proyecto desarrollado por el Departamento de Desarrollo de T Atiendo (fundado 07/07/2025).
 
