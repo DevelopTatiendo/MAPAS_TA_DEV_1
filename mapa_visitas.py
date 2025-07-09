@@ -131,32 +131,52 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
         # Añadir la etiqueta flotante con el total de pedidos
         total_cantidad = df.shape[0]
         # Promedio de pedidos por día
-        promedio_pedidos = total_cantidad / rango_dias if rango_dias > 0 else 0
-        # promedio cantidad de pedidos por barrios
-        promedio_pedidos_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
-        #crear etiqueta flotante
-        float_label = folium.DivIcon(html=f"""
-        <div style="position: absolute;
-            top: -300px;
-            right: -400px;
-            background-color: rgba(255, 255, 255, 0.8);
-            padding: 10px;
+        promedio_muestras = total_cantidad / rango_dias if rango_dias > 0 else 0
+        promedio_muestras_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0#crear etiqueta flotante
+        html_content = f"""
+        <div style="
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            padding: 15px;
             border-radius: 5px;
-            font-size: 4px;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-            z-index: 9999;
-            width: 200px;">
-            <b>Visitas</b><br>
-            <span style="font-size: 12px;">Ruta: <b>{rutas_cobro if rutas_cobro else "Todas"}</b></span><br>
-            <span style="font-size: 12px;">Rango de fechas: <b>{fecha_inicio} - {fecha_fin}</b></span><br>
-            <span style="font-size: 12px;">Promedio visitas/día:<b> {promedio_pedidos:.2f}</b></span><br>
-            <span style="font-size: 12px;">Barrios en la ruta:<b> {cantidad_barrios}</b></span><br>
-            <span style="font-size: 12px;">Promedio visitas por barrio:<b> {promedio_pedidos_barrios:.2f}</b></span><br>
-            <b style="font-size: 12px;">Total: {total_cantidad} Visitas</b>
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-family: Arial, sans-serif;
+            min-width: 250px;
+        ">
+            <h4 style="margin: 0 0 10px 0;">Resumen de Visitas</h4>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td style="padding: 3px 0;">Rutas:</td>
+                    <td style="padding: 3px 0;"><b>{rutas_cobro if rutas_cobro else "Todas"}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Fechas:</td>
+                    <td style="padding: 3px 0;"><b>{fecha_inicio} - {fecha_fin}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Visitas/día:</td>
+                    <td style="padding: 3px 0;"><b>{promedio_muestras:.2f}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Total barrios:</td>
+                    <td style="padding: 3px 0;"><b>{cantidad_barrios}</b></td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 0;">Visitas/barrio:</td>
+                    <td style="padding: 3px 0;"><b>{promedio_muestras_barrios:.2f}</b></td>
+                </tr>
+                <tr style="border-top: 1px solid #eee;">
+                    <td style="padding: 5px 0;"><b>Total visitas:</b></td>
+                    <td style="padding: 5px 0;"><b>{total_cantidad}</b></td>
+                </tr>
+            </table>
         </div>
-""")    
+        """
+        mapa.get_root().html.add_child(folium.Element(html_content))
             
-        folium.Marker(location, icon=float_label).add_to(mapa)
 
         # Crear el HeatMap con los datos filtrados
         heat_data = df_agrupado[['latitud', 'longitud', 'cantidad']].values
@@ -191,7 +211,6 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename
-
     else:
  # Convertir fechas a cadenas si es necesario
         fecha_inicio = str(fecha_inicio)
@@ -300,27 +319,49 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
         # promedio cantidad de pedidos por barrios
         promedio_muestras_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
         # Crear el mapa centrado en Cali
-        float_label = folium.DivIcon(html=f"""
-        <div style="position: absolute;
-                top: -300px;
-                right: -400px;
-                background-color: rgba(255, 255, 255, 0.8);
-                padding: 10px;
-                border-radius: 5px;
-                font-size: 4px;
-                box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
-                z-index: 9999;
-                width: 200px;">
-            <b>Visitas</b><br>
-            <span style="font-size: 12px;">Rutas: <b>{rutas_cobro if rutas_cobro else "Todos"}</b></span><br>
-            <span style="font-size: 12px;">Rango de fechas: <b>{fecha_inicio} - {fecha_fin}</b></span><br>
-            <span style="font-size: 12px;">Promedio visitas/día:<b> {promedio_muestras:.2f}</b></span><br>
-            <span style="font-size: 12px;">Cantidad Barrios:<b> {cantidad_barrios}</b></span><br>
-            <span style="font-size: 12px;">Promedio visitas por barrio:<b> {promedio_muestras_barrios:.2f}</b></span><br>
-            <b style="font-size: 12px;">Total: {total_cantidad} Visitas</b>
-        </div>
-    """)
-        folium.Marker(location, icon=float_label).add_to(mapa)
+        html_content = f"""
+    <div style="
+        position: fixed;
+        top: 20px;
+        left: 20px;
+        background-color: white;
+        padding: 15px;
+        border-radius: 5px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        z-index: 1000;
+        font-family: Arial, sans-serif;
+        min-width: 250px;
+    ">
+        <h4 style="margin: 0 0 10px 0;">Resumen de Visitas</h4>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+                <td style="padding: 3px 0;">Rutas:</td>
+                <td style="padding: 3px 0;"><b>{rutas_cobro if rutas_cobro else "Todas"}</b></td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 0;">Fechas:</td>
+                <td style="padding: 3px 0;"><b>{fecha_inicio} - {fecha_fin}</b></td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 0;">Visitas/día:</td>
+                <td style="padding: 3px 0;"><b>{promedio_muestras:.2f}</b></td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 0;">Total barrios:</td>
+                <td style="padding: 3px 0;"><b>{cantidad_barrios}</b></td>
+            </tr>
+            <tr>
+                <td style="padding: 3px 0;">Visitas/barrio:</td>
+                <td style="padding: 3px 0;"><b>{promedio_muestras_barrios:.2f}</b></td>
+            </tr>
+            <tr style="border-top: 1px solid #eee;">
+                <td style="padding: 5px 0;"><b>Total visitas:</b></td>
+                <td style="padding: 5px 0;"><b>{total_cantidad}</b></td>
+            </tr>
+        </table>
+    </div>
+    """
+        mapa.get_root().html.add_child(folium.Element(html_content))
 
 
         # Añadir los puntos al mapa, agrupados por barrio y con colores únicos
@@ -341,8 +382,7 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
 
 
 
-    
-        filename = f"mapa_visitas.html"
+        filename = "mapa_visitas.html"
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename
