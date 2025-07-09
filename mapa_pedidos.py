@@ -274,6 +274,11 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
     promedio_pedidos = total_cantidad / rango_dias if rango_dias > 0 else 0
     promedio_pedidos_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
 
+    # NUEVO: Cálculo de pedidos a tiempo
+    total_pedidos_a_tiempo = df_pedidos['pedido_a_tiempo'].sum()
+    promedio_pedidos_a_tiempo_dia = total_pedidos_a_tiempo / rango_dias if rango_dias > 0 else 0
+    promedio_pedidos_a_tiempo_barrios = total_pedidos_a_tiempo / cantidad_barrios if cantidad_barrios > 0 else 0
+
     # Preparar datos para las estadísticas
     stats_data = {
         'nom_ruta': nom_ruta if nom_ruta else "Todas",
@@ -282,7 +287,11 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
         'promedio_pedidos': promedio_pedidos,
         'cantidad_barrios': cantidad_barrios,
         'promedio_pedidos_barrios': promedio_pedidos_barrios,
-        'total_cantidad': total_cantidad
+        'total_cantidad': total_cantidad,
+        # NUEVOS CAMPOS
+        'promedio_pedidos_a_tiempo_dia': promedio_pedidos_a_tiempo_dia,
+        'promedio_pedidos_a_tiempo_barrios': promedio_pedidos_a_tiempo_barrios,
+        'total_pedidos_a_tiempo': total_pedidos_a_tiempo
     }
 
     # Agregar el label flotante con estadísticas
@@ -314,6 +323,10 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
                 <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos']:.1f}</b></td>
             </tr>
             <tr>
+                <td style="padding: 3px 0;">Pedidos a tiempo/día:</td>
+                <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos_a_tiempo_dia']:.1f}</b></td>
+            </tr>
+            <tr>
                 <td style="padding: 3px 0;">Total barrios:</td>
                 <td style="padding: 3px 0;"><b>{stats_data['cantidad_barrios']}</b></td>
             </tr>
@@ -321,9 +334,17 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
                 <td style="padding: 3px 0;">Pedidos/barrio:</td>
                 <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos_barrios']:.1f}</b></td>
             </tr>
+            <tr>
+                <td style="padding: 3px 0;">Pedidos a tiempo/barrio:</td>
+                <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos_a_tiempo_barrios']:.1f}</b></td>
+            </tr>
             <tr style="border-top: 1px solid #eee;">
                 <td style="padding: 5px 0;"><b>Total pedidos:</b></td>
                 <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
+            </tr>
+            <tr>
+                <td style="padding: 5px 0;"><b>Total pedidos a tiempo:</b></td>
+                <td style="padding: 5px 0;"><b>{stats_data['total_pedidos_a_tiempo']}</b></td>
             </tr>
         </table>
     </div>
