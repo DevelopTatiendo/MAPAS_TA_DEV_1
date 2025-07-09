@@ -24,25 +24,31 @@ def consultar_pedidos_db(centroope, fecha_inicio, fecha_fin):
     
     query = query = f"""
     SELECT 
-        p.id_contacto, 
-        p.fecha_pedido, 
-        p.id AS id_pedido, 
-        p.id_barrio, 
-        ba.barrio, 
-        ba.id_estrato, 
-        p.id_centroope
-    FROM 
-        fullclean_telemercadeo.pedidos p
-    LEFT JOIN 
-        fullclean_contactos.barrios ba ON ba.id = p.id_barrio
-    LEFT JOIN 
-        fullclean_contactos.ciudades ciu ON ciu.id = ba.id_ciudad
-    WHERE 
-        p.estado_pedido = 1 
-        and  p.anulada = 0
-        AND p.id_centroope = {centroope}
-        AND p.fecha_pedido BETWEEN '{fecha_inicio}' AND '{fecha_fin}';
-
+    p.id_contacto, 
+    p.fecha_pedido, 
+    p.id AS id_pedido, 
+    p.id_barrio, 
+    ba.barrio, 
+    ba.id_estrato, 
+    p.id_centroope,
+    (CASE 
+        WHEN p.fecha_hora_entrega <= p.promesa_entrega THEN 1
+        ELSE 0
+    END) AS pedido_a_tiempo
+FROM 
+    fullclean_telemercadeo.pedidos p
+LEFT JOIN 
+    fullclean_contactos.barrios ba ON ba.id = p.id_barrio
+LEFT JOIN 
+    fullclean_contactos.ciudades ciu ON ciu.id = ba.id_ciudad
+WHERE 
+    p.estado_pedido = 1 
+    AND p.anulada = 0
+    AND p.autorizar IN (1, 2) 
+    AND p.autorizacion_descuento = 0
+    AND p.tipo_documento < 2 
+    AND p.id_centroope = {centroope}
+    AND p.fecha_hora_pedido BETWEEN '{fecha_inicio}' AND '{fecha_fin}';
     """
     df = pd.read_sql(query, conexion)
     print("CONSULTA REALIZADA")
@@ -63,16 +69,14 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
     # Realizar el merge por 'id_barrio'
     df_ped_completo = pd.merge(df_ped, df_coord, how='left', on='id_barrio')
 
-    # Mantener solo las columnas necesarias
+    # Mantener solo las columnas necesarias, incluyendo 'pedido_a_tiempo'
     df_ped_completo = df_ped_completo[['id_pedido', 'id_barrio', 'barrio_x', 'fecha_pedido', 'id_estrato', 
-                                        'id_centroope', 'latitud', 'longitud', 'ruta_cobro', 'nom_ruta']]
+                                       'id_centroope', 'latitud', 'longitud', 'ruta_cobro', 'nom_ruta', 'pedido_a_tiempo']]
     
     # Renombrar columnas para mayor claridad
     df_ped_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
-    # print(df_ped_completo.head())
-    # print(df_ped_completo.shape)
     
     df_ped_completo.drop_duplicates(subset=['id_pedido'], keep='first', inplace=True)
     
     return df_ped_completo
-   
+
