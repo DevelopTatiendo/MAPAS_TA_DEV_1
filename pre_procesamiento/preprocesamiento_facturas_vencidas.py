@@ -54,25 +54,20 @@ def consultar_facturas_vencidas_db(centroope, edad_min, edad_max):
     conexion.close()
     return df
 
-def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
-    """
-    Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
-    Retorna un DataFrame listo para usar.
-    """
+def crear_df(centroope, edad_min, edad_max, ruta_coordenadas, rutas=None):
     # Obtener pedidos desde la base de datos
     df_fac = consultar_facturas_vencidas_db(centroope, edad_min, edad_max)
     print(df_fac.shape)
+
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
-   # print(df_coord.isnull().sum())
-    #print(df_coord.shape)
+
     # Realizar el merge por 'id_barrio'
     df_fac_completo = pd.merge(df_fac, df_coord, how='left', on='id_barrio')
-    print(df_fac_completo.shape,"shape")
-    
+    print(df_fac_completo.shape, "shape")
+
     # Renombrar si hay colisiones después del merge
     columnas = df_fac_completo.columns
-
     if 'barrio_x' in columnas:
         df_fac_completo['barrio'] = df_fac_completo['barrio_x']
     if 'ruta_cobro_x' in columnas:
@@ -80,31 +75,30 @@ def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
     if 'ruta_cobro_y' in columnas:
         df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_y']
 
-        
     # Mantener solo las columnas necesarias
     df_fac_completo = df_fac_completo[[
-    "id_ruta_cobro",
-    "ruta_cobro",
-    "id_barrio",
-    "barrio",
-    "id_estrato",
-    "ciudad",
-    "id_centroope",
-    "num_factura",
-    "valor_mora",  # Alias de SUM(sa.saldo)
-    "edad",  # Alias de MAX(sa.edad_factura)
-    "id_contacto",
-    "fecha_venta",
-    'latitud',
-    'longitud'
-]]
-    
+        "id_ruta_cobro",
+        "ruta_cobro",
+        "id_barrio",
+        "barrio",
+        "id_estrato",
+        "ciudad",
+        "id_centroope",
+        "num_factura",
+        "valor_mora",
+        "edad",
+        "id_contacto",
+        "fecha_venta",
+        'latitud',
+        'longitud'
+    ]]
+
     # Renombrar columnas para mayor claridad
     df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
-    # print(df_fac_completo.head())
-    print("TAMAÑO DEL DF ANTES DE ELIMINAR DUPLICADOS")
+
+    #print("TAMAÑO DEL DF ANTES DE ELIMINAR DUPLICADOS")
     print(df_fac_completo.shape)
-    
+
     df_fac_completo.drop_duplicates(subset=['id_contacto'], keep='first', inplace=True)
-    
+
     return df_fac_completo
