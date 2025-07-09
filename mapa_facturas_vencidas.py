@@ -8,7 +8,7 @@ from pre_procesamiento.preprocesamiento_facturas_vencidas import crear_df
 import unicodedata
 import os
 import logging
-
+import time
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -83,7 +83,8 @@ def generar_mapa_facturas_vencidas(ciudad, edad_min, edad_max, ruta_cobro=None, 
         centroope = centroopes[ciudad]
         ruta_coordenadas = ruta_cobro_coordenadas[ciudad]
         location, geojson_file_path = coordenadas_ciudades[ciudad]
-
+        print(ruta_cobro_coordenadas,"ruta_cobro_coordenadas")
+        
         df_fac = crear_df(centroope, edad_min, edad_max, ruta_coordenadas)
         if fecha_inicio and fecha_fin:
             df_fac = df_fac[(df_fac['fecha_venta'] >= fecha_inicio) & (df_fac['fecha_venta'] <= fecha_fin)]
@@ -231,7 +232,8 @@ def generar_mapa_facturas_vencidas(ciudad, edad_min, edad_max, ruta_cobro=None, 
         HeatMap(heat_data, radius=13, blur=7).add_to(mapa)
 
         folium.LayerControl().add_to(mapa)
-        filename = f"mapa_facturas_vencidas.html"
+        timestamp = int(time.time())
+        filename = f"mapa_facturas_vencidas_{timestamp}.html"
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         logger.info(f"Mapa guardado exitosamente en {filepath}")
