@@ -125,7 +125,8 @@ if submit_button or mostrar_estadisticas:
             elif tipo_mapa == "Pruebas":
                 filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
 
-            map_url = f"{FLASK_SERVER}/maps/mapa_{map_type}.html"
+            map_url = f"{FLASK_SERVER}/maps/{filename}"
+
             timestamp = int(time.time())
             st.markdown(f"[Ver Mapa en Nueva Pestaña]({map_url}?v={timestamp})")
 

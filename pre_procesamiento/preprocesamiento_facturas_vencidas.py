@@ -50,6 +50,7 @@ def consultar_facturas_vencidas_db(centroope, edad_min, edad_max):
 """
     df = pd.read_sql(query, conexion)
     print("CONSULTA REALIZADA")
+    
     conexion.close()
     return df
 
@@ -60,13 +61,26 @@ def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
     """
     # Obtener pedidos desde la base de datos
     df_fac = consultar_facturas_vencidas_db(centroope, edad_min, edad_max)
-    
+    print(df_fac.shape)
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
-
+   # print(df_coord.isnull().sum())
+    #print(df_coord.shape)
     # Realizar el merge por 'id_barrio'
     df_fac_completo = pd.merge(df_fac, df_coord, how='left', on='id_barrio')
+    print(df_fac_completo.shape,"shape")
+    
+    # Renombrar si hay colisiones después del merge
+    columnas = df_fac_completo.columns
 
+    if 'barrio_x' in columnas:
+        df_fac_completo['barrio'] = df_fac_completo['barrio_x']
+    if 'ruta_cobro_x' in columnas:
+        df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_x']
+    if 'ruta_cobro_y' in columnas:
+        df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_y']
+
+        
     # Mantener solo las columnas necesarias
     df_fac_completo = df_fac_completo[[
     "id_ruta_cobro",
@@ -88,7 +102,8 @@ def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
     # Renombrar columnas para mayor claridad
     df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
     # print(df_fac_completo.head())
-    # print(df_fac_completo.shape)
+    print("TAMAÑO DEL DF ANTES DE ELIMINAR DUPLICADOS")
+    print(df_fac_completo.shape)
     
     df_fac_completo.drop_duplicates(subset=['id_contacto'], keep='first', inplace=True)
     
