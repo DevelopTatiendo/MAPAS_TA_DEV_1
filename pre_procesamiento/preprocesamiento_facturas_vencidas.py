@@ -50,54 +50,37 @@ def consultar_facturas_vencidas_db(centroope, edad_min, edad_max):
 """
     df = pd.read_sql(query, conexion)
     print("CONSULTA REALIZADA")
+    
     conexion.close()
     return df
 
-def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
-    """
-    Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
-    Retorna un DataFrame listo para usar.
-    """
+def crear_df(centroope, edad_min, edad_max, ruta_coordenadas, rutas=None):
     # Obtener pedidos desde la base de datos
     df_fac = consultar_facturas_vencidas_db(centroope, edad_min, edad_max)
-    
-    # Debug: Check columns after database query
-    #print("Columns after DB query:", df_fac.columns.tolist())
-    
+    print(df_fac.shape)
+
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
-    
-    # Debug: Check columns in coordinates file
-    #print("Columns in coordinates file:", df_coord.columns.tolist())
 
     # Realizar el merge por 'id_barrio'
     df_fac_completo = pd.merge(df_fac, df_coord, how='left', on='id_barrio')
-    
-    # Debug: Check columns after merge
-    #print("Columns after merge:", df_fac_completo.columns.tolist())
+    print(df_fac_completo.shape, "shape")
 
-    # Handle the ruta_cobro column naming after merge
-    if 'ruta_cobro_x' in df_fac_completo.columns:
-        # Use the ruta_cobro from the database (ruta_cobro_x)
+    # Renombrar si hay colisiones después del merge
+    columnas = df_fac_completo.columns
+    if 'barrio_x' in columnas:
+        df_fac_completo['barrio'] = df_fac_completo['barrio_x']
+    if 'ruta_cobro_x' in columnas:
         df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_x']
-    elif 'ruta_cobro_y' in df_fac_completo.columns:
-        # Use the ruta_cobro from coordinates file (ruta_cobro_y)
+    if 'ruta_cobro_y' in columnas:
         df_fac_completo['ruta_cobro'] = df_fac_completo['ruta_cobro_y']
-    elif 'ruta_cobro' not in df_fac_completo.columns:
-        print("Warning: 'ruta_cobro' column not found after merge")
-        # Add a default ruta_cobro if it doesn't exist
-        df_fac_completo['ruta_cobro'] = 'SIN_RUTA'
-    
-    # Determine which barrio column to use
-    barrio_col = 'barrio_x' if 'barrio_x' in df_fac_completo.columns else 'barrio'
-    
-    # Select only available columns
-    available_columns = []
-    desired_columns = [
+
+    # Mantener solo las columnas necesarias
+    df_fac_completo = df_fac_completo[[
         "id_ruta_cobro",
-        "ruta_cobro", 
+        "ruta_cobro",
         "id_barrio",
-        barrio_col,
+        "barrio",
         "id_estrato",
         "ciudad",
         "id_centroope",
@@ -108,20 +91,14 @@ def crear_df(centroope, edad_min, edad_max, ruta_coordenadas,rutas = None):
         "fecha_venta",
         'latitud',
         'longitud'
-    ]
-    
-    for col in desired_columns:
-        if col in df_fac_completo.columns:
-            available_columns.append(col)
-        else:
-            print(f"Warning: Column '{col}' not found in merged dataframe")
-    
-    df_fac_completo = df_fac_completo[available_columns]
-    
+    ]]
+
     # Renombrar columnas para mayor claridad
-    if barrio_col == 'barrio_x':
-        df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
-    
+    df_fac_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
+
+    #print("TAMAÑO DEL DF ANTES DE ELIMINAR DUPLICADOS")
+    print(df_fac_completo.shape)
+
     df_fac_completo.drop_duplicates(subset=['id_contacto'], keep='first', inplace=True)
-    
+
     return df_fac_completo
