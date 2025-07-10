@@ -6,6 +6,7 @@ from folium import FeatureGroup
 from matplotlib import cm, colors
 from pre_procesamiento.preprocesamiento_muestras import crear_df
 import unicodedata
+from utils.gestor_mapas import guardar_mapa_controlado
 
 import pandas as pd
 import folium
@@ -208,6 +209,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
 
 
         # Guardar mapa
+        # Guardar mapa
         filepath = "static/maps/mapa_muestras.html"
         mapa.save(filepath)
         logging.info(f"Mapa guardado en {filepath}")
@@ -215,5 +217,5 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
         return filepath
 
     except Exception as e:
-        logging.error(f"Error en la generación del mapa: {e}")
-        return None
+                logging.error(f"Error en la generación del mapa: {e}")
+                return None
