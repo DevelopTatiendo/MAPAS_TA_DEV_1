@@ -10,6 +10,7 @@ import unicodedata
 from sklearn.cluster import DBSCAN
 import os
 import logging
+from utils.gestor_mapas import guardar_mapa_controlado
 from shapely.geometry import Point, Polygon, MultiPolygon
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -366,7 +367,7 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
     folium.LayerControl().add_to(mapa)
 
     # Guardar el mapa
-    filename = f"mapa_pedidos.html"
+    filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_pedidos", permitir_multiples=False)
     filepath = f"static/maps/{filename}"
     mapa.save(filepath)
     return filename
