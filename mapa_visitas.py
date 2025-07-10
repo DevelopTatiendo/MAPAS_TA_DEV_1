@@ -7,7 +7,7 @@ from folium import FeatureGroup
 from matplotlib import cm, colors
 from pre_procesamiento.preprocesamiento_visitas import crear_df
 import unicodedata
-
+from utils.gestor_mapas import guardar_mapa_controlado
 
 
 def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cobro =None):
@@ -207,7 +207,7 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
             marker.add_to(marker_cluster)
 
 
-        filename = f"mapa_visitas.html"
+        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_visitas", permitir_multiples=False)
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename
@@ -382,7 +382,7 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
 
 
 
-        filename = "mapa_visitas.html"
+        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_facturas_vencidas", permitir_multiples=False)
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename
