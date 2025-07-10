@@ -6,7 +6,6 @@ from folium import FeatureGroup
 from matplotlib import cm, colors
 from pre_procesamiento.preprocesamiento_muestras import crear_df
 import unicodedata
-from utils.gestor_mapas import guardar_mapa_controlado
 
 import pandas as pd
 import folium
@@ -17,6 +16,7 @@ from folium import FeatureGroup
 from matplotlib import colors
 from pre_procesamiento.preprocesamiento_muestras import crear_df
 import unicodedata
+from utils.gestor_mapas import guardar_mapa_controlado
 
 
 # Configuración de logs
@@ -108,6 +108,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
         mapa = folium.Map(location=location, zoom_start=12)
 
             # Calcular estadísticas
+        #print(df_filtrado.head(4))
         rango_dias = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days + 1
         cantidad_barrios = df_filtrado['barrio'].nunique()
         total_cantidad = df_filtrado.shape[0]
@@ -200,7 +201,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
                     color=barrio_colors[barrio],
                     fill=True,
                     fill_opacity=0.7,
-                    popup=f"{row['barrio']}: {row['fecha_evento']}"
+                    popup=f"{row['barrio']}: {row['fecha_evento']}<br>{row['nombre_evento']} ({row['categoria_evento']})"
                 ).add_to(barrio_group)
 
         # Agregar control de capas
@@ -209,16 +210,11 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
 
 
         # Guardar mapa
-
-        # Guardar mapa
-        filepath = "static/maps/mapa_muestras.html"
-
+        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_pedidos", permitir_multiples=False)
+        filepath = f"static/maps/{filename}"
         mapa.save(filepath)
-
-        logging.info(f"Mapa guardado en {filepath}")
-
         return filename
 
     except Exception as e:
-                logging.error(f"Error en la generación del mapa: {e}")
-                return None
+        logging.error(f"Error en la generación del mapa: {e}")
+        return None
