@@ -23,20 +23,19 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
     )
     
     query = f"""
-    SELECT 
-        e.idEvento, 
+     SELECT 
+        
+        e.id_contacto,
+        e.fecha_creacion,
         e.fecha_evento, 
-        e.id_evento_tipo, 
+        e.id_autor,
         e.coordenada_longitud, 
-        e.coordenada_latitud, 
-        e.medio_contacto, 
-        e.tipo_evento, 
-        e.id_categoria_evento, 
-        bar.id AS id_barrio, 
-        bar.barrio, 
-        bar.id_estrato
+        e.coordenada_latitud,
+        e.nombre_evento,
+        e.categoria_evento
+        
     FROM 
-        fullclean_contactos.vwEventos e
+        fullclean_contactos.vwEventosAgente e
     LEFT JOIN 
         fullclean_contactos.vwContactos con ON e.id_contacto = con.id
     LEFT JOIN 
@@ -46,16 +45,17 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
     WHERE 
         e.fecha_evento BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
         AND e.id_evento_tipo = 15
-        AND ciu.id_centroope = {centroope}
+        AND ciu.id_centroope = ´{centroope}´
         AND coordenada_longitud <> 0 
         AND coordenada_latitud <> 0;
     """
     df = pd.read_sql(query, conexion)
+    print(df.columns)
     conexion.close()
     return df
 
 
-def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
+def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, agentes=None):
     """
     Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
     Retorna un DataFrame listo para usar.
