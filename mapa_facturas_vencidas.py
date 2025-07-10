@@ -9,6 +9,8 @@ import unicodedata
 import os
 import logging
 import time
+from utils.gestor_mapas import guardar_mapa_controlado
+
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -233,7 +235,8 @@ def generar_mapa_facturas_vencidas(ciudad, edad_min, edad_max, ruta_cobro=None, 
 
         folium.LayerControl().add_to(mapa)
         timestamp = int(time.time())
-        filename = f"mapa_facturas_vencidas_{timestamp}.html"
+        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_facturas_vencidas", permitir_multiples=False)
+
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         logger.info(f"Mapa guardado exitosamente en {filepath}")

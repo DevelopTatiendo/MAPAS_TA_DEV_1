@@ -10,6 +10,7 @@ import unicodedata
 from sklearn.cluster import DBSCAN
 import os
 import logging
+from utils.gestor_mapas import guardar_mapa_controlado
 from shapely.geometry import Point, Polygon, MultiPolygon
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -267,19 +268,20 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
         except KeyError:
             print(f"No se encontró cluster para la ruta: {row['nom_ruta']}")
 
-    # Calcular estadísticas
+    # Calcular promedios
     rango_dias = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days + 1
     cantidad_barrios = df_pedidos['barrio'].nunique()
     total_cantidad = df_pedidos.shape[0]
     promedio_pedidos = total_cantidad / rango_dias if rango_dias > 0 else 0
     promedio_pedidos_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
 
-    # NUEVO: Cálculo de pedidos a tiempo
     total_pedidos_a_tiempo = df_pedidos['pedido_a_tiempo'].sum()
     promedio_pedidos_a_tiempo_dia = total_pedidos_a_tiempo / rango_dias if rango_dias > 0 else 0
     promedio_pedidos_a_tiempo_barrios = total_pedidos_a_tiempo / cantidad_barrios if cantidad_barrios > 0 else 0
 
-    # Preparar datos para las estadísticas
+    # NUEVO: porcentaje de pedidos a tiempo sobre el total
+    porcentaje_pedidos_a_tiempo_total = (total_pedidos_a_tiempo / total_cantidad * 100) if total_cantidad > 0 else 0
+
     stats_data = {
         'nom_ruta': nom_ruta if nom_ruta else "Todas",
         'fecha_inicio': fecha_inicio,
@@ -288,10 +290,10 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
         'cantidad_barrios': cantidad_barrios,
         'promedio_pedidos_barrios': promedio_pedidos_barrios,
         'total_cantidad': total_cantidad,
-        # NUEVOS CAMPOS
         'promedio_pedidos_a_tiempo_dia': promedio_pedidos_a_tiempo_dia,
         'promedio_pedidos_a_tiempo_barrios': promedio_pedidos_a_tiempo_barrios,
-        'total_pedidos_a_tiempo': total_pedidos_a_tiempo
+        'total_pedidos_a_tiempo': total_pedidos_a_tiempo,
+        'porcentaje_pedidos_a_tiempo_total': porcentaje_pedidos_a_tiempo_total
     }
 
     # Agregar el label flotante con estadísticas
@@ -346,6 +348,10 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
                 <td style="padding: 5px 0;"><b>Total pedidos a tiempo:</b></td>
                 <td style="padding: 5px 0;"><b>{stats_data['total_pedidos_a_tiempo']}</b></td>
             </tr>
+            <tr>
+                <td style="padding: 5px 0;"><b>% Pedidos a tiempo (total):</b></td>
+                <td style="padding: 5px 0;"><b>{stats_data['porcentaje_pedidos_a_tiempo_total']:.1f}%</b></td>
+            </tr>
         </table>
     </div>
     """
@@ -361,7 +367,7 @@ def generar_mapa_pedidos(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
     folium.LayerControl().add_to(mapa)
 
     # Guardar el mapa
-    filename = f"mapa_pedidos.html"
+    filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_pedidos", permitir_multiples=False)
     filepath = f"static/maps/{filename}"
     mapa.save(filepath)
     return filename
