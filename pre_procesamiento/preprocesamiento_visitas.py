@@ -43,7 +43,8 @@ def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
     LEFT JOIN 
         fullclean_contactos.ciudades ciu ON ciu.id = con.id_ciudad
     WHERE 
-        e.fecha_evento BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
+        e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+
         AND (e.id_evento_tipo = 10 or e.id_evento_tipo = 12 or e.id_evento_tipo = 14 or e.id_evento_tipo = 53 or e.id_evento_tipo=63 or e.id_evento_tipo=46 )
         AND ciu.id_centroope = {centroope}
         AND coordenada_longitud <> 0 
