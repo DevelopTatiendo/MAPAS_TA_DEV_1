@@ -24,7 +24,7 @@ def guardar_mapa_controlado(mapa, tipo_mapa, permitir_multiples=False, carpeta='
     filepath = os.path.join(carpeta, filename)
 
     if not permitir_multiples and os.path.exists(filepath):
-        logger.info(f"Ya existe el mapa: {filepath}. No se sobrescribe.")
+        #logger.info(f"Ya existe el mapa: {filepath}. No se sobrescribe.")
         return filename
 
     mapa.save(filepath)
