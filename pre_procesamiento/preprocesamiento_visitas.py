@@ -24,19 +24,18 @@ def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
     
     query = f"""
     SELECT 
-        e.idEvento, 
+        e.id_contacto,
+        e.fecha_creacion,
         e.fecha_evento, 
-        e.id_evento_tipo, 
+        hour(e.fecha_evento) AS hora_evento,
+        e.id_autor,
         e.coordenada_longitud, 
-        e.coordenada_latitud, 
-        e.medio_contacto, 
-        e.tipo_evento, 
-        e.id_categoria_evento, 
-        bar.id AS id_barrio, 
-        bar.barrio, 
-        bar.id_estrato
+        e.coordenada_latitud,
+        e.nombre_evento,
+        e.categoria_evento,
+        con.id_barrio AS id_barrio
     FROM 
-        fullclean_contactos.vwEventos e
+        fullclean_contactos.vwEventosAgente e
     LEFT JOIN 
         fullclean_contactos.vwContactos con ON e.id_contacto = con.id
     LEFT JOIN 
@@ -44,7 +43,8 @@ def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
     LEFT JOIN 
         fullclean_contactos.ciudades ciu ON ciu.id = con.id_ciudad
     WHERE 
-        e.fecha_evento BETWEEN '{fecha_inicio}' AND '{fecha_fin}'
+        e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+
         AND (e.id_evento_tipo = 10 or e.id_evento_tipo = 12 or e.id_evento_tipo = 14 or e.id_evento_tipo = 53 or e.id_evento_tipo=63 or e.id_evento_tipo=46 )
         AND ciu.id_centroope = {centroope}
         AND coordenada_longitud <> 0 
@@ -63,20 +63,29 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
     # Obtener datos de muestras desde la base de datos
     df_muestras = consultar_visitas_db(centroope, fecha_inicio, fecha_fin)
     # print('colummmmmmmnas',df_muestras.columns)
+    # Agregar columna id_muestra al inicio
+    df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
 
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
 
     # Realizar el merge por 'id_barrio'
     df_visitas_completo = pd.merge(df_muestras, df_coord, how='left', on='id_barrio')
+# Lista de columnas deseadas (ajusta según tus archivos)
+    columnas_deseadas = [
+        'id_muestra', 'id_contacto', 'fecha_creacion', 'fecha_evento', 'hora_evento',
+        'id_autor', 'coordenada_longitud', 'coordenada_latitud',
+        'nombre_evento', 'categoria_evento',
+        'id_barrio', 'barrio', 'id_estrato',
+        'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
+    ]
+    # Filtra solo las columnas que existen
+    columnas_existentes = [col for col in columnas_deseadas if col in df_visitas_completo.columns]
+    df_visitas_completo = df_visitas_completo[columnas_existentes]
 
-    # Mantener solo las columnas necesarias
-    df_visitas_completo = df_visitas_completo[['fecha_evento', 'coordenada_longitud', 
-                                                 'coordenada_latitud','tipo_evento',
-                                                 'id_barrio', 'barrio_x', 'id_estrato', 
-                                                 'latitud', 'longitud', 'ruta_cobro', 'nom_ruta']]
-    
-    # Renombrar columnas si es necesario
-    df_visitas_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
-    # print('hola',df_visitas_completo.columns)
+    # Si el CSV tiene 'barrio' y no 'barrio_x', no necesitas renombrar
+    # Si tienes 'barrio_x', renómbralo a 'barrio'
+    if 'barrio_x' in df_visitas_completo.columns:
+        df_visitas_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
+
     return df_visitas_completo

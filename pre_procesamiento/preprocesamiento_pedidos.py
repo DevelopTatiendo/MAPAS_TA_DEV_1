@@ -48,7 +48,8 @@ WHERE
     AND p.autorizacion_descuento = 0
     AND p.tipo_documento < 2 
     AND p.id_centroope = {centroope}
-    AND p.fecha_hora_pedido BETWEEN '{fecha_inicio}' AND '{fecha_fin}';
+    AND p.fecha_hora_pedido BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+;
     """
     df = pd.read_sql(query, conexion)
     print("CONSULTA REALIZADA")
