@@ -24,18 +24,19 @@ def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
     
     query = f"""
     SELECT 
+    
+        e.idEvento AS id_visita,
         e.id_contacto,
-        e.fecha_creacion,
         e.fecha_evento, 
-        hour(e.fecha_evento) AS hora_evento,
         e.id_autor,
         e.coordenada_longitud, 
         e.coordenada_latitud,
-        e.nombre_evento,
-        e.categoria_evento,
+        e.medio_contacto,
+        e.tipo_evento,
+        e.tipo_categoria,
         con.id_barrio AS id_barrio
     FROM 
-        fullclean_contactos.vwEventosAgente e
+        fullclean_contactos.vwEventos e
     LEFT JOIN 
         fullclean_contactos.vwContactos con ON e.id_contacto = con.id
     LEFT JOIN 
@@ -65,7 +66,7 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
     df_muestras = consultar_visitas_db(centroope, fecha_inicio, fecha_fin)
     # print('colummmmmmmnas',df_muestras.columns)
     # Agregar columna id_muestra al inicio
-    df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
+    #df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
 
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
@@ -74,10 +75,8 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
     df_visitas_completo = pd.merge(df_muestras, df_coord, how='left', on='id_barrio')
 # Lista de columnas deseadas (ajusta según tus archivos)
     columnas_deseadas = [
-        'id_muestra', 'id_contacto', 'fecha_creacion', 'fecha_evento', 'hora_evento',
-        'id_autor', 'coordenada_longitud', 'coordenada_latitud',
-        'nombre_evento', 'categoria_evento',
-        'id_barrio', 'barrio', 'id_estrato',
+        'id_visita', 'id_contacto', 'fecha_evento','id_autor', 'coordenada_longitud', 'coordenada_latitud',
+        'tipo_evento', 'tipo_categoria','id_barrio', 'barrio', 'id_estrato',
         'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
     ]
     # Filtra solo las columnas que existen
