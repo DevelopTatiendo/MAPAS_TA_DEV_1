@@ -23,21 +23,20 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
     )
     
     query = f"""
-     SELECT 
-        
+ SELECT 
+        e.idEvento AS id_muestra,
         e.id_contacto,
-        e.fecha_creacion,
         e.fecha_evento, 
-        hour(e.fecha_evento) AS hora_evento,
         e.id_autor,
         e.coordenada_longitud, 
         e.coordenada_latitud,
-        e.nombre_evento,
-        e.categoria_evento,
+        e.medio_contacto,
+        e.tipo_evento,
+        e.tipo_categoria,
         con.id_barrio AS id_barrio
         
     FROM 
-        fullclean_contactos.vwEventosAgente e
+        fullclean_contactos.vwEventos e
     LEFT JOIN 
         fullclean_contactos.vwContactos con ON e.id_contacto = con.id
     LEFT JOIN 
@@ -45,10 +44,10 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
     LEFT JOIN 
         fullclean_contactos.ciudades ciu ON ciu.id = con.id_ciudad
     WHERE 
-        e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+         e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
 
-        AND e.id_evento_tipo = 15
-        AND ciu.id_centroope = '{centroope}'
+         AND e.id_evento_tipo = 15
+    AND ciu.id_centroope = '{centroope}'
         AND coordenada_longitud <> 0 
         AND coordenada_latitud <> 0;
     """
@@ -67,7 +66,7 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, agentes=None)
     df_muestras = consultar_muestras_db(centroope, fecha_inicio, fecha_fin)
 
     # Agregar columna id_muestra al inicio
-    df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
+    #df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
 
     # Leer el archivo de coordenadas
     df_coord = pd.read_csv(ruta_coordenadas)
@@ -80,16 +79,16 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, agentes=None)
 
     # Lista de columnas deseadas (ajusta según tus archivos)
     columnas_deseadas = [
-        'id_muestra', 'id_contacto', 'fecha_creacion', 'fecha_evento', 'hora_evento',
+        'id_muestra', 'id_contacto',  'fecha_evento', 
         'id_autor', 'coordenada_longitud', 'coordenada_latitud',
-        'nombre_evento', 'categoria_evento',
-        'id_barrio', 'barrio', 'id_estrato',
+        'tipo_evento', 'tipo_categoria','id_barrio', 'barrio', 'id_estrato',
         'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
     ]
     # Filtra solo las columnas que existen
     columnas_existentes = [col for col in columnas_deseadas if col in df_muestras_completo.columns]
     df_muestras_completo = df_muestras_completo[columnas_existentes]
 
+    
     # Si el CSV tiene 'barrio' y no 'barrio_x', no necesitas renombrar
     # Si tienes 'barrio_x', renómbralo a 'barrio'
     if 'barrio_x' in df_muestras_completo.columns:
