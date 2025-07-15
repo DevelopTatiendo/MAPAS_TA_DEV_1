@@ -201,7 +201,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
                     color=barrio_colors[barrio],
                     fill=True,
                     fill_opacity=0.7,
-                    popup=f"{row['barrio']}: {row['fecha_evento']}<br>{row['nombre_evento']} ({row['categoria_evento']})"
+                    popup=f"{row['barrio']}: {row['fecha_evento']}<br>{row['tipo_evento']} ({row['tipo_categoria']})"
                 ).add_to(barrio_group)
 
         # Agregar control de capas
