@@ -210,7 +210,11 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin,ciudad, barrios=None):
 
 
         # Guardar mapa
-        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_pedidos", permitir_multiples=False)
+        filename = guardar_mapa_controlado(
+            mapa,
+            tipo_mapa="mapa_muestras",
+            permitir_multiples=False
+        )
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename

@@ -382,7 +382,11 @@ def generar_mapa_visitas(fecha_inicio,fecha_fin,tipo_agrupacion,ciudad,rutas_cob
 
 
 
-        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_facturas_vencidas", permitir_multiples=False)
+        filename = guardar_mapa_controlado(
+            mapa,
+            tipo_mapa="mapa_visitas",
+            permitir_multiples=False
+        )
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         return filename
