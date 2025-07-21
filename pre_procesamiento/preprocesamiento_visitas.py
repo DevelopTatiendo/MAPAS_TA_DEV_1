@@ -53,6 +53,7 @@ def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
     """
     df = pd.read_sql(query, conexion)
     conexion.close()
+    print(df.shape)
     return df
 
 
