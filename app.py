@@ -14,7 +14,9 @@ import validators
 
 #serbot software de verificacion y certificacion de https
 # Configuración de entorno
-# FAVOR NO BORRAR ESTOS COMANDOS .venv\Scripts\activate  python flask_server.py
+# FAVOR NO BORRAR ESTOS COMANDOS :
+# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# .venv\Scripts\activate  python flask_server.py
 
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Por defecto, "development"
@@ -60,7 +62,7 @@ def cargar_datos_ciudad(ciudad):
             st.error(f"Error cargando {archivo}: {e}")
             datos[archivo.split('.')[0]] = pd.DataFrame()
 
-    return datos
+    return datos 
 
 # UI de Streamlit
 st.title("Visualización de Mapas Interactivos")

@@ -31,7 +31,7 @@ venv/
 static/maps/*.html
 *.html
 *.pdf
-*.csv
+
 
 
 # Ignorar registros (logs)
