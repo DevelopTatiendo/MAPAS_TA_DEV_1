@@ -1,0 +1,718 @@
+id_barrio;barrio;origen
+1198;SIN ASIGNAR CALI;solo_coordenadas
+1019.0;ARANJUEZ;solo_coordenadas
+25494.0;LA ENEA;solo_coordenadas
+25495.0;LA ESTRELLA;solo_coordenadas
+25496.0;SAN JOAQUÍN;solo_coordenadas
+25497.0;COLOMBIA;solo_coordenadas
+25498.0;EUCALIPTUS;solo_coordenadas
+25499.0;BAJO TABLAZO;solo_coordenadas
+25500.0;ONDAS DE OTUN;solo_coordenadas
+25501.0;VELEZ;solo_coordenadas
+25502.0;LA SULTANA;solo_coordenadas
+25503.0;BAJO CARIBE;solo_coordenadas
+25504.0;CHIPRE;solo_coordenadas
+25505.0;CENTRO;solo_coordenadas
+25506.0;FATIMA;solo_coordenadas
+25508.0;EL CAMPIN;solo_coordenadas
+25509.0;EL PARAISO;solo_coordenadas
+25510.0;BOSQUES DELNORTE;solo_coordenadas
+25511.0;VILLA JULIA;solo_coordenadas
+25512.0;SANTOS;solo_coordenadas
+25513.0;LUSITANIA;solo_coordenadas
+25514.0;LOS CEDROS;solo_coordenadas
+25515.0;LA CAROLA;solo_coordenadas
+25516.0;SAN JOSE;solo_coordenadas
+25517.0;LOS MOLINOS;solo_coordenadas
+25518.0;EL CARIBE;solo_coordenadas
+25519.0;BAJO PRADO;solo_coordenadas
+25520.0;VILLA MARIA;solo_coordenadas
+25521.0;LA PRADERA;solo_coordenadas
+25522.0;VILLA PILAR;solo_coordenadas
+25523.0;EL BOSQUE;solo_coordenadas
+25524.0;PALERMO;solo_coordenadas
+25525.0;MALHABAR;solo_coordenadas
+25526.0;LOS ALCAZARES;solo_coordenadas
+25527.0;LOS AGUSTINOS;solo_coordenadas
+25528.0;SAN JORGE;solo_coordenadas
+25529.0;VILLA NUEVA;solo_coordenadas
+25530.0;ESTACION URIBE;solo_coordenadas
+25531.0;LA CUMBRE;solo_coordenadas
+25532.0;VILLA HERMOSA;solo_coordenadas
+25533.0;LLERAS;solo_coordenadas
+25534.0;VILLA LUZ;solo_coordenadas
+25535.0;MINITAS;solo_coordenadas
+25536.0;BETANIA (FATIMA);solo_coordenadas
+25537.0;VIVEROS;solo_coordenadas
+25538.0;VILLA CAFE LOS YARUMOS;solo_coordenadas
+25539.0;LA TOSCANA;solo_coordenadas
+25540.0;MINUTO DE DIOS;solo_coordenadas
+25541.0;ALTA SUIZA;solo_coordenadas
+25542.0;LA FLORIDA;solo_coordenadas
+25543.0;COLSEGUROS;solo_coordenadas
+25544.0;LA ARGENTINA;solo_coordenadas
+25545.0;ARANJUEZ;solo_coordenadas
+25546.0;ATANASIO GIRARDOT;solo_coordenadas
+25547.0;LINARES;solo_coordenadas
+25548.0;MILAN;solo_coordenadas
+25549.0;KENNEDY;solo_coordenadas
+25550.0;NUEVO FATIMA;solo_coordenadas
+25551.0;PALOGRANDE;solo_coordenadas
+25553.0;VILLACARMENZA;solo_coordenadas
+25554.0;LAS COLINAS;solo_coordenadas
+25555.0;CASTILLA;solo_coordenadas
+25557.0;BETANIA;solo_coordenadas
+25558.0;GUAMAL;solo_coordenadas
+25559.0;ESTAMBUL;solo_coordenadas
+25560.0;ISABELA;solo_coordenadas
+25562.0;PALONEGRO;solo_coordenadas
+25563.0;PANORAMA;solo_coordenadas
+25564.0;URBANIZACION GALICIA;solo_coordenadas
+25565.0;ARRAYANES;solo_coordenadas
+25566.0;LA FUENTE;solo_coordenadas
+25567.0;EL PALMAR;solo_coordenadas
+25568.0;PRADO;solo_coordenadas
+25569.0;CERVANTES;solo_coordenadas
+25570.0;BAVARIA;solo_coordenadas
+25571.0;CAMPO HERMOSO;solo_coordenadas
+25572.0;SAN ANTONIO;solo_coordenadas
+25573.0;PRADO ALTO;solo_coordenadas
+25574.0;ALAMOS;solo_coordenadas
+25575.0;PRADO MEDIO;solo_coordenadas
+25576.0;URIBE;solo_coordenadas
+25577.0;RESERVA DE CASTILLA;solo_coordenadas
+25578.0;PERALONSO;solo_coordenadas
+25579.0;BAJO PERSIA;solo_coordenadas
+25580.0;CAMPOAMOR;solo_coordenadas
+25581.0;BAJO CERVANTES;solo_coordenadas
+25582.0;SAENZ;solo_coordenadas
+25583.0;LA RAMBLA;solo_coordenadas
+25584.0;SAN CAYETANO;solo_coordenadas
+25586.0;LA ASUNCION;solo_coordenadas
+25587.0;CENTENARIO;solo_coordenadas
+25588.0;LAURELES;solo_coordenadas
+25589.0;ALTA CAROLA;solo_coordenadas
+25590.0;NOGALES;solo_coordenadas
+25591.0;GUAYACANES;solo_coordenadas
+25593.0;NUEVO HORIZONTE;solo_coordenadas
+25594.0;EL PEÑON;solo_coordenadas
+25595.0;ARENILLO;solo_coordenadas
+25596.0;QUINTAHISPANIA;solo_coordenadas
+25597.0;ASTURIAS;solo_coordenadas
+25598.0;VILLA KEMPIS;solo_coordenadas
+25601.0;LA FRANCIA;solo_coordenadas
+25602.0;TOPACIO;solo_coordenadas
+25603.0;MORROGACHO;solo_coordenadas
+25604.0;OLAYA;solo_coordenadas
+25605.0;BELLAS ARTES;solo_coordenadas
+25606.0;PORTAL DE ALCAZARES;solo_coordenadas
+25607.0;VERSALLES;solo_coordenadas
+25608.0;SANTA HELENA;solo_coordenadas
+25611.0;ALFERES REAL;solo_coordenadas
+25613.0;LA DANIELA;solo_coordenadas
+25614.0;JOSE RESTREPO;solo_coordenadas
+25615.0;EL NEVADO;solo_coordenadas
+25616.0;TERRAZAS DE CAMPOHERMOSO;solo_coordenadas
+25617.0;LIBORIO;solo_coordenadas
+25618.0;LA PÀLMA;solo_coordenadas
+25619.0;AMERICAS (SAN JORGE);solo_coordenadas
+25620.0;CAMILO TORRES;solo_coordenadas
+25621.0;LEONORA;solo_coordenadas
+25622.0;FUNDADORES;solo_coordenadas
+25623.0;ALTOS DE CAPRI;solo_coordenadas
+25624.0;BELEN;solo_coordenadas
+25626.0;PIO XII;solo_coordenadas
+25627.0;ALTO CARIBE;solo_coordenadas
+25628.0;LUSITANIA ALTA;solo_coordenadas
+25629.0;VILLA DEL RIO;solo_coordenadas
+25630.0;EL CARMEN;solo_coordenadas
+25631.0;COMUNERO;solo_coordenadas
+25632.0;LA CASTELLANA;solo_coordenadas
+25633.0;MONTANA;solo_coordenadas
+25634.0;BENGALA;solo_coordenadas
+25637.0;LOS ROSALES;solo_coordenadas
+25639.0;LA LINDA;solo_coordenadas
+25640.0;VILLA CAFE (CAROLA);solo_coordenadas
+25641.0;FANNY GONZALEZ;solo_coordenadas
+25642.0;GONZALEZ;solo_coordenadas
+25643.0;LA ARBOLEDA;solo_coordenadas
+25644.0;LA CAROLITA;solo_coordenadas
+25646.0;PALONEGRO NUEVO;solo_coordenadas
+25647.0;LA FLORESTA;solo_coordenadas
+25648.0;TURIN;solo_coordenadas
+25649.0;LAS DELICIAS;solo_coordenadas
+25650.0;LA PRIMAVERA;solo_coordenadas
+25651.0;BETANIA (CUMBRE);solo_coordenadas
+25652.0;BAJA LEONORA;solo_coordenadas
+25653.0;EL SOL;solo_coordenadas
+25654.0;AMERICAS (AGUSTINOS);solo_coordenadas
+25656.0;PUERTAS DEL SOL;solo_coordenadas
+25657.0;TRIANGULO;solo_coordenadas
+25658.0;VIÑA DEL RIO;solo_coordenadas
+25659.0;BAJO VERSALLES;solo_coordenadas
+25660.0;PORTAL DEL CAFE;solo_coordenadas
+25661.0;COLINAS DE VILLA CAFE;solo_coordenadas
+25662.0;MIRADOR DE LA CAROLA;solo_coordenadas
+25664.0;ALTOS DE GRANADA;solo_coordenadas
+25666.0;AV. PARALELA;solo_coordenadas
+25668.0;BAJA CAROLA;solo_coordenadas
+25669.0;SAMARIA;solo_coordenadas
+25673.0;PORVENIR;solo_coordenadas
+25676.0;SAN RAFAEL;solo_coordenadas
+25677.0;SAN MARCEL;solo_coordenadas
+25678.0;20 DE JULIO;solo_coordenadas
+25679.0;URAPANES;solo_coordenadas
+25680.0;TERRAZA DE LA GRANJA;solo_coordenadas
+25682.0;LA PORTEÑA;solo_coordenadas
+25683.0;ALTO PRADO;solo_coordenadas
+25684.0;BOSQUES DE LA ENEA;solo_coordenadas
+25685.0;BOSQUES;solo_coordenadas
+25686.0;VILLA CAFE MINITAS;solo_coordenadas
+25687.0;RINCON DE CASTILLA;solo_coordenadas
+25688.0;SAN SEBASTIAN;solo_coordenadas
+25689.0;CRISTO REY;solo_coordenadas
+25690.0;LAS PALMAS;solo_coordenadas
+25691.0;ALTO PERCIA;solo_coordenadas
+25693.0;PORTAL DE LA HALAMBRA;solo_coordenadas
+25694.0;CAPRI;solo_coordenadas
+25695.0;GALERIA;solo_coordenadas
+25696.0;VILLA JARDIN;solo_coordenadas
+25697.0;AV KEVIN ANGEL;solo_coordenadas
+25698.0;FANEON;solo_coordenadas
+25699.0;ALTO TABLAZO;solo_coordenadas
+25700.0;ALBANIA;solo_coordenadas
+25702.0;ALTOS DEL PORTON;solo_coordenadas
+25703.0;PERSIA;solo_coordenadas
+26577.0;CENTENARIO;solo_coordenadas
+46095.0;AQUILINO VILLEGAS;solo_coordenadas
+46123.0;OFICINA MANIZALES;solo_coordenadas
+46229.0;SIN ASIGNAR MANIZALES;solo_coordenadas
+46487.0;SINAI;solo_coordenadas
+46488.0;SOLFERINO;solo_coordenadas
+46717.0;VILLAMARÍA;solo_coordenadas
+26088.0;LOS CAMBULOS;solo_coordenadas
+34954.0;ALBANIA (2500 LTS);solo_coordenadas
+34955.0;AURORA;solo_coordenadas
+34956.0;AV SANTANDER;solo_coordenadas
+34957.0;BOSTON;solo_coordenadas
+34958.0;LA CAMPIÑA;solo_coordenadas
+34959.0;DEPARTAMENTO (2500 LTS);solo_coordenadas
+34960.0;GRACIELA;solo_coordenadas
+34961.0;LA HABANA (CUBA);solo_coordenadas
+34962.0;HEROES (2500 LTS);solo_coordenadas
+34963.0;INDEPENDIENTES;solo_coordenadas
+34964.0;LA FRANCIA;solo_coordenadas
+34965.0;LA HACIENDA;solo_coordenadas
+34966.0;LA SULTANA;solo_coordenadas
+34968.0;PADRE VALENCIA;solo_coordenadas
+34969.0;PROVIDENCIA;solo_coordenadas
+34970.0;SAN CAMILO;solo_coordenadas
+34971.0;SANTA MONICA;solo_coordenadas
+34972.0;1 DE FEBRERO CENTRO;solo_coordenadas
+34973.0;1 DE MAYO;solo_coordenadas
+34974.0;LOTES 2500;solo_coordenadas
+34975.0;30 DE AGOSTO CUBA;solo_coordenadas
+34977.0;ACUARELA (CUBA);solo_coordenadas
+34978.0;ACUARIO (CUBA);solo_coordenadas
+34979.0;AGUAS CLARAS;solo_coordenadas
+34980.0;ALAMEDA (CUBA);solo_coordenadas
+34981.0;ALAMOS;solo_coordenadas
+34983.0;ALEJANDRIA (CUCHILLA);solo_coordenadas
+34984.0;ALFONSO LOPEZ;solo_coordenadas
+34985.0;ALMENDROS (2500 LTS);solo_coordenadas
+34987.0;ALPES;solo_coordenadas
+34988.0;AMERICA;solo_coordenadas
+34990.0;ATENAS (CUBA);solo_coordenadas
+34991.0;LA AURORA;solo_coordenadas
+34992.0;AV LAS AMERICAS;solo_coordenadas
+34993.0;AV SANTANDER;solo_coordenadas
+34994.0;BAIRON GAVIRIA;solo_coordenadas
+34995.0;BALALAIKA;solo_coordenadas
+34996.0;BARAJAS;solo_coordenadas
+34998.0;BAVARIA;solo_coordenadas
+35000.0;BELLA SARDI;solo_coordenadas
+35001.0;BELLO HORIZONTE (CUBA);solo_coordenadas
+35002.0;BELMONTE;solo_coordenadas
+35003.0;BERLIN;solo_coordenadas
+35005.0;BIRMANIA;solo_coordenadas
+35006.0;BOMBAY NUEVO;solo_coordenadas
+35007.0;BOQUIA;solo_coordenadas
+35008.0;BOSTON;solo_coordenadas
+35009.0;BUENOS AIRES;solo_coordenadas
+35010.0;CARLOS A BENAVIDEZ.;solo_coordenadas
+35013.0;CACHIPAY;solo_coordenadas
+35014.0;CAMBULOS;solo_coordenadas
+35015.0;CAMILO TORRES;solo_coordenadas
+35016.0;CAMPESTRE;solo_coordenadas
+35019.0;CAÑARTE;solo_coordenadas
+35020.0;CAÑAVERAL;solo_coordenadas
+35021.0;CARDAL;solo_coordenadas
+35022.0;CARLOS A BEMAVIDEZ;solo_coordenadas
+35023.0;CARLOS ALBERTO BENAVIDEZ (2500 LTS);solo_coordenadas
+35024.0;CASAS DE MILAN;solo_coordenadas
+35025.0;CENTENARIO;solo_coordenadas
+35026.0;CENTRO;solo_coordenadas
+35027.0;CESAR AUGUSTO;solo_coordenadas
+35028.0;CIRCUNVALAR;solo_coordenadas
+35029.0;CISNES;solo_coordenadas
+35030.0;CIUDAD JARDIN;solo_coordenadas
+35031.0;CIUDADELA CUBA PUEBLITO PAISA;solo_coordenadas
+35032.0;CIUDADELA DEL CAFÉ;solo_coordenadas
+35033.0;CODELMAR (CUBA);solo_coordenadas
+35034.0;COLINAS;solo_coordenadas
+35035.0;VEREDA COMBIA;solo_coordenadas
+35036.0;COMFAMILIAR  PARQUE INDUSTRIAL;solo_coordenadas
+35037.0;CONSOTA;solo_coordenadas
+35039.0;CORALES;solo_coordenadas
+35040.0;CORALINA (CUBA);solo_coordenadas
+35041.0;COROCITO;solo_coordenadas
+35042.0;CRISTALES (CUBA);solo_coordenadas
+35043.0;CUBA CENTRO;solo_coordenadas
+35044.0;DEPARTAMENTO;solo_coordenadas
+35045.0;DOSQUEBRADAS;solo_coordenadas
+35046.0;EDEN (CUBA);solo_coordenadas
+35047.0;EL BOSQUE (ALAMOS);solo_coordenadas
+35048.0;EL CARDAL (CUBA);solo_coordenadas
+35049.0;EL CHICO KENEDY;solo_coordenadas
+35050.0;EL CHICO RESTREPO;solo_coordenadas
+35051.0;EL EDEN;solo_coordenadas
+35052.0;EL LAGO;solo_coordenadas
+35053.0;EL MARTILLO;solo_coordenadas
+35056.0;EL PLUMON;solo_coordenadas
+35057.0;EL TRIUNFO;solo_coordenadas
+35058.0;GALAN (CENTRO);solo_coordenadas
+35059.0;GALICIA;solo_coordenadas
+35060.0;GAMA (CUBA);solo_coordenadas
+35062.0;GIBRALTAR;solo_coordenadas
+35063.0;GIRASOLES (CUBA);solo_coordenadas
+35064.0;LA GRACIELA;solo_coordenadas
+35065.0;GUADALUPE (CUBA);solo_coordenadas
+35066.0;GUADUALES;solo_coordenadas
+35067.0;GUALANDAY (CENTRO);solo_coordenadas
+35068.0;GUAYACANES;solo_coordenadas
+35069.0;HABANA;solo_coordenadas
+35070.0;HAMBURGO;solo_coordenadas
+35071.0;HEROES;solo_coordenadas
+35073.0;INDEPENDIENTES (2500 LTS);solo_coordenadas
+35074.0;EL JAPON;solo_coordenadas
+35075.0;JARDIN;solo_coordenadas
+35076.0;JARDINES DE MILAN;solo_coordenadas
+35077.0;JOSE MARIA C;solo_coordenadas
+35078.0;KENNEDY;solo_coordenadas
+35079.0;LA BADEA;solo_coordenadas
+35080.0;LA COLINA;solo_coordenadas
+35081.0;LA DIVISA (CUBA);solo_coordenadas
+35082.0;LA ESPERANZA;solo_coordenadas
+35083.0;LA FLORESTA (CUBA);solo_coordenadas
+35084.0;LA FRANCIA (2500 LTS);solo_coordenadas
+35086.0;LA ISLA;solo_coordenadas
+35090.0;LA ROMELIA;solo_coordenadas
+35091.0;LA SULTANA;solo_coordenadas
+35093.0;LA UNIDAD;solo_coordenadas
+35094.0;LA VICTORIA;solo_coordenadas
+35095.0;LA VILLA (CUBA);solo_coordenadas
+35096.0;LAS GAVIOTAS;solo_coordenadas
+35097.0;LAS MERCEDES;solo_coordenadas
+35098.0;LAURELES;solo_coordenadas
+35099.0;LIBERTADOR (2500 LTS);solo_coordenadas
+35100.0;LIBERTADORES (CUCHILLA);solo_coordenadas
+35101.0;LORENA;solo_coordenadas
+35102.0;LOS CEDROS;solo_coordenadas
+35103.0;LOS MOLINOS;solo_coordenadas
+35104.0;LOS OLIVOS;solo_coordenadas
+35105.0;LOS PINOS CUBA;solo_coordenadas
+35106.0;MARAYA;solo_coordenadas
+35107.0;MEJIA ROBLEDO;solo_coordenadas
+35108.0;METROPOLITANO 2500 LTS;solo_coordenadas
+35109.0;MILAN RUBIO;solo_coordenadas
+35111.0;MONTELIBANO;solo_coordenadas
+35112.0;NACEDEROS;solo_coordenadas
+35113.0;NARANJITOS;solo_coordenadas
+35114.0;NARANJOS;solo_coordenadas
+35115.0;NAVARRA;solo_coordenadas
+35116.0;OLIMPICO (GAMA);solo_coordenadas
+35118.0;PABLO SEXTO;solo_coordenadas
+35120.0;PALERMO;solo_coordenadas
+35121.0;PANORAMA;solo_coordenadas
+35122.0;PARQUE INDUSTRIAL;solo_coordenadas
+35124.0;EL PEÑOL;solo_coordenadas
+35126.0;PERLA DEL SUR (CUBA);solo_coordenadas
+35127.0;PINARES;solo_coordenadas
+35128.0;PIZAMO-KENEDY;solo_coordenadas
+35129.0;LA PLAYA;solo_coordenadas
+35130.0;POBLADO;solo_coordenadas
+35131.0;POPULAR MODELO;solo_coordenadas
+35132.0;PORVENIR;solo_coordenadas
+35133.0;PRADERA;solo_coordenadas
+35135.0;PRIMAVERA AZUL;solo_coordenadas
+35136.0;PROGRESO;solo_coordenadas
+35139.0;RAFAEL URIBE (CUBA);solo_coordenadas
+35140.0;RINCON DE LA ESTACION;solo_coordenadas
+35142.0;EL ROCIO;solo_coordenadas
+35143.0;ROSALES CIRCUNVALAR;solo_coordenadas
+35144.0;SAMARIA;solo_coordenadas
+35146.0;SAN FELIPE (SAUCES);solo_coordenadas
+35147.0;SAN FERNANDO;solo_coordenadas
+35148.0;SAN JOAQUIN;solo_coordenadas
+35149.0;SAN JORGE;solo_coordenadas
+35150.0;SAN JOSE;solo_coordenadas
+35151.0;SAN JUDAS;solo_coordenadas
+35152.0;SAN LUIS;solo_coordenadas
+35153.0;SAN NICOLAS;solo_coordenadas
+35154.0;SANTA CLARA (CUBA);solo_coordenadas
+35155.0;SANTA FE 2500 LOTES;solo_coordenadas
+35156.0;SANTA ISABEL;solo_coordenadas
+35157.0;SANTA JUANA DE LAS VILLAS (CUBA);solo_coordenadas
+35160.0;SANTA ROSA;solo_coordenadas
+35161.0;SANTA TERESITA (PEREIRA);solo_coordenadas
+35162.0;LOS SAUCES (CUBA);solo_coordenadas
+35164.0;SINAI;solo_coordenadas
+35165.0;SULTANA;solo_coordenadas
+35166.0;TANAMBÍ;solo_coordenadas
+35167.0;TERRANOVA (CUBA);solo_coordenadas
+35168.0;TINAJAS (CUBA);solo_coordenadas
+35169.0;TORRES DE SAN MATEO;solo_coordenadas
+35170.0;TORRES DEL SOL;solo_coordenadas
+35171.0;TULCAN II;solo_coordenadas
+35173.0;TURIN;solo_coordenadas
+35174.0;URIBE;solo_coordenadas
+35175.0;VALER;solo_coordenadas
+35176.0;VENECIA;solo_coordenadas
+35177.0;VICTORIA;solo_coordenadas
+35179.0;VILLA DEL PRADO;solo_coordenadas
+35181.0;BOSQUES STA MONICA - CUBA;solo_coordenadas
+35182.0;UR EL CARBONERO;solo_coordenadas
+35183.0;VILLA DEL CAMPO;solo_coordenadas
+35184.0;BULEVAR (CUBA);solo_coordenadas
+35185.0;PRIMAVERA;solo_coordenadas
+35187.0;SAN DIEGO;solo_coordenadas
+35188.0;LOS REYES;solo_coordenadas
+35189.0;SAN FELIX;solo_coordenadas
+35191.0;VILLA MERY;solo_coordenadas
+35193.0;FRAILES;solo_coordenadas
+35194.0;EL BOHIO;solo_coordenadas
+35195.0;QUINTAS DE SAN SEBASTIAN;solo_coordenadas
+35196.0;MARACAY;solo_coordenadas
+35197.0;LA MACARENA;solo_coordenadas
+35198.0;GAITAN;solo_coordenadas
+35200.0;SAN MARCOS (CUBA);solo_coordenadas
+35201.0;VILLA NAVARRA (CUCHILLA);solo_coordenadas
+35202.0;NISSA;solo_coordenadas
+35203.0;VILLA LIGIA (CUCHULLA);solo_coordenadas
+35205.0;LA POPA;solo_coordenadas
+35206.0;QUINTAS DEL CAMPESTRE;solo_coordenadas
+35207.0;LA OKARINA;solo_coordenadas
+35208.0;VILLA LAURA;solo_coordenadas
+35210.0;MOLINOS;solo_coordenadas
+35211.0;VILLA ELKIN;solo_coordenadas
+35212.0;QUINTAS DEL JARDIN COLONIAL;solo_coordenadas
+35213.0;BOSQUES DE MILAN;solo_coordenadas
+35215.0;LLANO AZUL;solo_coordenadas
+35216.0;LOS PINOS DOS/DAS;solo_coordenadas
+35217.0;TEJARES DE LA LOMA;solo_coordenadas
+35218.0;VILLA ELIZA (SAUCES CUBA);solo_coordenadas
+35219.0;JUPITER;solo_coordenadas
+35220.0;LLANO GRANDE;solo_coordenadas
+35221.0;MALAGA;solo_coordenadas
+35222.0;GAVIOTAS;solo_coordenadas
+35223.0;VILLA COLOMBIA;solo_coordenadas
+35225.0;HACIENDA (CUBA);solo_coordenadas
+35226.0;SAN ANTONIO 2;solo_coordenadas
+35227.0;EL PROGRESO;solo_coordenadas
+35228.0;COLINAS DEL TRIUNFO;solo_coordenadas
+35229.0;MODELO;solo_coordenadas
+35230.0;GETSEMANI;solo_coordenadas
+35231.0;CONSTRUCTORES;solo_coordenadas
+35232.0;LENINGRADO (ETP 1);solo_coordenadas
+35233.0;EL PRADO;solo_coordenadas
+35234.0;EL DORADO;solo_coordenadas
+35235.0;ORMAZA CENTRO;solo_coordenadas
+35236.0;SANTA ELENA;solo_coordenadas
+35237.0;NORMANDIA;solo_coordenadas
+35238.0;BOSQUES DE LA ACUARELA;solo_coordenadas
+35239.0;BOHIO;solo_coordenadas
+35240.0;SALVADOR ALLENDE;solo_coordenadas
+35241.0;SAN ANTONIO 1;solo_coordenadas
+35243.0;SANTA TERESITA;solo_coordenadas
+35244.0;SAN FERNANDO;solo_coordenadas
+35245.0;SANTA MONICA;solo_coordenadas
+35246.0;VILLA DEL ROCIO;solo_coordenadas
+35247.0;ALTA GRACIA (CUBA);solo_coordenadas
+35248.0;COMFAMILIAR CUBA;solo_coordenadas
+35249.0;PUEBLITO CAFETERO (CUBA);solo_coordenadas
+35250.0;INDEPENDENCIA (CUBA);solo_coordenadas
+35251.0;OLIVOS DOSQUEBRADA;solo_coordenadas
+35252.0;VILLA ALICIA;solo_coordenadas
+35253.0;ORMAZA CUBA;solo_coordenadas
+35254.0;GUADALUPE;solo_coordenadas
+35255.0;PARAISO;solo_coordenadas
+35256.0;POBLADO SANTA ISABEL;solo_coordenadas
+35257.0;CONSOTA 2500 LOTES;solo_coordenadas
+35258.0;VILLA DEL BOSQUE (SAUCES CUBA);solo_coordenadas
+35260.0;BOSQUES DE LA SALLE;solo_coordenadas
+35262.0;LA DULCERA;solo_coordenadas
+35263.0;CERRITOS;solo_coordenadas
+35264.0;AVENIDA DEL RIO;solo_coordenadas
+35265.0;SANTA CLARA DE LAS VILLAS (CUBA);solo_coordenadas
+35266.0;GIRASOL;solo_coordenadas
+35267.0;GUAYACANES CUBA;solo_coordenadas
+35268.0;GUAYACANES;solo_coordenadas
+35269.0;CESAR NADER;solo_coordenadas
+35270.0;VILLA VERDE;solo_coordenadas
+35271.0;CIUDAD PEREIRA;solo_coordenadas
+35272.0;VILLAVICENCIO;solo_coordenadas
+35273.0;ESPERANZA CENTRO;solo_coordenadas
+45033.0;CODELMAR EPT 2 (CUBA);solo_coordenadas
+45167.0;TERRANOVA PEREIRA;solo_coordenadas
+45274.0;30 DE AGOSTO CENTRO;solo_coordenadas
+45275.0;TULCAN 1;solo_coordenadas
+45276.0;VILLA SANTANA;solo_coordenadas
+45277.0;LIMONAR;solo_coordenadas
+45278.0;ALTOS DE LA CAPILLA;solo_coordenadas
+45279.0;LA MARIANA;solo_coordenadas
+45280.0;VENUS;solo_coordenadas
+45281.0;OLAYA HERRERA;solo_coordenadas
+45282.0;VILLA DEL SUR (CUCHILLA);solo_coordenadas
+45283.0;CUCHILLA DE LOS CASTROS;solo_coordenadas
+45285.0;PLAYA RICA;solo_coordenadas
+45287.0;LA CAPILLA;solo_coordenadas
+45289.0;EL OSO (CUBA);solo_coordenadas
+45291.0;PROGRESO;solo_coordenadas
+45294.0;QUINTAS DE LA ACUARELA (CUBA);solo_coordenadas
+45295.0;DIVINO NIÑO;solo_coordenadas
+45297.0;LAS PALMAS;solo_coordenadas
+45615.0;LOS NOGALES;solo_coordenadas
+45616.0;LIBERTADORES;solo_coordenadas
+45617.0;OBRERO;solo_coordenadas
+45620.0;VILLA CECILIA;solo_coordenadas
+45622.0;5 DE OCTUBRE (CUBA);solo_coordenadas
+45624.0;OLIMPIA (CUCHILLA);solo_coordenadas
+45628.0;LOS CEREZOS;solo_coordenadas
+45630.0;CAMBULOS POPA;solo_coordenadas
+45632.0;CERRO AZUL;solo_coordenadas
+45634.0;LAS VIOLETAS;solo_coordenadas
+45637.0;VERSALLES;solo_coordenadas
+45639.0;SANTIAGO LONDOÑO;solo_coordenadas
+45641.0;VILLA ALEXANDRA;solo_coordenadas
+45642.0;CESAR AGUSTO D/DAS;solo_coordenadas
+45646.0;EL PROGRESO D/DAS;solo_coordenadas
+45648.0;LARA BONILLA D/DAS;solo_coordenadas
+45649.0;URB. PIAMONTE D/DAS;solo_coordenadas
+45650.0;INDEPENDENCIA D/DAS;solo_coordenadas
+45652.0;LA CAMPIÑA D/DAS;solo_coordenadas
+45654.0;ROSALES D/DAS;solo_coordenadas
+45655.0;LAURELES D/DAS;solo_coordenadas
+45657.0;CONJUNTO AGUAZUL D/DAS;solo_coordenadas
+45658.0;LUIS CARLOS GALAN D/DAS;solo_coordenadas
+45659.0;RESERVAS DE MILAN D/DAS;solo_coordenadas
+45661.0;LOS ALPES D/DAS;solo_coordenadas
+45662.0;AV SIMON BOLIVAR D/DAS;solo_coordenadas
+45663.0;URB. EL BOSQUE D/DAS;solo_coordenadas
+45664.0;GALAXIA D/DAS;solo_coordenadas
+45667.0;NVA GRANADA D/DAS;solo_coordenadas
+45670.0;EL CARBONERO D/DAS;solo_coordenadas
+45671.0;VILLA DEL CAMPESTRE D/DAS;solo_coordenadas
+45672.0;QUINTAS DE ARAGON D/DAS;solo_coordenadas
+45673.0;JARDIN COLONIAL D/DAS;solo_coordenadas
+45676.0;URB. COLMENARES D/DAS;solo_coordenadas
+45677.0;ALAMEDA;solo_coordenadas
+45679.0;LOS LAGOS D/DAS;solo_coordenadas
+45680.0;MINUTO DE DIOS D/DAS;solo_coordenadas
+45683.0;SAN JUAN CENTRO;solo_coordenadas
+45684.0;BUENOS AIRES CENTRO;solo_coordenadas
+46054.0;ALTA VISTA (CUBA);solo_coordenadas
+46058.0;VENECIA CENTRO;solo_coordenadas
+46060.0;LUIS ALBERTO DUQUE;solo_coordenadas
+46061.0;PUERTA DE ALCALA;solo_coordenadas
+46063.0;VILLA NOHEMI;solo_coordenadas
+46065.0;LA IDALIA;solo_coordenadas
+46071.0;LAS ACACIAS;solo_coordenadas
+46072.0;CUBA.;solo_coordenadas
+46073.0;SAN RAFAEL D/DAS;solo_coordenadas
+46074.0;OLAYA HERRERA;solo_coordenadas
+46075.0;REC 1;solo_coordenadas
+46076.0;REC 2;solo_coordenadas
+46077.0;VILLA CONSOTA;solo_coordenadas
+46078.0;SINAI 2500 LTS;solo_coordenadas
+46079.0;CENTRO 1;solo_coordenadas
+46081.0;NUEVO MILENIUM;solo_coordenadas
+46082.0;PUERTO ALEGRE;solo_coordenadas
+46084.0;CARTAGO;solo_coordenadas
+46090.0;LA VIRGINIA;solo_coordenadas
+46091.0;QUINTAS DEL BOSQUE D/DAS;solo_coordenadas
+46094.0;LA PRADERA;solo_coordenadas
+46166.0;OFICINA PEI;solo_coordenadas
+46181.0;SECTOR A PARQUE IND;solo_coordenadas
+46182.0;SECTOR B PARQUE IND;solo_coordenadas
+46183.0;SECTOR C PARQUE IND;solo_coordenadas
+46184.0;SECTOR D PARQUE IND;solo_coordenadas
+46185.0;SECTOR E PARQUE IND;solo_coordenadas
+46191.0;BELMONTE BAJO (VIA CERRITOS);solo_coordenadas
+46193.0;CAMPESTRE A;solo_coordenadas
+46194.0;CAMPESTRE B;solo_coordenadas
+46197.0;CAMPESTRE C;solo_coordenadas
+46199.0;CAMPESTRE D;solo_coordenadas
+46223.0;SAN JACINTO;solo_coordenadas
+46232.0;SECTOR E PARQUE INDUSTRIAL;solo_coordenadas
+46233.0;GUADACANAL - CUBA;solo_coordenadas
+46238.0;20 DE JULIO;solo_coordenadas
+46239.0;HERNANDO VELEZ;solo_coordenadas
+46268.0;MOLIVENTO;solo_coordenadas
+46305.0;LA HERMOSA I;solo_coordenadas
+46306.0;LA HERMOSA II;solo_coordenadas
+46308.0;LA HERMOSA VIII;solo_coordenadas
+46309.0;LA HERMOSA III;solo_coordenadas
+46310.0;LA HERMOSA IV;solo_coordenadas
+46311.0;LA HERMOSA V;solo_coordenadas
+46314.0;LOS ANGELES;solo_coordenadas
+46320.0;VILLA DIANA;solo_coordenadas
+46321.0;FERMIN LOPEZ;solo_coordenadas
+46323.0;LINARES;solo_coordenadas
+46327.0;VERACRUZ;solo_coordenadas
+46329.0;PARAÍSO;solo_coordenadas
+46330.0;OSANAR SANTA RODA;solo_coordenadas
+46331.0;BOLÍVAR;solo_coordenadas
+46332.0;CENTRO;solo_coordenadas
+46333.0;COLINAS DEL ROSARIO;solo_coordenadas
+46334.0;LOS SAUCES;solo_coordenadas
+46335.0;SAN LUIS GONZAGA;solo_coordenadas
+46336.0;CAMELO;solo_coordenadas
+46339.0;VETANEA;solo_coordenadas
+46340.0;EL TRIUNFO;solo_coordenadas
+46342.0;LOS ANDES;solo_coordenadas
+46343.0;CARMELO;solo_coordenadas
+46346.0;LOS PINOS;solo_coordenadas
+46347.0;LA FLORA;solo_coordenadas
+46348.0;GUAYACANES;solo_coordenadas
+46350.0;SAN VICENTE;solo_coordenadas
+46352.0;MANANTIAL;solo_coordenadas
+46353.0;EL VERGEL;solo_coordenadas
+46355.0;MONSERRATE;solo_coordenadas
+46356.0;TANGARIFE;solo_coordenadas
+46358.0;PÍO XLL;solo_coordenadas
+46359.0;SANTA FE;solo_coordenadas
+46360.0;EL PRADO;solo_coordenadas
+46361.0;LA ESTACIÓN;solo_coordenadas
+46364.0;LOS ALMENDROS;solo_coordenadas
+46367.0;BALSILLAS;solo_coordenadas
+46368.0;LA MILAGROSA;solo_coordenadas
+46369.0;OBRERO;solo_coordenadas
+46370.0;SIGIFREDO ZULETA;solo_coordenadas
+46375.0;RESTREPO;solo_coordenadas
+46376.0;LA PLAYA;solo_coordenadas
+46377.0;SIMÓN BOLÍVAR (KENEDY);solo_coordenadas
+46378.0;BAVARIA;solo_coordenadas
+46379.0;SAN ANTONIO;solo_coordenadas
+46381.0;SAN FERNANDO;solo_coordenadas
+46383.0;BUENOS AIRES;solo_coordenadas
+46385.0;LA UNIÓN ( );solo_coordenadas
+46387.0;MAGDALENA;solo_coordenadas
+46388.0;SAN CAYETANO;solo_coordenadas
+46389.0;MAGDALENA;solo_coordenadas
+46394.0;ALFONZO LOPEZ;solo_coordenadas
+46395.0;EL PROGRESO;solo_coordenadas
+46399.0;LIBERTADORES;solo_coordenadas
+46405.0;CAIMALITO CENTRO;solo_coordenadas
+46408.0;PUERTO CALDAS;solo_coordenadas
+46410.0;ORTEZ;solo_coordenadas
+46412.0;SAN FERNANDO;solo_coordenadas
+46413.0;LA ESPERANZA;solo_coordenadas
+46414.0;ALAMEDA;solo_coordenadas
+46415.0;BRISAS DEL RIO;solo_coordenadas
+46416.0;VILLA NORA;solo_coordenadas
+46417.0;HORIZONTE;solo_coordenadas
+46418.0;EL PARAISO;solo_coordenadas
+46421.0;SAN VICENTE;solo_coordenadas
+46422.0;COLLAREJO;solo_coordenadas
+46423.0;SANTA ANA;solo_coordenadas
+46424.0;BAIRON GAVIRIA;solo_coordenadas
+46425.0;MELQUISEDEC;solo_coordenadas
+46426.0;LA FLORESTA;solo_coordenadas
+46427.0;SAN NICOLAS;solo_coordenadas
+46430.0;REPUBLICA DE FRANCIA;solo_coordenadas
+46431.0;OBRERO DEPARTAMENTAL;solo_coordenadas
+46432.0;BERLIN;solo_coordenadas
+46434.0;CARLOS HOLMES;solo_coordenadas
+46435.0;LOS NARANJOS;solo_coordenadas
+46436.0;EL ROSARIO;solo_coordenadas
+46439.0;LA CRISTINA;solo_coordenadas
+46440.0;EL DIVINO NIÑO;solo_coordenadas
+46442.0;SAN JERONIMO;solo_coordenadas
+46445.0;LOS SAUCES;solo_coordenadas
+46446.0;LOS CHORROS;solo_coordenadas
+46447.0;LA PRADERA;solo_coordenadas
+46451.0;SANTA MONICA;solo_coordenadas
+46452.0;VILLA DEL SOL;solo_coordenadas
+46453.0;EL CIPRES;solo_coordenadas
+46454.0;SAN AGUSTIN;solo_coordenadas
+46456.0;VERONA;solo_coordenadas
+46459.0;CIIDADELA COMFANDI;solo_coordenadas
+46461.0;SANTA HELENA;solo_coordenadas
+46463.0;SAN JUAN DE LA CRUZ;solo_coordenadas
+46466.0;TORRE LA VEGA;solo_coordenadas
+46467.0;SAN JOSE;solo_coordenadas
+46471.0;CONQUISTADORES;solo_coordenadas
+46472.0;LAS COLINAS;solo_coordenadas
+46473.0;CAMELLON DEL QUINDIO;solo_coordenadas
+46476.0;JORGE ELIECER GAITAN;solo_coordenadas
+46478.0;SANTA ANA;solo_coordenadas
+46479.0;SAMARIA 1;solo_coordenadas
+46480.0;SAMARIA 2;solo_coordenadas
+46481.0;EVENEZER (CUCHILLA);solo_coordenadas
+46482.0;MIRAFLOREZ CUBA;solo_coordenadas
+46483.0;NUEVO MEXICO;solo_coordenadas
+46484.0;LA CAMPIÑA (2500 LTS);solo_coordenadas
+46486.0;CONJUNTO SALAMANCA (VIA CONDINA);solo_coordenadas
+46489.0;VEREDA EL TIGRE;solo_coordenadas
+46490.0;ESPACIO NORTE;solo_coordenadas
+46491.0;PORTAL DE LAS MERCEDES;solo_coordenadas
+46492.0;EL VERGEL SANTA RORA;solo_coordenadas
+46493.0;BATARA CUBA;solo_coordenadas
+46494.0;JOSE DOMINGO ESCOBAR 2500 LTS;solo_coordenadas
+46495.0;TOKIO - VILLA SANTANA;solo_coordenadas
+46496.0;VILLA KENEDY 2500 LTS;solo_coordenadas
+46497.0;VILLA MARIA (2500 LTS);solo_coordenadas
+46498.0;VILLA ROCIÓ (2500 LTS);solo_coordenadas
+46499.0;NEIRA MARQUEZ 2500 LTS;solo_coordenadas
+46500.0;COMUNIDAD EL BOSQUE (2500 LTS);solo_coordenadas
+46501.0;QUINTAS DE PANORAMA 1;solo_coordenadas
+46502.0;BRASILIA;solo_coordenadas
+46503.0;PORTALES DE BIRMANIA (CUBA);solo_coordenadas
+46504.0;URBANIZACIÓN ALFA (GAMA);solo_coordenadas
+46506.0;EL PARAISO;solo_coordenadas
+46508.0;EL CIPRES;solo_coordenadas
+46511.0;MIRADOR DE LLANO GRANDE;solo_coordenadas
+46512.0;PORTAL DE LAS ARAUCARIAS;solo_coordenadas
+46514.0;VIA ARMENIA;solo_coordenadas
+46515.0;CONDOMINIO BOSQUE LOS LAGOS;solo_coordenadas
+46516.0;LA GUADALUPE;solo_coordenadas
+46517.0;LAS VEGAS DOS;solo_coordenadas
+46518.0;VILLA VENTO;solo_coordenadas
+46519.0;SAN GREGORIO;solo_coordenadas
+46520.0;PUEBLITO PAISA;solo_coordenadas
+46521.0;NUEVA COLOMBIA ( POR LA CUCHILLA);solo_coordenadas
+46522.0;JAIME PARDO LEAL (POR LA CUCHILLA);solo_coordenadas
+46523.0;VILLA JULIA;solo_coordenadas
+46524.0;VILLA DE LEIVA CUBA;solo_coordenadas
+46525.0;URBANIZACION NARANJAL (CUBA);solo_coordenadas
+46526.0;BOSQUES DE SANTA ELENA (AV SUR);solo_coordenadas
+46527.0;EL BOSQUE (2500 LTS);solo_coordenadas
+46528.0;VIA CONDINA;solo_coordenadas
+46529.0;PORVENIR;solo_coordenadas
+46533.0;ALAMEDA DEL CAFÉ (PARQ INDUSTRIAL);solo_coordenadas
+46534.0;PORTO ALEGRE (MONTELIBANO);solo_coordenadas
+46535.0;VALLARTA (LA BADEA);solo_coordenadas
+46537.0;LA ESNEDA;solo_coordenadas
+46542.0;LENINGRADO (ETP 2);solo_coordenadas
+46543.0;LENINGRADO (ETP 3);solo_coordenadas
+46544.0;VILLA LA PAZ (CUBA);solo_coordenadas
+46546.0;MIRADOR DE LA ESTANCIA (JAPON);solo_coordenadas
+46547.0;VILLA ORUMA;solo_coordenadas
+46548.0;EL REMANSO (VILLA SANTANA);solo_coordenadas
+46549.0;VILLA HELENA (CUBA);solo_coordenadas
+46550.0;ENTRE VERDE (HACIENDA CUBA);solo_coordenadas
+46552.0;BRISAS DEL CONSOTA (CUBA);solo_coordenadas
+46553.0;MONTE BONITO;solo_coordenadas
+46555.0;LA SAMARIA;solo_coordenadas
+46557.0;SANTA MARIA DE MILAN;solo_coordenadas
+48606.0;LOS ROSALES;solo_coordenadas
