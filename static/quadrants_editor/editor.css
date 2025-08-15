@@ -1,0 +1,90 @@
+/* Editor de cuadrantes - Estilos adicionales */
+/* Este archivo puede contener estilos específicos del editor si se necesitan */
+
+.quadrants-editor-custom {
+    /* Estilos personalizados para el editor pueden ir aquí */
+    position: relative;
+}
+
+/* Paleta de colores y controles */
+.palette { display:flex; flex-wrap:wrap; gap:6px; }
+.palette .swatch {
+  width:22px; height:22px; border-radius:4px; cursor:pointer; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.15);
+}
+.palette .swatch.active { outline:2px solid #333; }
+
+.switch { position:relative; display:inline-block; width:44px; height:24px; }
+.switch input { display:none; }
+.slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#ccc; transition:.2s; border-radius:24px; }
+.slider:before { position:absolute; content:""; height:18px; width:18px; left:3px; bottom:3px; background:white; transition:.2s; border-radius:50%; }
+input:checked + .slider { background:#4CAF50; }
+input:checked + .slider:before { transform:translateX(20px); }
+.switch-label { margin-left:6px; font-size:14px; }
+
+/* Ocultar controles de borde en el StyleEditor (best-effort; las clases varían por versión) */
+.leaflet-styleeditor .leaflet-styleeditor-subelement-weight,
+.leaflet-styleeditor .leaflet-styleeditor-subelement-stroke,
+.leaflet-styleeditor .leaflet-styleeditor-subelement-dasharray {
+  display: none !important;
+}
+
+/* Estilos para prompt personalizado (si se implementa más adelante) */
+.codigo-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.codigo-modal-content {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 300px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.codigo-modal h3 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.codigo-modal input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  margin-bottom: 15px;
+}
+
+.codigo-modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.codigo-modal button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.codigo-modal .btn-primary {
+  background: #667eea;
+  color: white;
+}
+
+.codigo-modal .btn-secondary {
+  background: #6c757d;
+  color: white;
+}

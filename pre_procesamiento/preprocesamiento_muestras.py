@@ -11,7 +11,42 @@ DB_HOST = os.getenv("DB_HOST")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
-def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
+def listar_promotores():
+    """
+    Devuelve DataFrame con columnas id_autor, apellido a partir de:
+    SELECT p.id AS id_autor, p.apellido
+    FROM fullclean_personal.personal p
+    WHERE p.id_cargo = 39;
+    """
+    conexion = mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+    
+    query = """
+    SELECT 
+        p.id AS id_autor, 
+        p.apellido
+    FROM 
+        fullclean_personal.personal p
+    WHERE 
+        p.id_cargo = 39
+    ORDER BY 
+        p.apellido;
+    """
+    
+    df = pd.read_sql(query, conexion)
+    conexion.close()
+    
+    # Asegurar tipos de datos apropiados
+    if not df.empty:
+        df['id_autor'] = df['id_autor'].astype('int64')
+        df['apellido'] = df['apellido'].fillna('').astype(str)
+    
+    return df
+
+def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
     """
     Consulta la base de datos para obtener los eventos de muestras filtrados por centroope y fechas.
     Retorna un DataFrame.
@@ -22,8 +57,9 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
         password=DB_PASSWORD
     )
     
-    query = f"""
- SELECT 
+    # Construir consulta base
+    query = """
+    SELECT 
         e.idEvento AS id_muestra,
         e.id_contacto,
         e.fecha_evento, 
@@ -44,26 +80,35 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin):
     LEFT JOIN 
         fullclean_contactos.ciudades ciu ON ciu.id = con.id_ciudad
     WHERE 
-         e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
-
-         AND e.id_evento_tipo = 15
-    AND ciu.id_centroope = '{centroope}'
+        e.fecha_evento BETWEEN %s AND %s
+        AND e.id_evento_tipo = 15
+        AND ciu.id_centroope = %s
         AND coordenada_longitud <> 0 
-        AND coordenada_latitud <> 0;
-    """
-    df = pd.read_sql(query, conexion)
-    #print(df.columns)
+        AND coordenada_latitud <> 0"""
+    
+    # Parámetros base
+    params = [f'{fecha_inicio} 00:00:00', f'{fecha_fin} 23:59:59', centroope]
+    
+    # Agregar filtro dinámico por promotores si se especifica
+    if promotores is not None and len(promotores) > 0:
+        placeholders = ",".join(["%s"] * len(promotores))
+        query += f" AND e.id_autor IN ({placeholders})"
+        params.extend(promotores)
+    
+    query += ";"
+    
+    df = pd.read_sql(query, conexion, params=params)
     conexion.close()
     return df
 
 
-def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, agentes=None):
+def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=None, agentes=None):
     """
     Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
     Retorna un DataFrame listo para usar.
     """
     # Obtener datos de muestras desde la base de datos
-    df_muestras = consultar_muestras_db(centroope, fecha_inicio, fecha_fin)
+    df_muestras = consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores)
 
     # Agregar columna id_muestra al inicio
     #df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
@@ -95,3 +140,46 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, agentes=None)
         df_muestras_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
 
     return df_muestras_completo
+
+def obtener_promotores_por_ids(ids):
+    """
+    Retorna dict {str(id_autor): nombre_completo} usando:
+    SELECT p.id AS id_autor, p.apellido AS nombre_completo
+    FROM fullclean_personal.personal p
+    WHERE p.id IN (%s, %s, ...);
+    """
+    if not ids:
+        return {}
+    
+    try:
+        conexion = mysql.connector.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+        
+        # Crear placeholders para la consulta IN
+        placeholders = ','.join(['%s'] * len(ids))
+        query = f"""
+        SELECT 
+            p.id AS id_autor, 
+            p.apellido AS nombre_completo
+        FROM 
+            fullclean_personal.personal p
+        WHERE 
+            p.id IN ({placeholders})
+        """
+        
+        df = pd.read_sql(query, conexion, params=ids)
+        conexion.close()
+        
+        # Convertir a dict {str(id): nombre_completo}
+        result = {}
+        for _, row in df.iterrows():
+            result[str(row['id_autor'])] = row['nombre_completo']
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error en obtener_promotores_por_ids: {e}")
+        return {}
