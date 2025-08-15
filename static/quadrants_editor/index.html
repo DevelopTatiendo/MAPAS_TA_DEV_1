@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Cuadrantes - MAPAS TA</title>
+    
+    <!-- Leaflet (local) -->
+    <link rel="stylesheet" href="/static/vendor/leaflet/1.9.4/leaflet.css" />
+    
+    <!-- Leaflet.Draw (local) -->
+    <link rel="stylesheet" href="/static/vendor/leaflet-draw/1.0.4/leaflet.draw.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .controls {
+            background: white;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: linear-gradient(135deg, #0f8679 0%, #32d470 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(116, 185, 255, 0.4);
+        }
+        
+        .btn-active {
+            background: linear-gradient(135deg, #00b894 0%, #00cec9 100%) !important;
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .icon {
+            width: 16px;
+            height: 16px;
+        }
+        
+        .map-container {
+            position: relative;
+            height: calc(100vh - 140px);
+            background: white;
+        }
+        
+        #map {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header {
+                padding: 12px 15px;
+            }
+            
+            .header h1 {
+                font-size: 20px;
+            }
+            
+            .controls {
+                padding: 12px 15px;
+            }
+            
+            .controls-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .btn {
+                justify-content: center;
+            }
+            
+            .map-container {
+                height: calc(100vh - 160px);
+            }
+        }
+        
+        /* Leaflet custom styles */
+        .leaflet-control-draw {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+        }
+        
+        .leaflet-draw-toolbar a {
+            background-color: white !important;
+            border: 1px solid #ccc !important;
+        }
+        
+        .leaflet-draw-toolbar a:hover {
+            background-color: #f8f9fa !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>📍 Editor de Cuadrantes</h1>
+        <p>Herramienta para crear y editar áreas geográficas con estilos personalizados</p>
+    </header>
+    
+    <!-- Controls -->
+    <div class="controls">
+        <div class="controls-group">
+            <button id="btn-export" class="btn btn-success">
+                <svg class="icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z"/>
+                </svg>
+                Exportar GeoJSON
+            </button>
+            
+            <button id="btn-import" class="btn btn-secondary">
+                <svg class="icon" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"/>
+                </svg>
+                Importar GeoJSON
+            </button>
+            
+            <input id="file-import" type="file" accept=".geojson,application/geo+json" hidden />
+            
+            <!-- Controles adicionales -->
+            <div id="toolbar-extra" style="display:flex; gap:12px; align-items:center; margin-left:12px;">
+                <!-- Paleta de colores (relleno) -->
+                <div id="palette" class="palette">
+                    <!-- Los swatches se generan por JavaScript -->
+                </div>
+
+                <!-- Modo recolor: clic en polígono aplica el color seleccionado -->
+                <button id="btn-recolor" class="btn btn-secondary" title="Clic en polígonos para aplicar color">🎨 Modo recolor</button>
+            </div>
+            
+            <div style="color: #666; font-size: 13px;">
+                Usa las herramientas de dibujo en el mapa para crear polígonos y rectángulos
+            </div>
+        </div>
+    </div>
+    
+    <!-- Map Container -->
+    <div class="map-container">
+        <!-- Mapa Leaflet -->
+        <div id="map"></div>
+    </div>
+    
+    <!-- Leaflet (local) -->
+    <script src="/static/vendor/leaflet/1.9.4/leaflet.js"></script>
+    
+    <!-- Leaflet.Draw (local) -->
+    <script src="/static/vendor/leaflet-draw/1.0.4/leaflet.draw.js"></script>
+    
+    <!-- Nuestros estilos y script -->
+    <link rel="stylesheet" href="/static/quadrants_editor/editor.css" />
+    <script defer src="/static/quadrants_editor/editor.js"></script>
+</body>
+</html>
