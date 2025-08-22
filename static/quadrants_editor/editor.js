@@ -116,8 +116,23 @@ const DRAWN_LOCKED   = new L.FeatureGroup(); // Importados => bloqueados
 map.addLayer(DRAWN_LOCKED);
 map.addLayer(DRAWN_EDITABLE);
 
-// Flag interno: NO hay toggle en UI; importados siempre bloqueados
-const allowImportedEdit = false;
+// Flag interno: editable por defecto, con toggle en UI
+let allowImportedEdit = true; // editable por defecto
+
+function setImportedEditable(enabled) {
+  allowImportedEdit = !!enabled;
+  const btn = document.getElementById('btn-toggle-imported');
+  if (btn) btn.textContent = allowImportedEdit ? '🔒 Bloquear importados' : '🔓 Editar importados';
+  // Mover capas importadas entre grupos para que el control de edición las tome o no
+  const toMove = [];
+  if (allowImportedEdit) {
+    DRAWN_LOCKED.eachLayer(l => { if (l._isImported) toMove.push(l); });
+    toMove.forEach(l => { DRAWN_LOCKED.removeLayer(l); DRAWN_EDITABLE.addLayer(l); });
+  } else {
+    DRAWN_EDITABLE.eachLayer(l => { if (l._isImported) toMove.push(l); });
+    toMove.forEach(l => { DRAWN_EDITABLE.removeLayer(l); DRAWN_LOCKED.addLayer(l); });
+  }
+}
 
 // Track del estado de edición de Leaflet.Draw
 let isEditingActive = false;
@@ -409,6 +424,13 @@ function setRecolorMode(enabled) {
         console.debug('Botón de importación configurado');
     } else {
         console.warn('Botón de importación o input de archivo no encontrado');
+    }
+
+    // Configurar botón toggle para importados
+    const btnToggleImported = document.getElementById('btn-toggle-imported');
+    if (btnToggleImported) {
+        btnToggleImported.addEventListener('click', () => setImportedEditable(!allowImportedEdit));
+        setImportedEditable(true); // por defecto: editables
     }
 });
 
