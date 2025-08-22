@@ -11,7 +11,6 @@ from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 from mapa_visitas import generar_mapa_visitas
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
-from generar_estadisticas import generar_estadisticas
 import validators
 
 #serbot software de verificacion y certificacion de https
@@ -67,7 +66,7 @@ def cargar_datos_ciudad(ciudad):
     return datos 
 
 # UI de Streamlit
-st.title("Visualización de Mapas Interactivos")
+st.title("Gestión Visual de Operaciones")
 
 st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]

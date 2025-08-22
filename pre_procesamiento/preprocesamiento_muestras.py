@@ -84,7 +84,9 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
         AND e.id_evento_tipo = 15
         AND ciu.id_centroope = %s
         AND coordenada_longitud <> 0 
-        AND coordenada_latitud <> 0"""
+        AND coordenada_latitud <> 0
+        AND id_autor not in (17415, 17466,17556,17597,17393, 17261) 
+        """
     
     # Parámetros base
     params = [f'{fecha_inicio} 00:00:00', f'{fecha_fin} 23:59:59', centroope]
