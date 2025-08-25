@@ -1,73 +1,109 @@
-# Ignorar ambientes virtuales
+# =========================
+# Python / Flask
+# =========================
+# Entornos
+.venv/
 venv/
-env/
 ENV/
+env/
 ambiente_desarrollo
 *.virtualenv
 
-# Ignorar archivos de caché de Python
+# Cachés / bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Ignorar archivos de distribución y construcción
+# Build / distribución
 dist/
 build/
 *.egg-info/
+.eggs/
 
-# Ignorar archivos de entorno
+# Cobertura / caches / tmp
+.coverage*
+*.coverage
+coverage.xml
+htmlcov/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.nox/
+.tox/
+pytest_cache/
+
+# Logs
+*.log
+*app.log
+logs/
+
+# Variables de entorno (mantén un ejemplo)
 .env
 .env.*
-.venv
-venv/
+!.env.example
 
-# Ignorar archivos de IDEs
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.map
+
+# Bloqueos (si NO usas npm/yarn/pnpm en este repo)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# =========================
+# IDE / OS
+# =========================
 .vscode/
 .idea/
 *.swp
 *.swo
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# Ignorar archivos generados por tu aplicación
+# =========================
+# App-specific
+# =========================
+# Mapas HTML generados por la app (mantén solo los de esta carpeta)
 static/maps/*.html
-*.html
-*.pdf
 
+# ⚠️ No ignores todo *.html / *.pdf globalmente
+# Si necesitas ignorar PDFs de informes, hazlo por carpeta:
+# reports/**/*.pdf
 
+# Mantener vendorizadas las libs del editor (NO ignorarlas)
+!static/vendor/**
+!static/quadrants_editor/**
 
-# Ignorar registros (logs)
-*.log
-*app.log
+# Asegura que los GeoJSON del proyecto se versionen
+!geojson/**
 
 # Configuración local de desarrollo
 instance/
 .webassets-cache
 
-# Ignorar checkpoints de Jupyter Notebook
-.ipynb_checkpoints
+# Jupyter
+.ipynb_checkpoints/
 
-# Ignorar archivos de sistema
-.DS_Store
-Thumbs.db
-
-# Ignorar archivos temporales
+# Temporales
 *.tmp
 *.bak
+tmp/
+scratch/
 
-# Ignorar archivos de configuración de depuración
+# Depuración
 *.prof
 *.lprof
 *.stackdump
 
-# Ignorar resultados de pruebas
-*.coverage
-coverage.xml
-*.cover
-
-# Ignorar configuraciones de herramientas de análisis
-.cache/
-.nox/
-.tox/
-pytest_cache/
-
-# Ignorar dependencias en contenedores
+# Contenedores
 docker-compose.override.yml

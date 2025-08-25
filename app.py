@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import json
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
@@ -9,7 +10,7 @@ from mapa_pedidos import generar_mapa_pedidos
 from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 from mapa_visitas import generar_mapa_visitas
 from mapa_muestras import generar_mapa_muestras
-from generar_estadisticas import generar_estadisticas
+from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
 
 #serbot software de verificacion y certificacion de https
@@ -65,7 +66,7 @@ def cargar_datos_ciudad(ciudad):
     return datos 
 
 # UI de Streamlit
-st.title("Visualización de Mapas Interactivos")
+st.title("Gestión Visual de Operaciones")
 
 st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
@@ -75,11 +76,69 @@ tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas"]
 st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
+# Limpiar URL del mapa si cambian ciudad o tipo de mapa
+current_selection = f"{ciudad}_{tipo_mapa}"
+if "last_selection" not in st.session_state:
+    st.session_state["last_selection"] = current_selection
+elif st.session_state["last_selection"] != current_selection:
+    st.session_state["map_url"] = None
+    st.session_state["last_selection"] = current_selection
+
 # Cargar datos según la ciudad seleccionada
 datos_ciudad = cargar_datos_ciudad(ciudad)
 
 # Formulario dinámico de filtros
 st.subheader("Aplicar Filtros")
+
+# --- CONTENEDOR REACTIVO FUERA DEL FORM ---
+promotor_container = st.container()
+
+# Estado por defecto
+if "promotores_sel" not in st.session_state:
+    st.session_state["promotores_sel"] = None
+if "filtrar_por_promotor" not in st.session_state:
+    st.session_state["filtrar_por_promotor"] = False
+
+with promotor_container:
+    if tipo_mapa == "Muestras":
+        st.session_state["filtrar_por_promotor"] = st.toggle("Filtrar por promotor", value=st.session_state["filtrar_por_promotor"])
+        if st.session_state["filtrar_por_promotor"]:
+            with st.spinner("Cargando promotores..."):
+                try:
+                    df_prom = listar_promotores()
+                    # Depuración en terminal
+                    print("[DEBUG] listar_promotores rows:", 0 if df_prom is None else len(df_prom))
+                    if df_prom is not None and not df_prom.empty:
+                        print("[DEBUG] listar_promotores head:\n", df_prom.head(10).to_string())
+                        logging.info("promotores.head():\n%s", df_prom.head(10).to_string())
+                except Exception as e:
+                    st.error(f"Error al cargar promotores: {e}")
+                    df_prom = None
+
+            if df_prom is None or df_prom.empty:
+                st.info("No se encontraron promotores en la BD.")
+                st.session_state["promotores_sel"] = None
+            else:
+                ids = df_prom["id_autor"].astype(str).tolist()
+                etiquetas = (df_prom["apellido"].fillna("").astype(str) + " · " + df_prom["id_autor"].astype(str)).tolist()
+                label_map = dict(zip(ids, etiquetas))
+
+                seleccion = st.multiselect(
+                    "Promotores",
+                    options=ids,
+                    format_func=lambda x: label_map.get(x, x),
+                    placeholder="Escribe para buscar…"
+                )
+                if seleccion:
+                    try:
+                        st.session_state["promotores_sel"] = [int(x) for x in seleccion]
+                    except Exception:
+                        st.session_state["promotores_sel"] = seleccion
+                else:
+                    st.session_state["promotores_sel"] = None
+        else:
+            st.session_state["promotores_sel"] = None
+
 with st.form(key="filtros_form"):
     if tipo_mapa == "Pedidos":
         rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
@@ -96,6 +155,37 @@ with st.form(key="filtros_form"):
         barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
+        
+        # Expander para cuadrantes personalizados
+        with st.expander("🗺️ Cuadrantes (opcional)"):
+            st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
+            uploaded_file = st.file_uploader(
+                "Archivo GeoJSON:",
+                type=['geojson'],
+                key="muestras_geojson_uploader"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    # Leer y parsear el archivo GeoJSON
+                    geojson_content = uploaded_file.read().decode('utf-8')
+                    override_fc = json.loads(geojson_content)
+                    
+                    # Validar que sea un FeatureCollection
+                    if override_fc.get('type') == 'FeatureCollection':
+                        st.session_state["muestras_override_fc"] = override_fc
+                        st.success(f"✅ Archivo cargado: {uploaded_file.name}")
+                        st.caption(f"Se usará como base geográfica en lugar de las comunas de {ciudad}.")
+                    else:
+                        st.error("❌ El archivo debe ser un FeatureCollection válido.")
+                        st.session_state["muestras_override_fc"] = None
+                except Exception as e:
+                    st.error(f"❌ Error al procesar el archivo: {str(e)}")
+                    st.session_state["muestras_override_fc"] = None
+            else:
+                # Limpiar session state si no hay archivo
+                if "muestras_override_fc" in st.session_state:
+                    del st.session_state["muestras_override_fc"]
     elif tipo_mapa == "Visitas":
         rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
         ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
@@ -106,10 +196,98 @@ with st.form(key="filtros_form"):
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         submit_button = st.form_submit_button("Generar Mapa", use_container_width=True, type="primary")
-        mostrar_estadisticas = st.form_submit_button("Generar Estadísticas", use_container_width=True, type="secondary")
+    
+    # Placeholder fijo para el enlace del mapa generado
+    link_placeholder = st.empty()
+
+# Separador sutil entre secciones
+st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+# Card secundario para Cuadrantes (opcional)
+ciudad_normalizada = ciudad.upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+editor_url = f"{FLASK_SERVER}/editor/cuadrantes?city={ciudad_normalizada}"
+
+st.markdown(
+    f"""
+    <style>
+    .card-cuadrantes {{
+        background: #fafafa;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }}
+    .card-cuadrantes h3 {{
+        color: #262730;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 0 0 0.5rem 0;
+    }}
+    .card-cuadrantes p {{
+        color: #6c757d;
+        font-size: 14px;
+        line-height: 1.4;
+        margin: 0 0 1.5rem 0;
+    }}
+    .cta-editor {{
+        display: inline-block;
+        padding: 12px 20px;
+        background: linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%);
+        color: #FFFFFF;
+        text-decoration: none;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 16px;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
+        transition: all 0.3s ease;
+        text-align: center;
+        width: 100%;
+        max-width: 280px;
+    }}
+    .cta-editor:hover {{
+        color: #FFFFFF;
+        text-decoration: none;
+    }}
+    .cta-editor:focus {{
+        outline: 2px solid #2563EB;
+        outline-offset: 2px;
+        color: #FFFFFF;
+        text-decoration: none;
+    }}
+    @media (prefers-color-scheme: dark) {{
+        .card-cuadrantes {{
+            background: #2d3748;
+            border-color: #4a5568;
+        }}
+        .card-cuadrantes h3 {{
+            color: #f7fafc;
+        }}
+        .card-cuadrantes p {{
+            color: #a0aec0;
+        }}
+    }}
+    </style>
+    <div class="card-cuadrantes">
+        <h3>Segmentación de ciudades</h3>
+        <p>Dibuje cuadrantes a base de polígonos para dividir areas de interés en la ciudad seleccionada.</p>
+        <div style="text-align: center;">
+            <a href="{editor_url}" 
+               target="_blank" 
+               class="cta-editor"
+               aria-label="Abrir editor de cuadrantes para la ciudad seleccionada"
+               tabindex="0">
+                🗺️ Abrir editor de cuadrantes
+            </a>
+        </div>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 
 # Procesamiento
-if submit_button or mostrar_estadisticas:
+if submit_button:
     try:
         if submit_button:
             if tipo_mapa == "Pedidos":
@@ -120,43 +298,45 @@ if submit_button or mostrar_estadisticas:
                 map_type = "visitas"
             elif tipo_mapa == "Facturas Vencidas":
                 filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
-        
                 map_type = "facturas"
             elif tipo_mapa == "Muestras":
-                filename = manejar_error(generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios)
+                override_fc = st.session_state.get("muestras_override_fc")
+                promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
+                resultado = manejar_error(
+                    generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
+                )
+                if resultado:
+                    filename, n_puntos = resultado
+                else:
+                    filename, n_puntos = None, 0
                 map_type = "muestras"
             elif tipo_mapa == "Pruebas":
                 filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
 
-            map_url = f"{FLASK_SERVER}/maps/{filename}"
+            if filename:
+                map_url = f"{FLASK_SERVER}/maps/{filename}"
+                st.session_state["map_url"] = map_url
+                # Actualizar el placeholder con el enlace
+                link_placeholder.markdown(
+                    f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+                    unsafe_allow_html=True
+                )
+                
+                # Warning si hay filtro y no hubo puntos
+                if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+                    st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
 
-            timestamp = int(time.time())
-            st.markdown(f"[Ver Mapa en Nueva Pestaña]({map_url}?v={timestamp})")
-
-
-        if mostrar_estadisticas:
-            st.markdown("---")  # Separador visual
-            st.subheader("📊 Estadísticas Generadas")
-            
-            graficos = manejar_error(generar_estadisticas, tipo_mapa, ciudad,
-                             fecha_inicio=locals().get("fecha_inicio"),
-                             fecha_fin=locals().get("fecha_fin"),
-                             ruta=locals().get("ruta"),
-                             ruta_cobro=locals().get("ruta_cobro"),
-                             barrios=locals().get("barrios"),
-                             edad_min=locals().get("edad_min"),
-                             edad_max=locals().get("edad_max"),
-                             agrupacion=locals().get("agrupacion"))
-
-            if graficos:
-                for i, (titulo, grafico) in enumerate(graficos.items()):
-                    col = st.columns(2)[i % 2]  # Alternar columnas
-                    with col:
-                        st.write(f"### {titulo}")
-                        st.plotly_chart(grafico, use_container_width=True)
-            else:
-                st.warning("⚠️ No hay datos disponibles para generar estadísticas.")
     except Exception as e:
         logging.error(f"❌ Error inesperado: {str(e)}")
         st.error("⚠️ Se produjo un error inesperado. Revisa los logs.")
+
+# Manejar el enlace en el placeholder basado en session state
+if "map_url" in st.session_state and st.session_state["map_url"] is not None:
+    if not submit_button:  # Solo mostrar si no acabamos de procesar (evita duplicación)
+        link_placeholder.markdown(
+            f'<a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+            unsafe_allow_html=True
+        )
+elif not submit_button:
+    link_placeholder.empty()
 
