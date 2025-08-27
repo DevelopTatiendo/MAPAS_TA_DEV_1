@@ -5,10 +5,19 @@ import numpy as np
 import logging
 import re
 from folium import FeatureGroup
+from folium.plugins import FeatureGroupSubGroup
 from matplotlib import colors
-from pre_procesamiento.preprocesamiento_muestras import crear_df
+from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores
 import unicodedata
 from utils.gestor_mapas import guardar_mapa_controlado
+
+# Importar controles de capas disponibles
+from folium.plugins import GroupedLayerControl
+try:
+    from folium.plugins import TreeLayerControl
+    HAS_TREE_CONTROL = True
+except ImportError:
+    HAS_TREE_CONTROL = False
 
 
 # Configuración de logs
@@ -36,6 +45,124 @@ def generate_hsv_colors(n):
     """Genera una paleta de colores HSV con mayor contraste."""
     hues = np.linspace(0, 1, n, endpoint=False)
     return [colors.rgb2hex(colors.hsv_to_rgb((hue, 1.0, 1.0))) for hue in hues]
+
+def get_promotor_display_name(pid, df_filtrado, legend_name_map=None):
+    """Función centralizada para obtener el nombre visible del promotor."""
+    pid_str = str(pid)
+    
+    # Si ya existe en el mapa de nombres, usarlo
+    if legend_name_map and pid_str in legend_name_map:
+        return legend_name_map[pid_str]
+    
+    # Buscar en el DataFrame filtrado
+    datos_promotor = df_filtrado[df_filtrado['id_autor'] == pid]
+    if not datos_promotor.empty:
+        row = datos_promotor.iloc[0]
+        
+        # Buscar columna de nombre disponible
+        nombre_col = None
+        for col in ['apellido', 'apellido_autor', 'promotor_nombre', 'nombre_autor', 'nombre_completo']:
+            if col in row.index and pd.notna(row[col]) and str(row[col]).strip():
+                nombre_col = col
+                break
+        
+        if nombre_col:
+            return compactar_dos_palabras(str(row[nombre_col]), pid_str)
+    
+    return f"Promotor {pid_str}"
+
+def build_promotores_groups(df, parent_group, colores_promotores_map, legend_name_map=None, mapa=None):
+    """Construye subgrupos (FeatureGroupSubGroup) por promotor, ordenados desc.
+    Devuelve lista de tuplas (nombre_promotor, subgrupo, count, color)."""
+    promotor_counts = df.groupby('id_autor').size().sort_values(ascending=False)
+
+    grupos_promotores = []
+    for idx, (pid, count) in enumerate(promotor_counts.items()):
+        datos_promotor = df[df['id_autor'] == pid]
+        if datos_promotor.empty:
+            continue
+
+        nombre_promotor = get_promotor_display_name(pid, df, legend_name_map)
+        color_promotor = colores_promotores_map.get(str(pid)) or colores_promotores_map.get(pid) or list(colores_promotores_map.values())[idx % max(1, len(colores_promotores_map))]
+
+        # Subgrupo dentro de PROMOTORES (visible por defecto)
+        sg = FeatureGroupSubGroup(parent_group, name=nombre_promotor, show=True)
+        if mapa is not None:
+            mapa.add_child(sg)
+
+        for _, row in datos_promotor.iterrows():
+            lat = row.get('coordenada_latitud', row.get('latitud', None))
+            lng = row.get('coordenada_longitud', row.get('longitud', None))
+            if lat is None or lng is None:
+                continue
+
+            popup_text = f"""
+            <b>Promotor:</b> {nombre_promotor}<br>
+            <b>ID:</b> {pid}<br>
+            <b>Barrio:</b> {row.get('barrio', '-')}<br>
+            <b>Fecha:</b> {row.get('fecha_evento', row.get('fecha_muestra', '-'))}
+            """
+
+            folium.CircleMarker(
+                location=[lat, lng],
+                radius=5,
+                color=color_promotor,
+                fill=True,
+                fillColor=color_promotor,
+                fillOpacity=0.7,
+                popup=folium.Popup(popup_text, max_width=320),
+            ).add_to(sg)
+
+        grupos_promotores.append((nombre_promotor, sg, count, color_promotor))
+
+    return grupos_promotores
+
+def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
+    """Construye subgrupos (FeatureGroupSubGroup) por barrio, solo participantes, ordenados desc.
+    Devuelve lista de tuplas (barrio, subgrupo, count)."""
+    barrio_counts = df.groupby('barrio').size().sort_values(ascending=False)
+
+    grupos_barrios = []
+    color_barrio = '#9aa0a6'  # Gris neutro
+
+    for barrio, count in barrio_counts.items():
+        if pd.isna(barrio) or str(barrio).strip() == '' or count == 0:
+            continue
+
+        datos_barrio = df[df['barrio'] == barrio]
+
+        # Subgrupo dentro de BARRIOS (apagado por defecto)
+        sg = FeatureGroupSubGroup(parent_group, name=str(barrio), show=False)
+        if mapa is not None:
+            mapa.add_child(sg)
+
+        for _, row in datos_barrio.iterrows():
+            lat = row.get('coordenada_latitud', row.get('latitud', None))
+            lng = row.get('coordenada_longitud', row.get('longitud', None))
+            if lat is None or lng is None:
+                continue
+
+            nombre_promotor = get_promotor_display_name(row['id_autor'], df, legend_name_map)
+            popup_text = f"""
+            <b>Barrio:</b> {barrio}<br>
+            <b>Promotor:</b> {nombre_promotor}<br>
+            <b>ID:</b> {row['id_autor']}<br>
+            <b>Fecha:</b> {row.get('fecha_evento', row.get('fecha_muestra', '-'))}
+            """
+
+            folium.CircleMarker(
+                location=[lat, lng],
+                radius=4,
+                color=color_barrio,
+                fill=True,
+                fillColor=color_barrio,
+                fillOpacity=0.55,
+                popup=folium.Popup(popup_text, max_width=320),
+            ).add_to(sg)
+
+        grupos_barrios.append((str(barrio), sg, count))
+
+    return grupos_barrios
 
 def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None):
     try:
@@ -282,43 +409,129 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     style_function=cuadrante_style
                 ).add_to(cuadrantes_group)
 
-        # 3) Crear FeatureGroups por promotor (en vez de por barrio)
-        for pid in promotores_unicos:
-            label = label_map.get(pid, f"ID {pid}")
-            grupo = FeatureGroup(name=label).add_to(mapa)  # aparecerá en el LayerControl
-            datos_prom = df_filtrado[df_filtrado["id_autor_str"] == pid]
-            color = promotor_colors[pid]
+        # 3) Crear carpetas (padres) y subgrupos ordenados
+        # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
+        fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
 
-            for _, row in datos_prom.iterrows():
-                folium.CircleMarker(
-                    location=[row['coordenada_latitud'], row['coordenada_longitud']],
-                    radius=5,
-                    color=color,
-                    fill=True,
-                    fill_opacity=0.7,
-                    popup=f"Promotor: {label}<br>Barrio: {row.get('barrio','-')}<br>{row['fecha_evento']}<br>{row['tipo_evento']} ({row.get('tipo_categoria','-')})"
-                ).add_to(grupo)
+        # Definir colores por promotor en el orden de conteo
+        promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
+        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
+        palette = generate_hsv_colors(len(promotores_ordenados))
+        colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
 
-        # Agregar control de capas
-        folium.LayerControl().add_to(mapa)
-
-        # 4) Leyenda flotante colapsable (sin JS externo)
-        items_html = "".join(
-            f"""<div style='display:flex;align-items:center;margin:4px 0;'>
-                   <span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{promotor_colors[pid]};margin-right:8px;'></span>
-                   <span style='font-size:12px;color:#111;'>{legend_name_map.get(str(pid), f"id {pid}")}</span>
-                </div>"""
-            for pid in promotores_unicos
+        # Construir subgrupos SOLO para promotores
+        grupos_promotores = build_promotores_groups(
+            df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
+            legend_name_map=legend_name_map, mapa=mapa
         )
+
+        # NO crear grupos de barrios para el control
+
+        # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
+        if HAS_TREE_CONTROL:
+            # TreeLayerControl automático detecta FeatureGroup + FeatureGroupSubGroup
+            TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
+        else:
+            # Fallback simple
+            folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
+
+        # 5) Obtener métricas de ventas y construir leyenda tabular
+        
+        # ids en el orden del control/leyenda
+        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
+
+        df_metrics = obtener_metricas_pedidos_por_promotores(
+            centroope=centroope,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            ids_promotores=promotores_ordenados
+        )
+
+        # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA)
+        metrics_map = {int(r["id_vendedor"]): (int(r["cant_pedidos"]), float(r.get("valor_conIVA", 0.0)))
+                       for _, r in df_metrics.iterrows()}
+
+        def fmt_cop(valor):
+            try:
+                # miles con punto y sin decimales (ej: $1.234.567)
+                return "$" + f"{valor:,.0f}".replace(",", ".")
+            except Exception:
+                return "$0"
+
+        # Construir lista de datos por promotor fusionando todas las fuentes
+        promotor_data = []
+        
+        for (nombre, _sg, _count_muestras, color) in grupos_promotores:
+            # recuperar el id real del promotor a partir del nombre:
+            # usamos el reverse de legend_name_map
+            pid_match = None
+            for pid_str, disp_name in legend_name_map.items():
+                if disp_name == nombre:
+                    pid_match = int(pid_str)
+                    break
+
+            # Obtener datos de muestras, pedidos y valor
+            muestras = _count_muestras
+            cant_ped, valor_ped = (0, 0.0)
+            if pid_match is not None and pid_match in metrics_map:
+                cant_ped, valor_ped = metrics_map[pid_match]
+            
+            # Calcular efectividad
+            efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
+            
+            promotor_data.append({
+                'id': pid_match,
+                'nombre': nombre,
+                'color': color,
+                'muestras': muestras,
+                'pedidos': cant_ped,
+                'valor': valor_ped,
+                'efectividad': efectividad
+            })
+        
+        # Ordenar por pedidos descendente
+        promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
+        
+        # Construir filas HTML con el nuevo orden
+        rows_html = []
+        for data in promotor_data:
+            rows_html.append(f"""
+                <tr>
+                    <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
+                        <span>{data['nombre']}</span>
+                    </td>
+                    <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
+                    <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
+                    <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
+                    <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
+                </tr>
+            """)
+
         legend_html = f"""
         <div style="
             position: fixed; bottom: 20px; left: 20px; z-index: 1000;
             background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 40vh; overflow-y: auto;">
-            <details open>
-              <summary style="cursor:pointer;font-weight:600;color:#111;">Leyenda de promotores</summary>
-              <div style="margin-top:8px;">{items_html}</div>
-            </details>
+            box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+          <details open>
+            <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
+            <div style="margin-top:8px;">
+              <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {''.join(rows_html)}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </div>
         """
         mapa.get_root().html.add_child(folium.Element(legend_html))
