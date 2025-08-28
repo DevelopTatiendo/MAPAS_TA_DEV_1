@@ -5,3 +5,5 @@ Ejemplo:
 O:
 
 “Este chat es el Programador Experto. Tu tarea es ejecutar los requerimientos claros que te entrego desde el Gestor.”
+
+
