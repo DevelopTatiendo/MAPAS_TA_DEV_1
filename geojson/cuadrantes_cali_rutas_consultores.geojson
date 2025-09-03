@@ -1,0 +1,65 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "codigo": "CL_3_01",
+        "fillColor": "#ffeb3b",
+        "color": "#333333",
+        "weight": 2,
+        "fillOpacity": 0.4
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-76.5450, 3.4400],
+          [-76.5350, 3.4400],
+          [-76.5350, 3.4500],
+          [-76.5450, 3.4500],
+          [-76.5450, 3.4400]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "codigo": "CL_3_02",
+        "fillColor": "#4caf50",
+        "color": "#333333",
+        "weight": 2,
+        "fillOpacity": 0.4
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-76.5350, 3.4400],
+          [-76.5250, 3.4400],
+          [-76.5250, 3.4500],
+          [-76.5350, 3.4500],
+          [-76.5350, 3.4400]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "codigo": "COMUNA_1",
+        "fillColor": "#e3f2fd",
+        "color": "#1976d2",
+        "weight": 1,
+        "fillOpacity": 0.1
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-76.5500, 3.4300],
+          [-76.5200, 3.4300],
+          [-76.5200, 3.4600],
+          [-76.5500, 3.4600],
+          [-76.5500, 3.4300]
+        ]]
+      }
+    }
+  ]
+}

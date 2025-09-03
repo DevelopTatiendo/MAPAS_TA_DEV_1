@@ -72,7 +72,7 @@ st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
-tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas"]
+tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
@@ -192,6 +192,70 @@ with st.form(key="filtros_form"):
         agrupacion = st.radio("Tipo de agrupación:", ["Agrupado", "No agrupado"], index=0)
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
+    elif tipo_mapa == "Consultores":
+        # Lista de rutas desde BD (id_ruta, ruta)
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta = None
+            nombre_ruta_ui = None
+        else:
+            import re
+            # Crear lista con ordenamiento robusto descendente
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+            
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+            
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+            
+            # Selector que muestra solo el nombre de la ruta
+            ruta_seleccionada = st.selectbox("Seleccione la ruta (obligatorio):", options=options_list)
+            id_ruta = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+            nombre_ruta_ui = ruta_seleccionada if ruta_seleccionada else None
+        
+        # Fechas obligatorias
+        fecha_inicio = st.date_input("Fecha de Inicio")
+        fecha_fin = st.date_input("Fecha de Fin")
+        
+        # Expander para cuadrantes personalizados
+        with st.expander("🗺️ Cuadrantes (opcional)"):
+            st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
+            uploaded_file = st.file_uploader(
+                "Archivo GeoJSON:",
+                type=['geojson'],
+                key="consultores_geojson_uploader"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    # Leer y parsear el archivo GeoJSON
+                    geojson_content = uploaded_file.read().decode('utf-8')
+                    override_fc = json.loads(geojson_content)
+                    
+                    # Validar que sea un FeatureCollection
+                    if override_fc.get('type') == 'FeatureCollection':
+                        st.session_state["consultores_override_fc"] = override_fc
+                        st.success(f"✅ Archivo cargado: {uploaded_file.name}")
+                    else:
+                        st.error("❌ El archivo debe ser un FeatureCollection válido.")
+                        st.session_state["consultores_override_fc"] = None
+                except Exception as e:
+                    st.error(f"❌ Error al procesar el archivo: {str(e)}")
+                    st.session_state["consultores_override_fc"] = None
+            else:
+                # Limpiar session state si no hay archivo
+                if "consultores_override_fc" in st.session_state:
+                    del st.session_state["consultores_override_fc"]
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -310,6 +374,23 @@ if submit_button:
                 else:
                     filename, n_puntos = None, 0
                 map_type = "muestras"
+            elif tipo_mapa == "Consultores":
+                if not id_ruta:
+                    st.error("Seleccione una ruta válida.")
+                    filename = None
+                elif fecha_inicio > fecha_fin:
+                    st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
+                    filename = None
+                else:
+                    # Transformar fechas a strings día-completo
+                    f_ini_dt = f"{fecha_inicio} 00:00:00"
+                    f_fin_dt = f"{fecha_fin} 23:59:59"
+                    # Recuperar override_fc desde session_state
+                    override_fc = st.session_state.get("consultores_override_fc")
+                    # Llamar función simplificada
+                    from mapa_consultores import generar_mapa_consultores
+                    filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, override_fc)
+                    map_type = "consultores"
             elif tipo_mapa == "Pruebas":
                 filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
 
@@ -339,4 +420,3 @@ if "map_url" in st.session_state and st.session_state["map_url"] is not None:
         )
 elif not submit_button:
     link_placeholder.empty()
-
