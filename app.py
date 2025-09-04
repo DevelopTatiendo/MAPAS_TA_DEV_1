@@ -227,35 +227,10 @@ with st.form(key="filtros_form"):
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
         
-        # Expander para cuadrantes personalizados
-        with st.expander("🗺️ Cuadrantes (opcional)"):
-            st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
-            uploaded_file = st.file_uploader(
-                "Archivo GeoJSON:",
-                type=['geojson'],
-                key="consultores_geojson_uploader"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    # Leer y parsear el archivo GeoJSON
-                    geojson_content = uploaded_file.read().decode('utf-8')
-                    override_fc = json.loads(geojson_content)
-                    
-                    # Validar que sea un FeatureCollection
-                    if override_fc.get('type') == 'FeatureCollection':
-                        st.session_state["consultores_override_fc"] = override_fc
-                        st.success(f"✅ Archivo cargado: {uploaded_file.name}")
-                    else:
-                        st.error("❌ El archivo debe ser un FeatureCollection válido.")
-                        st.session_state["consultores_override_fc"] = None
-                except Exception as e:
-                    st.error(f"❌ Error al procesar el archivo: {str(e)}")
-                    st.session_state["consultores_override_fc"] = None
-            else:
-                # Limpiar session state si no hay archivo
-                if "consultores_override_fc" in st.session_state:
-                    del st.session_state["consultores_override_fc"]
+
+        
+        # Checkbox para mostrar puntos fuera de cuadrantes
+        mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -384,11 +359,9 @@ if submit_button:
                 # Transformar fechas a strings día-completo
                 f_ini_dt = f"{fecha_inicio} 00:00:00"
                 f_fin_dt = f"{fecha_fin} 23:59:59"
-                # Recuperar override_fc desde session_state
-                override_fc = st.session_state.get("consultores_override_fc")
                 # Llamar función simplificada
                 from mapa_consultores import generar_mapa_consultores
-                filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, override_fc)
+                filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
                 map_type = "consultores"
         elif tipo_mapa == "Pruebas":
             filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)

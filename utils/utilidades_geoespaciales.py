@@ -195,7 +195,7 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
     
     Returns:
         pd.DataFrame: Resumen con columnas ['codigo_cuadrante', 'area_m2', 'visitas_tot', 
-                     'visitas_por_1000m2', 'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
+                     'visitas_por_m2', 'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
     """
     inicio_tiempo = time.time()
     logger.info("Generando resumen por cuadrante")
@@ -209,7 +209,7 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
         logger.warning("No hay eventos dentro de cuadrantes")
         # Retornar estructura vacía pero correcta
         return pd.DataFrame(columns=['codigo_cuadrante', 'area_m2', 'visitas_tot', 
-                                   'visitas_por_1000m2', 'aperturas_tot', 'ventas_tot', 
+                                   'visitas_por_m2', 'aperturas_tot', 'ventas_tot', 
                                    'total_venta_tot', 'consultores'])
     
     # Agregar por cuadrante
@@ -235,12 +235,12 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
     # Join con áreas
     resumen = resumen.merge(areas_df, on='codigo_cuadrante', how='left')
     
-    # Calcular visitas por 1000m2
-    resumen['visitas_por_1000m2'] = 0.0
+    # Calcular visitas por m2
+    resumen['visitas_por_m2'] = 0.0
     mask_area_valida = resumen['area_m2'] > 0
-    resumen.loc[mask_area_valida, 'visitas_por_1000m2'] = (
+    resumen.loc[mask_area_valida, 'visitas_por_m2'] = (
         resumen.loc[mask_area_valida, 'visitas_tot'] / 
-        resumen.loc[mask_area_valida, 'area_m2'] * 1000
+        resumen.loc[mask_area_valida, 'area_m2']
     )
     
     # Agregar total_venta_tot (requiere datos de ventas con valor)
@@ -248,7 +248,7 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
     resumen['total_venta_tot'] = 0.0
     
     # Reordenar columnas
-    columnas_finales = ['codigo_cuadrante', 'area_m2', 'visitas_tot', 'visitas_por_1000m2', 
+    columnas_finales = ['codigo_cuadrante', 'area_m2', 'visitas_tot', 'visitas_por_m2', 
                        'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
     resumen = resumen[columnas_finales]
     

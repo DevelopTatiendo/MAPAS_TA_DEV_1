@@ -96,7 +96,32 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     # Obtener datos del cuadrante
     row = resumen_cuadrante.iloc[0]
     area_m2 = float(row.get('area_m2', 0))
-    visitas_por_1000m2 = float(row.get('visitas_por_1000m2', 0))
+    visitas_tot = float(row.get('visitas_tot', 0))
+    
+    # Obtener visitas_por_m2 con fallback para compatibilidad
+    if 'visitas_por_m2' in row.index:
+        visitas_por_m2 = float(row.get('visitas_por_m2', 0))
+    else:
+        # Fallback: calcular visitas_por_m2 = visitas_tot / area_m2
+        visitas_por_m2 = visitas_tot / area_m2 if area_m2 > 0 else 0.0
+    
+    # Calcular valores derivados para mostrar en ambas unidades
+    if area_m2 > 0:
+        area_km2 = area_m2 / 1_000_000  # Convertir m² a km²
+        visitas_por_km2 = visitas_por_m2 * 1_000_000  # Convertir visitas/m² a visitas/km²
+        
+        # Formatear valores con los formatos especificados
+        area_m2_fmt = f"{area_m2:,.0f}"  # Área en m² con separador de miles, 0 decimales
+        area_km2_fmt = f"{area_km2:.2f}"  # Área en km² con 2 decimales
+        visitas_m2_fmt = f"{visitas_por_m2:.6f}"  # Visitas/m² con 6 decimales
+        visitas_km2_fmt = f"{visitas_por_km2:.1f}"  # Visitas/km² con 1 decimal
+        
+        area_texto = f"{area_m2_fmt} m² ({area_km2_fmt} km²)"
+        densidad_texto = f"{visitas_m2_fmt} (≈ {visitas_km2_fmt} visitas/km²)"
+    else:
+        # Si area_m2 no está o es 0, mostrar s/d
+        area_texto = "s/d"
+        densidad_texto = "s/d"
     
     # Obtener detalles por consultor para este cuadrante
     if df_detalle.empty:
@@ -113,7 +138,7 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     <div style="font-family: Arial, sans-serif; max-width: 400px;">
         <h4 style="margin: 0 0 8px 0; color: #2563eb;">{codigo_cuadrante}</h4>
         <p style="margin: 0 0 12px 0; font-size: 12px; color: #6b7280;">
-            <b>Área:</b> {area_m2:,.0f} m² | <b>Visitas/1000m²:</b> {visitas_por_1000m2:.2f}
+            <b>Área:</b> {area_texto} | <b>Visitas/m²:</b> {densidad_texto}
         </p>
     """
     
@@ -161,7 +186,7 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     
     return html
 
-def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nombre, override_fc=None):
+def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nombre, mostrar_fuera: bool = False):
     """
     Genera mapa de consultores con filtro espacial por cuadrantes y popups detallados.
     
@@ -171,7 +196,7 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         ciudad: nombre de la ciudad
         ruta_id: id_ruta numérico
         ruta_nombre: nombre de la ruta (string mostrado en UI)
-        override_fc: GeoJSON subido por usuario (opcional)
+        mostrar_fuera: bool para mostrar puntos fuera de cuadrantes en rojo (default: False)
     """
     # 1) Normalizar ciudad y resolver centro
     ciudadN = _norm_city(ciudad)
@@ -187,22 +212,25 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     
     total_eventos = len(df_eventos) if df_eventos is not None else 0
 
-    # 3) Determinar qué GeoJSON usar como base
+    # 3) Cargar GeoJSON estático para la ciudad
     geojson_a_usar = None
-    if override_fc is not None:
-        # Usuario subió archivo - usar ese
-        geojson_a_usar = override_fc
-    else:
-        # No hay archivo subido - usar archivo base para esta ciudad
-        archivo_base = f"geojson/cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson"
-        try:
-            with open(archivo_base, 'r', encoding='utf-8') as f:
-                geojson_a_usar = json.load(f)
-        except FileNotFoundError:
-            geojson_a_usar = None
-        except Exception as e:
-            print(f"Error cargando archivo base: {e}")
-            geojson_a_usar = None
+    archivo_base = f"geojson/cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson"
+    
+    try:
+        with open(archivo_base, 'r', encoding='utf-8') as f:
+            geojson_a_usar = json.load(f)
+        logger.info(f"GeoJSON cargado exitosamente: {archivo_base}")
+    except FileNotFoundError:
+        error_msg = f"Error: No se encontró el archivo GeoJSON requerido: {archivo_base}"
+        logger.error(error_msg)
+        print(error_msg)
+        print(f"Por favor, asegúrese de que existe el archivo para la ciudad {ciudad}")
+        geojson_a_usar = None
+    except Exception as e:
+        error_msg = f"Error cargando archivo GeoJSON {archivo_base}: {e}"
+        logger.error(error_msg)
+        print(error_msg)
+        geojson_a_usar = None
 
     # 4) Obtener DataFrames de agregación para popups
     df_resumen = pd.DataFrame()
@@ -211,17 +239,17 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     try:
         # Intentar obtener los datos de agregación usando las funciones del GRANDE 3
         geojson_path = None
-        if override_fc is not None:
-            # Si hay GeoJSON subido, guardarlo temporalmente para el análisis
+        if geojson_a_usar is not None:
+            # Guardar GeoJSON temporalmente para el análisis
             with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as temp_file:
-                json.dump(override_fc, temp_file)
+                json.dump(geojson_a_usar, temp_file)
                 geojson_path = temp_file.name
         
         df_resumen = obtener_resumen_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, geojson_path)
         df_detalle = obtener_detalle_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, geojson_path)
         
         # Limpiar archivo temporal si se creó
-        if geojson_path and override_fc is not None:
+        if geojson_path:
             try:
                 os.unlink(geojson_path)
             except:
@@ -281,6 +309,19 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         # ORDEN IMPORTANTE: contorno primero (abajo), cuadrantes después (arriba)
         fg_contorno.add_to(mapa)
         fg_cuadrantes.add_to(mapa)
+    else:
+        # Si no hay GeoJSON, mostrar mensaje informativo en el mapa
+        info_html = f"""
+        <div style="position: fixed; 
+                    top: 10px; right: 10px; width: 350px; height: 90px; 
+                    background-color: rgba(255, 255, 255, 0.9); z-index:9999; 
+                    font-size:14px; padding: 10px; border: 2px solid red; border-radius: 5px;">
+            <b>⚠️ Archivo GeoJSON no encontrado</b><br>
+            <small>No se encontró: cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson<br>
+            El mapa mostrará solo los puntos de eventos.</small>
+        </div>
+        """
+        mapa.get_root().html.add_child(folium.Element(info_html))
 
     # 7) Selección de cuadrantes por ruta (soportar ID y NOMBRE)
     cuadrantes_ruta = []
@@ -354,6 +395,25 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                 fillOpacity=0.7,
                 popup=popup
             ).add_to(mapa)
+
+        # 9.1) Pintar eventos FUERA de cuadrantes en rojo intenso (solo si mostrar_fuera=True)
+        if mostrar_fuera and df_eventos is not None and not df_eventos.empty and geojson_a_usar is not None:
+            df_fuera = df_eventos[~mask_in].reset_index(drop=True)
+            
+            for _, r in df_fuera.iterrows():
+                lat, lon = float(r.lat), float(r.lon)
+                popup = folium.Popup(
+                    f"<b>Evento:</b> {r.id_evento}<br><b>Contacto:</b> {r.id_contacto}<br><b>Fecha:</b> {r.fecha_evento}",
+                    max_width=300
+                )
+                folium.CircleMarker(
+                    location=[lat, lon],
+                    radius=4,
+                    color="#B91C1C",  # rojo intenso
+                    fill=True,
+                    fillOpacity=0.85,
+                    popup=popup
+                ).add_to(mapa)
 
         # 10) Fit bounds a los puntos filtrados
         try:
@@ -458,7 +518,7 @@ def obtener_resumen_cuadrantes_consultores(fecha_inicio: str, fecha_fin: str, ci
     
     Returns:
         pd.DataFrame: Resumen con columnas ['codigo_cuadrante', 'area_m2', 'visitas_tot', 
-                     'visitas_por_1000m2', 'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
+                     'visitas_por_m2', 'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
     """
     try:
         df_resumen, _, _ = analizar_consultores_por_cuadrantes(
