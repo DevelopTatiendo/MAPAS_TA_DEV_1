@@ -5,6 +5,8 @@ streamlit-folium==0.10.0
 plotly==5.14.0
 scikit-learn==1.3.0  # Actualizado para corregir vulnerabilidades
 shapely==2.0.1
+geopandas>=0.14.0
+pyproj>=3.6.0
 mysql-connector-python>=8.0.0  # Actualizado por seguridad
 matplotlib==3.7.0
 flask==2.2.5  # Actualizado por seguridad

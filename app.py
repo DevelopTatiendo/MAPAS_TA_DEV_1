@@ -353,59 +353,61 @@ st.markdown(
 # Procesamiento
 if submit_button:
     try:
-        if submit_button:
-            if tipo_mapa == "Pedidos":
-                filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
-                map_type = "pedidos"
-            elif tipo_mapa == "Visitas":
-                filename = manejar_error(generar_mapa_visitas, fecha_inicio, fecha_fin, agrupacion, ciudad, ruta_cobro)
-                map_type = "visitas"
-            elif tipo_mapa == "Facturas Vencidas":
-                filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
-                map_type = "facturas"
-            elif tipo_mapa == "Muestras":
-                override_fc = st.session_state.get("muestras_override_fc")
-                promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
-                resultado = manejar_error(
-                    generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
-                )
-                if resultado:
-                    filename, n_puntos = resultado
-                else:
-                    filename, n_puntos = None, 0
-                map_type = "muestras"
-            elif tipo_mapa == "Consultores":
-                if not id_ruta:
-                    st.error("Seleccione una ruta válida.")
-                    filename = None
-                elif fecha_inicio > fecha_fin:
-                    st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
-                    filename = None
-                else:
-                    # Transformar fechas a strings día-completo
-                    f_ini_dt = f"{fecha_inicio} 00:00:00"
-                    f_fin_dt = f"{fecha_fin} 23:59:59"
-                    # Recuperar override_fc desde session_state
-                    override_fc = st.session_state.get("consultores_override_fc")
-                    # Llamar función simplificada
-                    from mapa_consultores import generar_mapa_consultores
-                    filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, override_fc)
-                    map_type = "consultores"
-            elif tipo_mapa == "Pruebas":
-                filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
+        if tipo_mapa == "Pedidos":
+            filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
+            map_type = "pedidos"
+        elif tipo_mapa == "Visitas":
+            filename = manejar_error(generar_mapa_visitas, fecha_inicio, fecha_fin, agrupacion, ciudad, ruta_cobro)
+            map_type = "visitas"
+        elif tipo_mapa == "Facturas Vencidas":
+            filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
+            map_type = "facturas"
+        elif tipo_mapa == "Muestras":
+            override_fc = st.session_state.get("muestras_override_fc")
+            promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
+            resultado = manejar_error(
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
+            )
+            if resultado:
+                filename, n_puntos = resultado
+            else:
+                filename, n_puntos = None, 0
+            map_type = "muestras"
+        elif tipo_mapa == "Consultores":
+            if not id_ruta:
+                st.error("Seleccione una ruta válida.")
+                filename = None
+            elif fecha_inicio > fecha_fin:
+                st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
+                filename = None
+            else:
+                # Transformar fechas a strings día-completo
+                f_ini_dt = f"{fecha_inicio} 00:00:00"
+                f_fin_dt = f"{fecha_fin} 23:59:59"
+                # Recuperar override_fc desde session_state
+                override_fc = st.session_state.get("consultores_override_fc")
+                # Llamar función simplificada
+                from mapa_consultores import generar_mapa_consultores
+                filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, override_fc)
+                map_type = "consultores"
+        elif tipo_mapa == "Pruebas":
+            filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
+            map_type = "pruebas"
 
-            if filename:
-                map_url = f"{FLASK_SERVER}/maps/{filename}"
-                st.session_state["map_url"] = map_url
-                # Actualizar el placeholder con el enlace
-                link_placeholder.markdown(
-                    f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
-                    unsafe_allow_html=True
-                )
-                
-                # Warning si hay filtro y no hubo puntos
-                if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
-                    st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
+        if filename:
+            # Agregar cache-busting al URL del mapa
+            timestamp = int(time.time())
+            map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
+            st.session_state["map_url"] = map_url
+            # Actualizar el placeholder con el enlace
+            link_placeholder.markdown(
+                f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+                unsafe_allow_html=True
+            )
+            
+            # Warning si hay filtro y no hubo puntos
+            if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+                st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
 
     except Exception as e:
         logging.error(f"❌ Error inesperado: {str(e)}")
