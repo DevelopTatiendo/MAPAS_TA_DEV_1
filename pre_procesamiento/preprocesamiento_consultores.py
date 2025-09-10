@@ -5,6 +5,15 @@ import unicodedata
 import logging
 import time
 from datetime import date
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+dotenv_path = Path(__file__).resolve().parents[1] / ".env"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path=dotenv_path, override=False)
+else:
+    print(f"⚠️ Advertencia: Archivo .env no encontrado en {dotenv_path}")
 
 # --- Resolver CO por ciudad (reusar mapping de otros módulos) ---
 CENTROOPES = {'CALI':2,'MEDELLIN':3,'MANIZALES':6,'PEREIRA':5,'BOGOTA':4,'BARRANQUILLA':8,'BUCARAMANGA':7}
@@ -16,9 +25,58 @@ def _norm_city(ciudad: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
 
 def _conn():
-    return mysql.connector.connect(
-        host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD")
-    )
+    """Crear conexión a MySQL validando variables de entorno obligatorias."""
+    # Variables obligatorias
+    required_vars = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+    missing_vars = []
+    
+    for var in required_vars:
+        value = os.getenv(var)
+        if not value or value.strip() == "":
+            missing_vars.append(var)
+    
+    if missing_vars:
+        raise ValueError(f"Variables de entorno faltantes para conexión BD: {', '.join(missing_vars)}")
+    
+    # Obtener valores
+    host = os.getenv("DB_HOST").strip()
+    user = os.getenv("DB_USER").strip()
+    password = os.getenv("DB_PASSWORD")
+    database = os.getenv("DB_NAME").strip()
+    
+    # Puerto opcional (sin requerirlo)
+    port = int(os.getenv("DB_PORT", "3306"))
+    
+    # Log de configuración (enmascarando contraseña)
+    user_masked = user[:2] + '*' * (len(user) - 2) if len(user) > 2 else user
+    logging.info(f"Conectando BD - Host: {host}, DB: {database}, Usuario: {user_masked}")
+    
+    try:
+        return mysql.connector.connect(
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            port=port
+        )
+    except mysql.connector.Error as e:
+        logging.error(f"Error de conexión BD: {e}")
+        raise
+
+def ping_db():
+    """Prueba básica de conectividad a la base de datos."""
+    try:
+        conn = _conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        logging.info("Ping BD exitoso")
+        return result is not None
+    except Exception as e:
+        logging.error(f"Ping BD falló: {e}")
+        return False
 
 def listar_rutas_simple(ciudad:str)->pd.DataFrame:
     """Devuelve id_ruta, ruta para la ciudad (sin depender de eventos)."""
@@ -68,7 +126,8 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 181
+       AND ca.Id_cargo = 181
+      -- AND ca.Id_cargo in (181, 5)
     ORDER BY e.fecha_evento ASC;
     """
     cn = _conn()
@@ -157,7 +216,8 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 181
+       AND ca.Id_cargo = 181
+      -- AND ca.Id_cargo in (181, 5)
     ORDER BY 
         e.fecha_evento ASC,
         p.id ASC,

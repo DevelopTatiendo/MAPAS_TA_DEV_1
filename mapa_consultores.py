@@ -5,6 +5,7 @@ import re
 import pandas as pd
 import tempfile
 import os
+import glob
 from shapely.geometry import shape, Point
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -186,6 +187,41 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     
     return html
 
+def _cargar_geojson_ruta_exacto(ciudadN: str, id_ruta: int) -> dict | None:
+    """
+    Carga exactamente el archivo subcuadrante_CL_{id_ruta}_00.geojson para una ruta específica.
+    
+    Args:
+        ciudadN (str): Nombre de ciudad normalizado
+        id_ruta (int): ID de la ruta
+        
+    Returns:
+        dict | None: FeatureCollection si encuentra el archivo, None si no existe
+    """
+    # 1) Ruta ABSOLUTA (Windows del usuario)
+    base_abs = r"C:\Users\ESP_NEGOCIO\Documents\GitHub\MAPAS_TA_DEV_1\geojson\rutas\cali"
+    fname = f"subcuadrante_CL_{id_ruta}_00.geojson"
+    path_abs = os.path.join(base_abs, fname)
+
+    # 2) Ruta RELATIVA (por si el programador corre fuera de esa máquina)
+    path_rel = os.path.join("geojson", "rutas", ciudadN.lower(), fname)
+
+    for path in (path_abs, path_rel):
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    geojson_data = json.load(f)
+                logger.info(f"✓ Archivo específico cargado: {path}")
+                return geojson_data
+            except Exception as e:
+                logger.error(f"Error leyendo {path}: {e}")
+                continue
+    
+    logger.info(f"No se encontró archivo específico para ruta {id_ruta} en {ciudadN}")
+    return None
+
+
+
 def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nombre, mostrar_fuera: bool = False):
     """
     Genera mapa de consultores con filtro espacial por cuadrantes y popups detallados.
@@ -212,25 +248,32 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     
     total_eventos = len(df_eventos) if df_eventos is not None else 0
 
-    # 3) Cargar GeoJSON estático para la ciudad
+    # 3) Cargar GeoJSON: específico por ruta si aplica, sino archivo base
     geojson_a_usar = None
-    archivo_base = f"geojson/cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson"
     
-    try:
-        with open(archivo_base, 'r', encoding='utf-8') as f:
-            geojson_a_usar = json.load(f)
-        logger.info(f"GeoJSON cargado exitosamente: {archivo_base}")
-    except FileNotFoundError:
-        error_msg = f"Error: No se encontró el archivo GeoJSON requerido: {archivo_base}"
-        logger.error(error_msg)
-        print(error_msg)
-        print(f"Por favor, asegúrese de que existe el archivo para la ciudad {ciudad}")
-        geojson_a_usar = None
-    except Exception as e:
-        error_msg = f"Error cargando archivo GeoJSON {archivo_base}: {e}"
-        logger.error(error_msg)
-        print(error_msg)
-        geojson_a_usar = None
+    # Si ruta_nombre no es "TODOS" y no está vacío, intentar archivo específico
+    if ruta_nombre and ruta_nombre.strip() != "" and ruta_nombre.strip().upper() != "TODOS":
+        geojson_a_usar = _cargar_geojson_ruta_exacto(ciudadN, id_ruta)
+    
+    # Si no se cargó archivo específico, usar archivo base
+    if geojson_a_usar is None:
+        archivo_base = f"geojson/cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson"
+        
+        try:
+            with open(archivo_base, 'r', encoding='utf-8') as f:
+                geojson_a_usar = json.load(f)
+            logger.info(f"GeoJSON base cargado exitosamente: {archivo_base}")
+        except FileNotFoundError:
+            error_msg = f"Error: No se encontró el archivo GeoJSON requerido: {archivo_base}"
+            logger.error(error_msg)
+            print(error_msg)
+            print(f"Por favor, asegúrese de que existe el archivo para la ciudad {ciudad}")
+            geojson_a_usar = None
+        except Exception as e:
+            error_msg = f"Error cargando archivo GeoJSON {archivo_base}: {e}"
+            logger.error(error_msg)
+            print(error_msg)
+            geojson_a_usar = None
 
     # 4) Obtener DataFrames de agregación para popups
     df_resumen = pd.DataFrame()

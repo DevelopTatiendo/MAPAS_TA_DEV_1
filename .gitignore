@@ -94,6 +94,9 @@ instance/
 # Jupyter
 .ipynb_checkpoints/
 
+# Notas y documentación interna
+notas/
+
 # Temporales
 *.tmp
 *.bak
