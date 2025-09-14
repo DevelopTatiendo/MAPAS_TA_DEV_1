@@ -2,12 +2,6 @@
 // Inicialización del mapa centrado por ciudad
 console.debug('Inicializando editor de cuadrantes...');
 
-// Constante de opacidad fija para padres
-const PARENT_FILL_OPACITY = 0.35; // 35% fijo
-
-// Modo de exportación: 'none' | 'warn' | 'strict'
-const EXPORT_VALIDATION_MODE = 'none'; // <<— modo "sin líos"
-
 // === POLÍTICA DE VALIDACIÓN ===
 const VALIDATION_POLICY = {
   blockOnChildrenOutside: false,
@@ -34,12 +28,6 @@ const state = {
   childrenGroup: null, // FeatureGroup para manejar hijos
   isAislado: false // Si está en modo aislar
 };
-
-// Extensión para múltiples padres
-state.parents = state.parents || [];                 // lista de layers padre
-state.childrenByParent = state.childrenByParent || {}; // { codigoPadre: Layer[] }
-state.childGroupsByParent = state.childGroupsByParent || {}; // { codigoPadre: L.FeatureGroup }
-state.selectedChild = null; // hijo seleccionado para eliminar
 
 // Compatibilidad hacia atrás
 let currentEditorState = EditorState.IDLE;
@@ -91,7 +79,7 @@ const COMUNA_STYLE = {
 const PADRE_STYLE = {
   color: "#000000",
   weight: 3,
-  fillOpacity: PARENT_FILL_OPACITY,
+  fillOpacity: 0.4,
   fillColor: "#667eea",
   dashArray: "5, 5"
 };
@@ -108,28 +96,6 @@ const ERROR_STYLE = {
   GAP: { color: "#d63031", weight: 3, fillColor: "#d63031", fillOpacity: 0.7 },
   OUTSIDE: { color: "#d63031", weight: 3, fillColor: "#d63031", fillOpacity: 1.0 }
 };
-
-// Asegura que la feature tenga props de estilo persistentes según su nivel
-function ensureStyleProps(featureOrLayer, isPadre = null) {
-  const feat = featureOrLayer.feature ? featureOrLayer.feature : featureOrLayer;
-  feat.properties = feat.properties || {};
-  const p = feat.properties;
-
-  // Determinar nivel
-  const nivel = p.nivel || (isPadre === true ? 'cuadrante' : isPadre === false ? 'subcuadrante' : null);
-  const defaults = (nivel === 'cuadrante') ? PADRE_STYLE : HIJO_STYLE;
-
-  // Defaults una sola vez (si faltan)
-  if (p.fillColor == null)   p.fillColor   = defaults.fillColor;
-  if (p.fillOpacity == null) p.fillOpacity = defaults.fillOpacity;
-  if (p.weight == null)      p.weight      = defaults.weight;
-  if (p.color == null)       p.color       = (STROKE_POLICY === 'match') ? p.fillColor : '#000000';
-
-  // Regrabar nivel si no venía
-  if (!p.nivel && nivel) p.nivel = nivel;
-
-  return p;
-}
 
 function ensureComunaStyleProps(props) {
   const p = Object.assign({}, props || {});
@@ -443,26 +409,6 @@ map.addLayer(DRAWN_EDITABLE);
 // Track del estado de edición de Leaflet.Draw
 let isEditingActive = false;
 
-// === FUNCIÓN GLOBAL PARA CONTROLAR MODO RECOLOR ===
-
-// Función global para controlar modo recolor (one-shot)
-function setRecolorMode(enabled) {
-  recolorMode = !!enabled;
-  const btnRecolor = document.getElementById('btn-recolor');
-  if (btnRecolor) {
-    btnRecolor.classList.toggle('btn-active', recolorMode);
-    btnRecolor.textContent = recolorMode ? '✅ Recolor activo' : '🎨 Modo recolor';
-  }
-  
-  // Cambiar cursor del mapa
-  const mapContainer = document.getElementById('map');
-  if (mapContainer) {
-    mapContainer.style.cursor = recolorMode ? 'pointer' : '';
-  }
-  
-  console.debug('[RECOLOR]', recolorMode ? 'Activado (one-shot)' : 'Desactivado');
-}
-
 // Configurar control de dibujo con polygon y rectangle
 const drawControl = new L.Control.Draw({
     position: 'topleft',
@@ -474,10 +420,7 @@ const drawControl = new L.Control.Draw({
         circle:    false,
         circlemarker: false
     },
-    edit: { 
-        featureGroup: DRAWN_EDITABLE,
-        remove: false // Desactivar eliminación masiva
-    }
+    edit: { featureGroup: DRAWN_EDITABLE }
 });
 map.addControl(drawControl);
 
@@ -495,53 +438,27 @@ function enforceStrokePolicy(layer) {
 // Aplicar estilo desde properties
 function applyStyleFromProperties(layer) {
   const p = (layer.feature && layer.feature.properties) || {};
-  const defaults = (p.nivel === 'cuadrante') ? PADRE_STYLE : HIJO_STYLE;
-
   const style = {
-    fillColor:   (p.fillColor != null)   ? p.fillColor   : defaults.fillColor,
-    color:       (STROKE_POLICY === 'match') ? ((p.fillColor != null) ? p.fillColor : defaults.fillColor) : '#000000',
-    fillOpacity: (p.fillOpacity != null) ? p.fillOpacity : defaults.fillOpacity,
-    weight:      (p.weight != null)      ? p.weight      : defaults.weight
+    fillColor:   p.fillColor || CURRENT_FILL,
+    color:       (STROKE_POLICY === 'match') ? (p.fillColor || CURRENT_FILL) : '#000000',
+    fillOpacity: (p.fillOpacity != null) ? p.fillOpacity : FILL_OPACITY,
+    weight:      STROKE_WEIGHT
   };
   if (layer.setStyle) layer.setStyle(style);
 }
 
-// Click para recolor si el modo está activo (one-shot)
+// Click para recolor si el modo está activo
 let recolorMode = false;
 function attachRecolorOnClick(layer) {
   layer.on('click', () => {
     if (isEditingActive) return; // No recolor durante edición
-    if (!recolorMode) return; // Solo si modo está activo
-    
-    // Opcional: restringir al padre activo cuando está aislado
-    if (state.isAislado && state.activeParent && !isLayerOfActiveParent(layer)) return;
-    
-    // Aplicar color, preservando opacidad existente
+    if (!recolorMode) return;
     layer.feature = layer.feature || { type:'Feature', properties:{} };
     const p = layer.feature.properties;
-    const prevOpacity = p.fillOpacity; // conservar
     p.fillColor = CURRENT_FILL;
-    if (prevOpacity != null) p.fillOpacity = prevOpacity; // reforzar
     applyStyleFromProperties(layer);
     enforceStrokePolicy(layer);
-    
-    // Apagar modo recolor (one-shot)
-    setRecolorMode(false);
   });
-}
-
-// Verificar si una capa pertenece al padre activo
-function isLayerOfActiveParent(layer) {
-  if (!state.activeParent) return false;
-  
-  const activeCode = state.activeParent.feature?.properties?.codigo;
-  if (!activeCode) return false;
-  
-  const layerCode = layer.feature?.properties?.codigo;
-  const layerParentCode = layer.feature?.properties?.codigo_padre;
-  
-  // Es el padre activo o es hijo del padre activo
-  return (layerCode === activeCode) || (layerParentCode === activeCode);
 }
 
 // Fetch y overlay de comunas (no editable, atrás)
@@ -690,11 +607,6 @@ function onChildCreated(e) {
       p.id_ruta = idRuta;
       p.ciudad = parentProps.ciudad || getCityFromQuery();
       
-      // Persistir props de estilo en properties
-      ensureStyleProps(layer, false);
-      applyStyleFromProperties(layer);
-      enforceStrokePolicy(layer);
-      
       // Agregar al mapa
       addChildLayer(layer);
       setEditorState(EditorState.PADRE_ACTIVO);
@@ -733,13 +645,13 @@ map.on(L.Draw.Event.EDITED, (e) => {
 // Desactivar recolor cuando entras a editar
 map.on('draw:editstart', () => {
   isEditingActive = true;
-  setRecolorMode(false);
+  // si tienes un setter del UI de recolor, llámalo aquí para apagarlo visualmente
+  if (typeof setRecolorMode === 'function') setRecolorMode(false);
 });
 
-// Al salir de edición, NO reactivar recolor automáticamente
+// Volver a permitir recolor al salir
 map.on('draw:editstop', () => {
   isEditingActive = false;
-  // Mantener recolor apagado hasta que usuario lo active manualmente
 });
 
 // IMPORT (función para agregar capas importadas)
@@ -836,7 +748,11 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
       };
       geojsonDebug.features.push(hijoFueraGeom);
       
-      warnings.push(`Subcuadrante ${i + 1} se extiende fuera del cuadrante padre`);
+      if (VALIDATION_POLICY.blockOnChildrenOutside) {
+        errores.push(`Subcuadrante ${i + 1} se extiende fuera del cuadrante padre`);
+      } else {
+        warnings.push(`Subcuadrante ${i + 1} se extiende fuera del cuadrante padre`);
+      }
     }
   });
   
@@ -855,7 +771,7 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
           }
         };
         geojsonDebug.features.push(overlapGeom);
-        warnings.push(`Solape detectado entre subcuadrantes ${i + 1} y ${j + 1}`);
+        errores.push(`Solape detectado entre subcuadrantes ${i + 1} y ${j + 1}`);
       }
     }
   }
@@ -874,7 +790,7 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
       }
     };
     geojsonDebug.features.push(huecosGeom);
-    warnings.push('Existen áreas no cubiertas por los subcuadrantes');
+    errores.push('Existen áreas no cubiertas por los subcuadrantes');
   }
   
   // Calcular cobertura
@@ -882,7 +798,11 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
   const cobertura = (areaUnionHijos / areaPadre) * 100;
   
   if (cobertura < 100) {
-    warnings.push(`Cobertura incompleta: ${cobertura.toFixed(1)}%`);
+    if (VALIDATION_POLICY.blockOnCoverageIncomplete) {
+      errores.push(`Cobertura incompleta: ${cobertura.toFixed(1)}%`);
+    } else {
+      warnings.push(`Cobertura incompleta: ${cobertura.toFixed(1)}%`);
+    }
   }
   
   const ok = errores.length === 0;
@@ -1014,33 +934,19 @@ function addChildLayer(layer) {
   // Normaliza geometry GeoJSON de la capa
   layer.feature.geometry = layer.toGeoJSON().geometry;
 
-  // Obtener código del padre activo
-  const parentCode = state.activeParent?.feature?.properties?.codigo;
-  if (!parentCode) {
-    console.warn('[CHILD_ADDED] No hay padre activo, no se puede agregar hijo');
-    return;
-  }
-
-  // Crear grupo de hijos para este padre si no existe
-  if (!state.childGroupsByParent[parentCode]) {
-    const childGroup = new L.FeatureGroup();
-    state.childGroupsByParent[parentCode] = childGroup;
-    map.addLayer(childGroup);
-  }
-
-  // Agregar al grupo específico del padre
-  state.childGroupsByParent[parentCode].addLayer(layer);
-
-  // Persistir la asociación hijo→padre
-  state.childrenByParent[parentCode] = state.childrenByParent[parentCode] || [];
-  state.childrenByParent[parentCode].push(layer);
-
-  // Actualizar estado actual (compatibilidad)
-  state.children = state.childrenByParent[parentCode];
+  // Mete al grupo de hijos del padre activo
+  state.children = state.children || [];
+  state.children.push(layer);
+  
+  // Mantener compatibilidad
   activeHijos = state.children;
 
-  // Actualizar grupo de hijos actual
-  state.childrenGroup = state.childGroupsByParent[parentCode];
+  // Si manejamos "grupo de hijos", añadir al FeatureGroup correspondiente
+  if (!state.childrenGroup) {
+    state.childrenGroup = new L.FeatureGroup();
+    map.addLayer(state.childrenGroup);
+  }
+  state.childrenGroup.addLayer(layer);
 
   // Popup sencillo
   const code = layer.feature.properties?.codigo || '(sin código)';
@@ -1049,10 +955,7 @@ function addChildLayer(layer) {
   // Agregar funcionalidad de recolor
   attachRecolorOnClick(layer);
   
-  // Registrar hijo para selección y eliminación
-  registerChild(layer, parentCode);
-  
-  console.debug('[CHILD_ADDED]', `Hijo "${code}" agregado al padre "${parentCode}"`);
+  console.debug('[CHILD_ADDED]', `Hijo "${code}" agregado al padre activo`);
 }
 
 // === FUNCIONES PARA EDICIÓN DEL PADRE ===
@@ -1154,14 +1057,7 @@ function saveParentEditing() {
   
   // Cerrar edición visual y volver a estado normal
   endEditMode(true);
-  
-  // Restaurar opacidad fija del padre
-  state.activeParent.setStyle({ fillOpacity: PARENT_FILL_OPACITY });
-  
   setEditorState(EditorState.PADRE_ACTIVO);
-  
-  // Apagar recolor al guardar
-  setRecolorMode(false);
   
   console.debug('[EDIT_PARENT] Cambios guardados correctamente');
 }
@@ -1190,14 +1086,7 @@ function cancelParentEditing() {
   
   // Cerrar edición visual y volver a estado normal
   endEditMode(false);
-  
-  // Restaurar opacidad fija del padre
-  state.activeParent.setStyle({ fillOpacity: PARENT_FILL_OPACITY });
-  
   setEditorState(EditorState.PADRE_ACTIVO);
-  
-  // Apagar recolor al cancelar
-  setRecolorMode(false);
   
   console.debug('[EDIT_PARENT] Edición cancelada');
 }
@@ -1240,7 +1129,6 @@ function saveChildrenEditing() {
   _childrenBackup = null;
   endEditMode(true);
   setEditorState(EditorState.PADRE_ACTIVO);
-  setRecolorMode(false); // Apagar recolor al guardar
   console.debug('[EDIT_CHILDREN] Cambios guardados correctamente');
 }
 
@@ -1255,7 +1143,6 @@ function cancelChildrenEditing() {
   _childrenBackup = null;
   endEditMode(false);
   setEditorState(EditorState.PADRE_ACTIVO);
-  setRecolorMode(false); // Apagar recolor al cancelar
   console.debug('[EDIT_CHILDREN] Edición cancelada');
 }
 
@@ -1285,11 +1172,6 @@ function isInsideParent(childLayer, parentLayer) {
 
 // Cambiar estado del editor (versión mejorada)
 function setEditorState(next) {
-  // Apagar recolor al cambiar a estados de dibujo/edición
-  if ([EditorState.CREANDO_PADRE, EditorState.CREANDO_HIJO, EditorState.EDITANDO_PADRE, EditorState.EDITANDO_HIJOS].includes(next)) {
-    setRecolorMode(false);
-  }
-  
   const prevState = state.mode;
   state.mode = next;
   
@@ -1317,18 +1199,7 @@ function setEditorState(next) {
   
   // Controles adicionales
   dis('btn-aislar', !hasParent);
-  // Removed opacity slider references
-  
-  // Controles de eliminación
-  dis('btn-delete-parent', !hasParent);
-  const btnDelChild = document.getElementById('btn-delete-child');
-  if (btnDelChild) {
-    // visible sólo cuando haya selección
-    btnDelChild.disabled = !state.selectedChild;
-    if (!state.selectedChild) {
-      btnDelChild.style.display = 'none';
-    }
-  }
+  dis('opacity-slider', !hasParent);
 
   // overrides por modo
   if (next === EditorState.CREANDO_HIJO) {
@@ -1425,16 +1296,24 @@ function setEditorState(next) {
   dis('btn-import', false);
 }
 
-// Helper para actualizar estado de UI
-function updateUIState() {
-  // Reaplica el estado actual a los controles
-  setEditorState(state.mode);
-}
-
-// Actualizar indicador de cobertura - función vacía (UI removida)
+// Actualizar indicador de cobertura
 function updateCoverageIndicator() {
-  // UI de cobertura removida - mantener función para compatibilidad
-  return;
+  const coverageElement = document.getElementById('coverage-percentage');
+  
+  if (!activePadre || activeHijos.length === 0) {
+    coverageElement.textContent = '0%';
+    coverageElement.style.color = '#666';
+    return;
+  }
+  
+  const geomPadre = activePadre.toGeoJSON();
+  const geomsHijos = activeHijos.map(hijo => hijo.toGeoJSON());
+  
+  const areaPadre = calculateArea(geomPadre);
+  const areaTotal = geomsHijos.reduce((sum, hijo) => sum + calculateArea(hijo), 0);
+  const cobertura = areaPadre > 0 ? (areaTotal / areaPadre) * 100 : 0;
+  
+  coverageElement.textContent = `${cobertura.toFixed(1)}%`;
   
   // Colorear según cobertura
   if (cobertura >= 95) {
@@ -1462,84 +1341,6 @@ function fitToAllIfAny() {
 
 // === FUNCIONES PRINCIPALES DE JERARQUÍA ===
 
-// Helpers para registrar y activar padres
-function registerParent(layer) {
-  const code = layer?.feature?.properties?.codigo;
-  if (!code) return;
-  if (!state.parents.includes(layer)) state.parents.push(layer);
-  if (!state.childrenByParent[code]) state.childrenByParent[code] = [];
-
-  // Click para activar este padre (si no estamos editando)
-  layer.on('click', () => {
-    if (isEditingActive) return;
-    setActiveParent(layer);
-  });
-}
-
-// Registrar hijo con click handler para selección
-function registerChild(layer, parentCode) {
-  if (!parentCode) parentCode = state.activeParent?.feature?.properties?.codigo;
-  if (!parentCode) return;
-  
-  state.childrenByParent[parentCode] = state.childrenByParent[parentCode] || [];
-  state.childrenByParent[parentCode].push(layer);
-
-  if (!state.childGroupsByParent[parentCode]) {
-    state.childGroupsByParent[parentCode] = L.featureGroup().addTo(map);
-  }
-  state.childGroupsByParent[parentCode].addLayer(layer);
-
-  // Selección para eliminar hijo
-  layer.on('click', (e) => {
-    if (isEditingActive) return;
-    selectChild(layer);
-    e.originalEvent?.stopPropagation?.();
-  });
-}
-
-// Seleccionar hijo para eliminar
-function selectChild(layer) {
-  // destacar visualmente el hijo y habilitar botón
-  if (state.selectedChild && state.selectedChild !== layer) {
-    applyStyleFromProperties(state.selectedChild); // quitar highlight anterior
-  }
-  state.selectedChild = layer;
-  layer.setStyle({ weight: 3, dashArray: '6,3' });
-  
-  const btnDelChild = document.getElementById('btn-delete-child');
-  if (btnDelChild) { 
-    btnDelChild.style.display = 'inline-block'; 
-    btnDelChild.disabled = false; 
-  }
-}
-
-function setActiveParent(layer) {
-  if (!layer) return;
-  state.activeParent = layer;
-
-  const code = layer.feature?.properties?.codigo;
-  state.children = state.childrenByParent[code] || [];
-  activePadre = state.activeParent;           // compat
-  activeHijos = state.children;               // compat
-
-  // NO eliminar otros grupos de hijos - mantener todos visibles
-  // Solo actualizar referencia al grupo actual
-  state.childrenGroup = state.childGroupsByParent[code] || null;
-
-  // Crear grupo si no existe pero hay hijos
-  if (!state.childrenGroup && state.children.length > 0) {
-    state.childrenGroup = new L.FeatureGroup(state.children);
-    state.childGroupsByParent[code] = state.childrenGroup;
-    map.addLayer(state.childrenGroup);
-  }
-
-  // Mantener/actualizar aislamiento y UI
-  applyAislamiento();
-  setEditorState(EditorState.PADRE_ACTIVO);
-  
-  console.debug('[ACTIVE_PARENT_CHANGED]', `Padre activo: ${code}, Hijos: ${state.children.length}`);
-}
-
 // Manejar creación de cuadrante padre
 function handlePadreCreated(layer) {
   // Aplicar buffer(0) para limpiar geometría
@@ -1553,35 +1354,46 @@ function handlePadreCreated(layer) {
       codigo: config.codigo,
       ciudad: config.ciudad,
       id_ruta: config.ruta,
+      fillColor: PADRE_STYLE.fillColor,
+      ...PADRE_STYLE,
       tipo: 'PADRE' // Identificador de tipo
     };
     
-    // Persistir props de estilo en properties
-    ensureStyleProps(layer, true);
-    applyStyleFromProperties(layer);
-    enforceStrokePolicy(layer);
+    // Aplicar estilos
+    layer.setStyle(PADRE_STYLE);
     
     // Agregar funcionalidad de recolor
     attachRecolorOnClick(layer);
     
-    // Registrar y activar nuevo padre (sin eliminar los anteriores)
-    registerParent(layer);
-    setActiveParent(layer);
+    // Establecer como padre activo en el nuevo estado
+    if (state.activeParent) {
+      DRAWN_EDITABLE.removeLayer(state.activeParent);
+    }
     
-    // NO forzar aislamiento automático, respetar estado del usuario
-    // state.isAislado = true;
-    // isAislado = state.isAislado;
+    state.activeParent = layer;
+    state.children = []; // Limpiar hijos anteriores
     
-    // Aplicar estado actual (puede estar aislado o no)
+    // Limpiar grupo de hijos anterior
+    if (state.childrenGroup) {
+      map.removeLayer(state.childrenGroup);
+      state.childrenGroup = null;
+    }
+    
+    // Activar aislar por defecto
+    state.isAislado = true;
+    
+    // Mantener compatibilidad hacia atrás
+    activePadre = state.activeParent;
+    activeHijos = state.children;
+    isAislado = state.isAislado;
+    
+    // Aplicar aislamiento
     applyAislamiento();
     
     DRAWN_EDITABLE.addLayer(layer);
     
     // Cambiar a estado PADRE_ACTIVO (permite crear hijos inmediatamente)
     setEditorState(EditorState.PADRE_ACTIVO);
-    
-    // Apagar recolor por seguridad
-    setRecolorMode(false);
     
     console.debug('[PADRE] created:', config.codigo);
   });
@@ -1693,134 +1505,31 @@ function showOverlapWarning(overlaps) {
 
 // Aplicar/quitar aislamiento
 function applyAislamiento() {
-  if (!state.isAislado) {
-    // Modo normal: mostrar todo con estilos normales
-    forEachQuadrantLayer(layer => {
+  if (!activePadre) return;
+  
+  if (isAislado) {
+    // Ocultar todas las capas excepto padre y hijos
+    DRAWN_LOCKED.eachLayer(layer => {
+      if (layer !== activePadre && !activeHijos.includes(layer)) {
+        layer.setStyle({ opacity: 0.1, fillOpacity: 0.05 });
+      }
+    });
+    
+    DRAWN_EDITABLE.eachLayer(layer => {
+      if (layer !== activePadre && !activeHijos.includes(layer)) {
+        layer.setStyle({ opacity: 0.1, fillOpacity: 0.05 });
+      }
+    });
+  } else {
+    // Restaurar opacidades normales
+    DRAWN_LOCKED.eachLayer(layer => {
       applyStyleFromProperties(layer);
     });
-    return;
-  }
-  
-  // Modo aislado: solo destacar padre activo y sus hijos
-  if (!state.activeParent) return;
-  
-  const activeCode = state.activeParent.feature?.properties?.codigo;
-  
-  forEachQuadrantLayer(layer => {
-    const layerCode = layer.feature?.properties?.codigo;
-    const layerParentCode = layer.feature?.properties?.codigo_padre;
     
-    // Determinar si es el padre activo o hijo del padre activo
-    const isActiveParent = (layerCode === activeCode);
-    const isActiveChild = (layerParentCode === activeCode);
-    
-    if (isActiveParent || isActiveChild) {
-      // Destacar: estilo normal
+    DRAWN_EDITABLE.eachLayer(layer => {
       applyStyleFromProperties(layer);
-    } else {
-      // Atenuar: baja opacidad
-      const currentStyle = layer.options || {};
-      layer.setStyle({
-        ...currentStyle,
-        opacity: 0.1,
-        fillOpacity: 0.05
-      });
-    }
-  });
-}
-
-// === FUNCIONES DE ELIMINACIÓN SEGURA ===
-
-// Eliminar padre activo y todos sus hijos
-function deleteActiveParent() {
-  const parent = state.activeParent;
-  if (!parent) return;
-
-  const code = parent.feature?.properties?.codigo || '(sin código)';
-  const hijos = state.childrenByParent[code] || [];
-  const count = hijos.length;
-
-  const ok = confirm(`¿Eliminar el cuadrante ${code}? Se eliminarán ${count} subcuadrante(s). Esta acción no se puede deshacer.`);
-  if (!ok) return;
-
-  // 1) Borrar hijos del mapa/estado
-  if (state.childGroupsByParent[code]) {
-    state.childGroupsByParent[code].eachLayer(l => state.childGroupsByParent[code].removeLayer(l));
-    map.removeLayer(state.childGroupsByParent[code]);
-    delete state.childGroupsByParent[code];
+    });
   }
-  (hijos || []).forEach(l => {
-    try { DRAWN_EDITABLE.removeLayer(l); } catch(e) {}
-  });
-  delete state.childrenByParent[code];
-
-  // 2) Borrar el padre del mapa/estado
-  try { DRAWN_EDITABLE.removeLayer(parent); } catch(e) {}
-  state.parents = state.parents.filter(p => p !== parent);
-
-  // 3) Elegir nuevo activo (si queda alguno)
-  state.activeParent = state.parents[0] || null;
-  if (state.activeParent) {
-    const newCode = state.activeParent.feature?.properties?.codigo;
-    state.children = state.childrenByParent[newCode] || [];
-    setEditorState(EditorState.PADRE_ACTIVO);
-  } else {
-    state.children = [];
-    setEditorState(EditorState.IDLE);
-  }
-
-  // 4) Limpiar selección de hijo
-  state.selectedChild = null;
-  const btnDelChild = document.getElementById('btn-delete-child');
-  if (btnDelChild) { 
-    btnDelChild.disabled = true; 
-    btnDelChild.style.display = 'none'; 
-  }
-
-  fitToAllIfAny();
-  
-  // Apagar recolor tras eliminar
-  setRecolorMode(false);
-  
-  console.debug('[DELETE_PARENT]', `Padre "${code}" y ${count} hijos eliminados`);
-}
-
-// Eliminar hijo seleccionado
-function deleteSelectedChild() {
-  const ch = state.selectedChild;
-  if (!ch) return;
-
-  const codeParent = state.activeParent?.feature?.properties?.codigo;
-  const chCode = ch.feature?.properties?.codigo || '(sin código)';
-  const ok = confirm(`¿Eliminar el subcuadrante ${chCode}?`);
-  if (!ok) return;
-
-  // 1) Quitar del grupo y del mapa
-  const grp = state.childGroupsByParent[codeParent];
-  try { grp?.removeLayer(ch); } catch(e) {}
-  try { DRAWN_EDITABLE.removeLayer(ch); } catch(e) {}
-
-  // 2) Quitar de colecciones
-  state.children = (state.children || []).filter(x => x !== ch);
-  if (codeParent) {
-    state.childrenByParent[codeParent] = (state.childrenByParent[codeParent] || []).filter(x => x !== ch);
-  }
-
-  // 3) Limpiar selección y UI
-  state.selectedChild = null;
-  const btn = document.getElementById('btn-delete-child');
-  if (btn) { 
-    btn.disabled = true; 
-    btn.style.display = 'none'; 
-  }
-
-  fitToAllIfAny();
-  setEditorState(EditorState.PADRE_ACTIVO);
-  
-  // Apagar recolor tras eliminar
-  setRecolorMode(false);
-  
-  console.debug('[DELETE_CHILD]', `Hijo "${chCode}" eliminado`);
 }
 
 // Mostrar diálogo de configuración de padre
@@ -1923,7 +1632,17 @@ document.addEventListener('DOMContentLoaded', function() {
       console.debug('Paleta de colores inicializada');
     }
 
-    // Botón recolor (usar función global)
+// Función para controlar modo recolor desde código
+function setRecolorMode(enabled) {
+  recolorMode = !!enabled;
+  const btnRecolor = document.getElementById('btn-recolor');
+  if (btnRecolor) {
+    btnRecolor.classList.toggle('btn-active', recolorMode);
+    btnRecolor.textContent = recolorMode ? '✅ Recolor activo' : '🎨 Modo recolor';
+  }
+}
+
+    // Botón recolor
     const btnRecolor = document.getElementById('btn-recolor');
     if (btnRecolor) {
       btnRecolor.addEventListener('click', () => {
@@ -1934,43 +1653,188 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const exportBtn = document.getElementById('btn-export');
     if (exportBtn) {
+        // Exportación con jerarquía completa (T6)
         exportBtn.addEventListener('click', () => {
-          try {
-            // 1) Construir FeatureCollection a exportar
-            const fc = buildFeatureCollection(activePadre, activeHijos);
-
-            // 2) Validación (opcional) SOLO para logs
-            const res = validateBeforeExport();
-
-            if (EXPORT_VALIDATION_MODE === 'none') {
-              // No modal, no bloqueos — solo logs
-              if (res.warnings?.length) console.warn('[EXPORT][WARNINGS]', res.warnings);
-              if (res.errors?.length) console.warn('[EXPORT][ERRORS-NO-BLOCK]', res.errors);
-              return doExport(fc); // descarga directa
-            }
-
-            if (EXPORT_VALIDATION_MODE === 'warn') {
-              if ((res.errors?.length || 0) > 0 || (res.warnings?.length || 0) > 0) {
-                // Modal solo informativo, con "Exportar de todos modos"
-                return openValidationModal(res, { allowExport: true });
-              }
-              return doExport(fc);
-            }
-
-            // strict (comportamiento viejo)
-            if ((res.errors?.length || 0) > 0) {
-              return openValidationModal(res, { allowExport: false });
-            }
-            if ((res.warnings?.length || 0) > 0) {
-              return openValidationModal(res, { allowExport: true });
-            }
-            return doExport(fc);
-          } catch (e) {
-            console.error('[EXPORT] Falló la exportación:', e);
-            alert('No se pudo exportar. Revisa la consola para más detalles.');
+          // Validar integridad antes de exportar
+          const validation = validateBeforeExport();
+          
+          if (validation.errors.length > 0) {
+            // Hay errores críticos - no permitir exportar
+            openValidationModal(validation, { allowExport: false });
+            return;
+          } else if (validation.warnings.length > 0) {
+            // Solo warnings - permitir exportar con confirmación
+            openValidationModal(validation, { allowExport: true });
+            return;
           }
+          
+          // No hay problemas - exportar directamente
+          doDirectExport();
         });
         
+        // Las funciones de exportación están definidas globalmente más abajo
+        
+        console.debug('Botón de exportación configurado');
+              ciudad: activePadre.feature.properties.ciudad,
+              id_ruta: activePadre.feature.properties.id_ruta,
+              ruta: activePadre.feature.properties.id_ruta, // Alias
+              created_at: timestamp,
+              editor_version: "3.0",
+              total_hijos: activeHijos.length,
+              // Preservar propiedades de estilo
+              fillColor: activePadre.feature.properties.fillColor || PADRE_STYLE.fillColor,
+              color: activePadre.feature.properties.color || PADRE_STYLE.color,
+              weight: activePadre.feature.properties.weight || PADRE_STYLE.weight,
+              fillOpacity: activePadre.feature.properties.fillOpacity || PADRE_STYLE.fillOpacity
+            }
+          };
+          features.push(padreFeature);
+          
+          // Preparar hijos con propiedades completas y orden
+          activeHijos.forEach((hijo, index) => {
+            const hijoFeature = {
+              ...hijo.toGeoJSON(),
+              properties: {
+                nivel: "subcuadrante",
+                codigo: hijo.feature.properties.codigo,
+                codigo_padre: activePadre.feature.properties.codigo,
+                ciudad: activePadre.feature.properties.ciudad,
+                id_ruta: activePadre.feature.properties.id_ruta,
+                ruta: activePadre.feature.properties.id_ruta, // Alias
+                orden: index + 1,
+                created_at: timestamp,
+                editor_version: "3.0",
+                // Preservar propiedades de estilo
+                fillColor: hijo.feature.properties.fillColor || HIJO_STYLE.fillColor,
+                color: hijo.feature.properties.color || HIJO_STYLE.color,
+                weight: hijo.feature.properties.weight || HIJO_STYLE.weight,
+                fillOpacity: hijo.feature.properties.fillOpacity || HIJO_STYLE.fillOpacity
+              }
+            };
+            features.push(hijoFeature);
+          });
+          
+          // Crear FeatureCollection
+          const hierarchyFC = {
+            type: 'FeatureCollection',
+            properties: {
+              type: 'hierarchy_export',
+              parent_code: activePadre.feature.properties.codigo,
+              city: activePadre.feature.properties.ciudad,
+              route: activePadre.feature.properties.id_ruta,
+              total_features: features.length,
+              export_timestamp: timestamp,
+              crs: "EPSG:4326", // WGS84 para compatibilidad
+              target_crs: "EPSG:3116", // CRS métrico recomendado para Colombia
+              validation_passed: true
+            },
+            features: features
+          };
+          
+          // Nombre de archivo según T6: subcuadrante_CL_{ruta}_{nn}.geojson
+          const codigoPadre = activePadre.feature.properties.codigo;
+          const fileName = `subcuadrante_${codigoPadre}.geojson`;
+          
+          downloadGeoJSON(hierarchyFC, fileName);
+          
+          console.debug('[EXPORT HIERARCHY]', {
+            padre: codigoPadre,
+            hijos: activeHijos.length,
+            archivo: fileName
+          });
+        }
+        
+        // Función para exportar cuadrantes generales
+        function exportGeneralQuadrants() {
+          const quadsFC = collectQuadrantsFC();
+          const comunas = (COMUNAS_FC && Array.isArray(COMUNAS_FC.features)) ? COMUNAS_FC.features : [];
+          
+          // Enriquecer features con propiedades de jerarquía
+          const enrichedQuads = quadsFC.features.map(feature => ({
+            ...feature,
+            properties: {
+              ...feature.properties,
+              // Asegurar propiedades de jerarquía
+              nivel: feature.properties.nivel || 'cuadrante',
+              created_at: new Date().toISOString(),
+              editor_version: '3.0',
+              crs: "EPSG:4326"
+            }
+          }));
+          
+          const combined = {
+            type: 'FeatureCollection',
+            properties: {
+              type: 'general_export',
+              city: CITY,
+              total_comunas: comunas.length,
+              total_quadrants: enrichedQuads.length,
+              export_timestamp: new Date().toISOString()
+            },
+            // Orden: comunas primero, luego cuadrantes
+            features: [...comunas, ...enrichedQuads],
+          };
+          
+          const fileName = `cuadrantes_${CITY.toLowerCase()}_${new Date().toISOString().slice(0,10)}.geojson`;
+          downloadGeoJSON(combined, fileName);
+          
+          console.debug('[EXPORT GENERAL]', {
+            city: CITY,
+            comunas: comunas.length,
+            cuadrantes: enrichedQuads.length,
+            archivo: fileName
+          });
+        }
+        
+        // Helper para descarga de GeoJSON
+        function downloadGeoJSON(geojsonData, fileName) {
+          const blob = new Blob([JSON.stringify(geojsonData, null, 2)], { 
+            type: 'application/geo+json' 
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          
+          // Mostrar notificación de éxito
+          showExportSuccess(fileName, geojsonData.features.length);
+        }
+        
+        // Mostrar notificación de éxito de exportación
+        function showExportSuccess(fileName, featureCount) {
+          const notification = document.createElement('div');
+          notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #00b894;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 184, 148, 0.3);
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            max-width: 300px;
+          `;
+          notification.innerHTML = `
+            <strong>✅ Exportación Exitosa</strong><br>
+            📁 ${fileName}<br>
+            📊 ${featureCount} geometrías
+          `;
+          
+          document.body.appendChild(notification);
+          
+          setTimeout(() => {
+            if (document.body.contains(notification)) {
+              document.body.removeChild(notification);
+            }
+          }, 4000);
+        }
         console.debug('Botón de exportación configurado');
     } else {
         console.warn('Botón con id "btn-export" no encontrado');
@@ -1980,117 +1844,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // === FUNCIONES GLOBALES DE EXPORTACIÓN ===
 
-// Función helper para construir FeatureCollection
-function buildFeatureCollection(padre, hijos) {
-  if (padre && hijos && hijos.length > 0) {
-    // Exportación de jerarquía específica
-    const features = [];
-    const timestamp = new Date().toISOString();
-    
-    // Preparar padre
-    const padreFeature = {
-      ...padre.toGeoJSON(),
-      properties: {
-        nivel: "cuadrante",
-        codigo: padre.feature.properties.codigo,
-        ciudad: padre.feature.properties.ciudad,
-        id_ruta: padre.feature.properties.id_ruta,
-        ruta: padre.feature.properties.id_ruta,
-        created_at: timestamp,
-        editor_version: "3.0",
-        total_hijos: hijos.length,
-        fillColor: padre.feature.properties.fillColor || PADRE_STYLE.fillColor,
-        color: padre.feature.properties.color || PADRE_STYLE.color,
-        weight: padre.feature.properties.weight || PADRE_STYLE.weight,
-        fillOpacity: padre.feature.properties.fillOpacity || PADRE_STYLE.fillOpacity
-      }
-    };
-    features.push(padreFeature);
-    
-    // Preparar hijos
-    hijos.forEach((hijo, index) => {
-      const hijoFeature = {
-        ...hijo.toGeoJSON(),
-        properties: {
-          nivel: "subcuadrante",
-          codigo: hijo.feature.properties.codigo,
-          codigo_padre: padre.feature.properties.codigo,
-          ciudad: padre.feature.properties.ciudad,
-          id_ruta: padre.feature.properties.id_ruta,
-          ruta: padre.feature.properties.id_ruta,
-          orden: index + 1,
-          created_at: timestamp,
-          editor_version: "3.0",
-          fillColor: hijo.feature.properties.fillColor || HIJO_STYLE.fillColor,
-          color: hijo.feature.properties.color || HIJO_STYLE.color,
-          weight: hijo.feature.properties.weight || HIJO_STYLE.weight,
-          fillOpacity: hijo.feature.properties.fillOpacity || HIJO_STYLE.fillOpacity
-        }
-      };
-      features.push(hijoFeature);
-    });
-    
-    return {
-      type: 'FeatureCollection',
-      properties: {
-        type: 'hierarchy_export',
-        parent_code: padre.feature.properties.codigo,
-        city: padre.feature.properties.ciudad,
-        route: padre.feature.properties.id_ruta,
-        total_features: features.length,
-        export_timestamp: timestamp,
-        crs: "EPSG:4326",
-        target_crs: "EPSG:3116",
-        validation_passed: true
-      },
-      features: features
-    };
-  } else {
-    // Exportación general de cuadrantes
-    const quadsFC = collectQuadrantsFC();
-    const comunas = (COMUNAS_FC && Array.isArray(COMUNAS_FC.features)) ? COMUNAS_FC.features : [];
-    
-    const enrichedQuads = quadsFC.features.map(feature => ({
-      ...feature,
-      properties: {
-        ...feature.properties,
-        nivel: feature.properties.nivel || 'cuadrante',
-        created_at: new Date().toISOString(),
-        editor_version: '3.0',
-        crs: "EPSG:4326"
-      }
-    }));
-    
-    return {
-      type: 'FeatureCollection',
-      properties: {
-        type: 'general_export',
-        city: CITY,
-        total_comunas: comunas.length,
-        total_quadrants: enrichedQuads.length,
-        export_timestamp: new Date().toISOString()
-      },
-      features: [...comunas, ...enrichedQuads],
-    };
-  }
-}
-
-// Función helper para exportar FeatureCollection
-function doExport(fc) {
-  let fileName;
-  if (fc.properties && fc.properties.type === 'hierarchy_export' && fc.properties.parent_code) {
-    fileName = `subcuadrante_${fc.properties.parent_code}.geojson`;
-  } else {
-    fileName = `cuadrantes_${CITY.toLowerCase()}_${new Date().toISOString().slice(0,10)}.geojson`;
-  }
-  
-  downloadGeoJSON(fc, fileName);
-}
-
 // Función para exportación directa (global)
 function doDirectExport() {
-  const fc = buildFeatureCollection(activePadre, activeHijos);
-  doExport(fc);
+  // Determinar tipo de exportación
+  if (activePadre && activeHijos.length > 0) {
+    // Exportación de jerarquía específica
+    exportHierarchy();
+  } else {
+    // Exportación general de cuadrantes
+    exportGeneralQuadrants();
+  }
 }
 
 // Función para exportar jerarquía específica (global)
@@ -2338,11 +2101,6 @@ function loadFeatureCollection(featureCollection, options = {}) {
                 applyStyleFromProperties(lyr);
                 enforceStrokePolicy(lyr);
                 attachRecolorOnClick(lyr);
-                
-                // Si es un padre (cuadrante), registrarlo para activación
-                if (feat.properties && feat.properties.nivel === 'cuadrante' && feat.properties.codigo) {
-                    registerParent(lyr);
-                }
             }
         }).getLayers()[0];
         
@@ -2410,21 +2168,27 @@ function loadFeatureCollection(featureCollection, options = {}) {
     
     // Botón aislar
     document.getElementById('btn-aislar').addEventListener('click', () => {
-        state.isAislado = !state.isAislado;
-        isAislado = state.isAislado; // mantener compatibilidad
+        isAislado = !isAislado;
         applyAislamiento();
         updateUIState();
     });
     
-    // Botones de eliminación
-    document.getElementById('btn-delete-parent')?.addEventListener('click', deleteActiveParent);
-    document.getElementById('btn-delete-child')?.addEventListener('click', deleteSelectedChild);
-    
 
     
 
     
-    // Control de opacidad removido - ahora usando constante fija PARENT_FILL_OPACITY
+    // Control de opacidad
+    const opacitySlider = document.getElementById('opacity-slider');
+    const opacityValue = document.getElementById('opacity-value');
+    
+    opacitySlider.addEventListener('input', (e) => {
+        padreOpacity = parseFloat(e.target.value);
+        opacityValue.textContent = Math.round(padreOpacity * 100) + '%';
+        
+        if (activePadre) {
+            activePadre.setStyle({ fillOpacity: padreOpacity });
+        }
+    });
     
     // === EVENTOS DEL MODAL DE CÓDIGO DE HIJO ===
     
@@ -2551,12 +2315,6 @@ function validateBeforeExport() {
 
 // Mostrar modal de validación nuevo con opciones de exportación
 function openValidationModal(validation, opts = {}) {
-    if (EXPORT_VALIDATION_MODE === 'none') {
-        // Nunca mostrar el modal
-        const fc = buildFeatureCollection(activePadre, activeHijos);
-        return doExport(fc);
-    }
-    
     const modal = document.createElement('div');
     modal.className = 'validation-overlay';
     
@@ -2636,8 +2394,7 @@ function openValidationModal(validation, opts = {}) {
         if (exportAnywayBtn) {
             exportAnywayBtn.addEventListener('click', () => {
                 document.body.removeChild(modal);
-                const fc = buildFeatureCollection(activePadre, activeHijos);
-                doExport(fc);
+                doDirectExport(); // Exportar tal cual
             });
         }
         
@@ -2723,8 +2480,7 @@ function detectHierarchyStructure(data) {
         f.properties && f.properties.nivel === 'subcuadrante' && f.properties.codigo_padre
     );
     
-    // 💡 considerar jerarquía si hay al menos un padre (aunque no tenga hijos)
-    const detected = padres.length > 0;
+    const detected = padres.length > 0 && hijos.length > 0;
     
     return {
         detected,
@@ -2837,7 +2593,6 @@ function showHierarchySelector(padres, hijos, callback) {
             
             <div class="modal-buttons">
                 <button type="button" class="btn btn-secondary" id="modal-cancel">Cancelar</button>
-                <button type="button" class="btn btn-info" id="modal-import-all">Importar Todos</button>
                 <button type="button" class="btn btn-primary" id="modal-import" disabled>Importar Selección</button>
             </div>
         </div>
@@ -2870,12 +2625,7 @@ function showHierarchySelector(padres, hijos, callback) {
                         </div>
                     `).join('');
             } else {
-                hijosPreview.style.display = 'block';
-                hijosList.innerHTML = `
-                    <div class="hijo-preview-item no-children">
-                        <span class="mensaje">Sin subcuadrantes - se habilitará creación</span>
-                    </div>
-                `;
+                hijosPreview.style.display = 'none';
             }
         } else {
             importBtn.disabled = true;
@@ -2888,7 +2638,7 @@ function showHierarchySelector(padres, hijos, callback) {
         document.body.removeChild(modal);
     });
     
-    // Botón importar selección
+    // Botón importar
     importBtn.addEventListener('click', () => {
         const codigoPadre = selector.value;
         const selectedPadre = padres[codigoPadre];
@@ -2897,67 +2647,66 @@ function showHierarchySelector(padres, hijos, callback) {
         document.body.removeChild(modal);
         callback(selectedPadre, selectedHijos);
     });
-    
-    // Botón importar todos
-    document.getElementById('modal-import-all').addEventListener('click', () => {
-        document.body.removeChild(modal);
-        loadAllHierarchies(padres, hijos);
-    });
 }
 
 // Cargar jerarquía seleccionada en el editor
 function loadSelectedHierarchy(padreFeature, hijosFeatures) {
-    // 1) NO borrar padres/hijos anteriores. Solo cargamos la nueva jerarquía.
-    
-    // 2) Cargar padre
-    const padreLayer = L.geoJSON(padreFeature, { 
-        style: PADRE_STYLE, 
-        onEachFeature: (f, l) => { 
-            l.feature = f; 
-            ensureStyleProps(l, true);
-            applyStyleFromProperties(l);
-            enforceStrokePolicy(l);
-            attachRecolorOnClick(l);
-        } 
-    }).getLayers()[0];
-    DRAWN_EDITABLE.addLayer(padreLayer);
-    
-    // 3) Cargar hijos y crear grupo específico para este padre
-    const code = padreFeature.properties?.codigo;
-    const hijosLayers = hijosFeatures
-      .sort((a,b)=>(a.properties.orden||0)-(b.properties.orden||0))
-      .map(f => L.geoJSON(f, { 
-          style: HIJO_STYLE, 
-          onEachFeature: (ft, ly) => { 
-              ly.feature = ft; 
-              ensureStyleProps(ly, false);
-              applyStyleFromProperties(ly);
-              enforceStrokePolicy(ly);
-              attachRecolorOnClick(ly);
-          } 
-      }).getLayers()[0]);
-    
-    // Crear grupo de hijos específico para este padre
-    if (hijosLayers.length > 0 && code) {
-      const childGroup = new L.FeatureGroup(hijosLayers);
-      state.childGroupsByParent[code] = childGroup;
-      map.addLayer(childGroup);
+    // Limpiar estado actual
+    if (activePadre) {
+        DRAWN_EDITABLE.removeLayer(activePadre);
+        DRAWN_LOCKED.removeLayer(activePadre);
     }
     
-    // Agregar hijos al grupo editable y registrarlos para selección
-    hijosLayers.forEach(l => {
-      DRAWN_EDITABLE.addLayer(l);
-      registerChild(l, code);
+    activeHijos.forEach(hijo => {
+        DRAWN_EDITABLE.removeLayer(hijo);
+        DRAWN_LOCKED.removeLayer(hijo);
     });
     
-    // 4) Registrar padre, asociar sus hijos y activarlo
-    registerParent(padreLayer);
-    if (code) state.childrenByParent[code] = hijosLayers;
-    setActiveParent(padreLayer);
+    activeHijos = [];
+    
+    // Cargar padre
+    const padreLayer = L.geoJSON(padreFeature, {
+        style: PADRE_STYLE,
+        onEachFeature: (feature, layer) => {
+            layer.feature = feature;
+            
+            // Sanitizar con buffer(0) según T7
+            layer.feature.geometry = bufferGeometry(feature, 0).geometry;
+            
+            attachRecolorOnClick(layer);
+        }
+    }).getLayers()[0];
+    
+    activePadre = padreLayer;
+    DRAWN_EDITABLE.addLayer(padreLayer);
+    
+    // Cargar hijos ordenados
+    hijosFeatures
+        .sort((a, b) => (a.properties.orden || 0) - (b.properties.orden || 0))
+        .forEach(hijoFeature => {
+            const hijoLayer = L.geoJSON(hijoFeature, {
+                style: HIJO_STYLE,
+                onEachFeature: (feature, layer) => {
+                    layer.feature = feature;
+                    
+                    // Sanitizar con buffer(0) según T7
+                    layer.feature.geometry = bufferGeometry(feature, 0).geometry;
+                    
+                    attachRecolorOnClick(layer);
+                }
+            }).getLayers()[0];
+            
+            activeHijos.push(hijoLayer);
+            DRAWN_EDITABLE.addLayer(hijoLayer);
+        });
+    
+  // Activar modo aislar y ajustar vista
+  isAislado = true;    applyAislamiento();
     fitToAllIfAny();
     
-    // Apagar recolor tras importar
-    setRecolorMode(false);
+    // Actualizar UI
+    updateUIState();
+    setEditorState(EditorState.IDLE);
     
     console.log('[HIERARCHY LOADED]', {
         padre: padreFeature.properties.codigo,
@@ -2966,118 +2715,6 @@ function loadSelectedHierarchy(padreFeature, hijosFeatures) {
     
     // Notificación de éxito
     showImportSuccess(padreFeature.properties.codigo, hijosFeatures.length);
-}
-
-// Cargar todas las jerarquías (padres + hijos)
-function loadAllHierarchies(padres, hijos) {
-    let totalPadres = 0;
-    let totalHijos = 0;
-    
-    // Cargar todos los padres
-    Object.values(padres).forEach(padreFeature => {
-        // Crear layer del padre
-        const padreLayer = L.geoJSON(padreFeature, { 
-            style: PADRE_STYLE, 
-            onEachFeature: (f, l) => { 
-                l.feature = f; 
-                attachRecolorOnClick(l);
-            } 
-        }).getLayers()[0];
-        
-        DRAWN_EDITABLE.addLayer(padreLayer);
-        
-        // Registrar padre (sin activar automáticamente)
-        registerParent(padreLayer);
-        
-        // Cargar hijos de este padre
-        const code = padreFeature.properties?.codigo;
-        if (code && hijos[code]) {
-            const hijosFeatures = hijos[code];
-            const hijosLayers = hijosFeatures
-                .sort((a, b) => (a.properties.orden || 0) - (b.properties.orden || 0))
-                .map(f => L.geoJSON(f, { 
-                    style: HIJO_STYLE, 
-                    onEachFeature: (ft, ly) => { 
-                        ly.feature = ft; 
-                        attachRecolorOnClick(ly);
-                    } 
-                }).getLayers()[0]);
-            
-            // Crear grupo de hijos específico
-            if (hijosLayers.length > 0) {
-                const childGroup = new L.FeatureGroup(hijosLayers);
-                state.childGroupsByParent[code] = childGroup;
-                map.addLayer(childGroup);
-                totalHijos += hijosLayers.length;
-            }
-            
-            // Agregar hijos al grupo editable y registrarlos para selección
-            hijosLayers.forEach(l => {
-                DRAWN_EDITABLE.addLayer(l);
-                registerChild(l, code);
-            });
-            
-            // Registrar asociación
-            state.childrenByParent[code] = hijosLayers;
-        }
-        
-        totalPadres++;
-    });
-    
-    // NO cambiar estado de aislamiento automáticamente
-    // NO activar padre específico - mostrar todos
-    state.activeParent = null;
-    activePadre = null;
-    state.children = [];
-    activeHijos = [];
-    
-    // Ajustar vista
-    fitToAllIfAny();
-    
-    // Apagar recolor tras importar todo
-    setRecolorMode(false);
-    
-    console.log('[ALL HIERARCHIES LOADED]', {
-        padres: totalPadres,
-        hijos: totalHijos
-    });
-    
-    // Notificación de éxito
-    showImportAllSuccess(totalPadres, totalHijos);
-}
-
-// Mostrar notificación de importación masiva exitosa
-function showImportAllSuccess(numPadres, numHijos) {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #00b894;
-        color: white;
-        padding: 15px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 12px rgba(0, 184, 148, 0.3);
-        z-index: 10000;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        max-width: 300px;
-    `;
-    
-    notification.innerHTML = `
-        <strong>📂 Todas las Jerarquías Importadas</strong><br>
-        👔 Padres: ${numPadres}<br>
-        👶 Subcuadrantes: ${numHijos}<br>
-        💡 Click en un padre para activarlo
-    `;
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        if (document.body.contains(notification)) {
-            document.body.removeChild(notification);
-        }
-    }, 5000);
 }
 
 // Mostrar notificación de importación exitosa
@@ -3097,15 +2734,10 @@ function showImportSuccess(codigoPadre, numHijos) {
         font-size: 14px;
         max-width: 300px;
     `;
-    
-    const hijosText = numHijos > 0 
-        ? `👶 Subcuadrantes: ${numHijos}`
-        : `✏️ Listo para crear subcuadrantes`;
-    
     notification.innerHTML = `
         <strong>📂 Jerarquía Importada</strong><br>
         👔 Padre: ${codigoPadre}<br>
-        ${hijosText}
+        👶 Subcuadrantes: ${numHijos}
     `;
     
     document.body.appendChild(notification);
@@ -3173,7 +2805,7 @@ async function importGeneralQuadrants(data) {
                     properties: { ...props }
                 });
             } else if (geomType === 'MultiPolygon') {
-                // Dividir MultiPolygon en varios Polygon, copiando todas las propiedades de estilo
+                // Dividir MultiPolygon en varios Polygon
                 feature.geometry.coordinates.forEach(polygonCoords => {
                     polygonsToProcess.push({
                         type: 'Feature',
@@ -3181,7 +2813,7 @@ async function importGeneralQuadrants(data) {
                             type: 'Polygon',
                             coordinates: polygonCoords
                         },
-                        properties: { ...props } // Copiar todas las propiedades incluyendo fillColor, fillOpacity, etc.
+                        properties: { ...props }
                     });
                 });
             }
@@ -3201,13 +2833,13 @@ async function importGeneralQuadrants(data) {
                         // Asignar feature al layer
                         lyr.feature = feat;
                         
-                        // Detectar si es padre por nivel
-                        const isPadre = (feat.properties && feat.properties.nivel === 'cuadrante');
-                        
-                        // Asegurar propiedades de estilo
-                        ensureStyleProps(lyr, isPadre);
+                        // Aplicar estilos desde properties
                         applyStyleFromProperties(lyr);
+                        
+                        // Forzar política de borde
                         enforceStrokePolicy(lyr);
+                        
+                        // Agregar click handler para recolor
                         attachRecolorOnClick(lyr);
                     }
                 }).getLayers()[0];
@@ -3230,40 +2862,6 @@ async function importGeneralQuadrants(data) {
             }
         }
         
-        // Fallback: si no hay padre activo pero cargamos 1–N polígonos,
-        // intenta adoptar uno como padre (por propiedades o por el mayor área).
-        if (!state.activeParent) {
-            let candidate = null;
-
-            DRAWN_EDITABLE.eachLayer(l => {
-                const p = l.feature?.properties || {};
-                if (p.nivel === 'cuadrante' || p.tipo === 'PADRE' || p.codigo) {
-                    candidate = candidate || l;
-                }
-            });
-
-            // si aún no hay, tomar el polígono de mayor área
-            if (!candidate) {
-                let maxArea = -1;
-                DRAWN_EDITABLE.eachLayer(l => {
-                    const a = calculateArea(l.toGeoJSON());
-                    if (a > maxArea) { maxArea = a; candidate = l; }
-                });
-            }
-
-            if (candidate) {
-                // Registrar y activar el padre adoptado
-                registerParent(candidate);
-                setActiveParent(candidate);
-                // NO forzar aislamiento automático
-                // state.isAislado = true;
-                // isAislado = true;
-                applyAislamiento();
-                fitToAllIfAny();
-                console.debug('[IMPORT][FALLBACK] Padre adoptado automáticamente:', candidate.feature?.properties?.codigo || '(sin código)');
-            }
-        }
-
         // Log de resultados
         console.info('[IMPORT]', { total, comunasFiltradas, noPoligonales, deduplicadas, agregadas });
         
