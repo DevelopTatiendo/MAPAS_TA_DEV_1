@@ -8,7 +8,7 @@ import pandas as pd
 from mapa_pruebas import generar_mapa_pruebas
 from mapa_pedidos import generar_mapa_pedidos
 from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
-from mapa_visitas import generar_mapa_visitas
+from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
@@ -72,7 +72,7 @@ st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
-tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas"]
+tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
@@ -187,11 +187,78 @@ with st.form(key="filtros_form"):
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
     elif tipo_mapa == "Visitas":
-        rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
-        ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-        agrupacion = st.radio("Tipo de agrupación:", ["Agrupado", "No agrupado"], index=0)
+        # Lista de rutas desde BD (id_ruta, ruta)
+        from pre_procesamiento.preprocesamiento_visitas import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta = None
+            nombre_ruta_ui = None
+        else:
+            import re
+            def clean_route_name(name):
+                if pd.isna(name):
+                    return "SIN NOMBRE"
+                name = str(name).strip()
+                name = re.sub(r'[^\w\s-]', '', name)
+                return name if name else "SIN NOMBRE"
+            
+            df_rutas['ruta_clean'] = df_rutas['ruta'].apply(clean_route_name)
+            
+            # Crear diccionario {nombre_ruta: id_ruta}
+            options_dict = dict(zip(df_rutas['ruta_clean'], df_rutas['id_ruta']))
+            
+            # UI: mostrar nombres de rutas
+            nombre_ruta_ui = st.selectbox(
+                "Seleccione una ruta de cobro:", 
+                options=[""] + list(options_dict.keys()),
+                key="visitas_ruta_selectbox"
+            )
+            
+            # Obtener id_ruta
+            id_ruta = options_dict.get(nombre_ruta_ui) if nombre_ruta_ui else None
+        
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
+    elif tipo_mapa == "Consultores":
+        # Lista de rutas desde BD (id_ruta, ruta)
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta = None
+            nombre_ruta_ui = None
+        else:
+            import re
+            # Crear lista con ordenamiento robusto descendente
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+            
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+            
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+            
+            # Selector que muestra solo el nombre de la ruta
+            ruta_seleccionada = st.selectbox("Seleccione la ruta (obligatorio):", options=options_list)
+            id_ruta = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+            nombre_ruta_ui = ruta_seleccionada if ruta_seleccionada else None
+        
+        # Fechas obligatorias
+        fecha_inicio = st.date_input("Fecha de Inicio")
+        fecha_fin = st.date_input("Fecha de Fin")
+        
+
+        
+        # Checkbox para mostrar puntos fuera de cuadrantes
+        mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -289,42 +356,59 @@ st.markdown(
 # Procesamiento
 if submit_button:
     try:
-        if submit_button:
-            if tipo_mapa == "Pedidos":
-                filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
-                map_type = "pedidos"
-            elif tipo_mapa == "Visitas":
-                filename = manejar_error(generar_mapa_visitas, fecha_inicio, fecha_fin, agrupacion, ciudad, ruta_cobro)
-                map_type = "visitas"
-            elif tipo_mapa == "Facturas Vencidas":
-                filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
-                map_type = "facturas"
-            elif tipo_mapa == "Muestras":
-                override_fc = st.session_state.get("muestras_override_fc")
-                promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
-                resultado = manejar_error(
-                    generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
-                )
-                if resultado:
-                    filename, n_puntos = resultado
-                else:
-                    filename, n_puntos = None, 0
-                map_type = "muestras"
-            elif tipo_mapa == "Pruebas":
-                filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
+        if tipo_mapa == "Pedidos":
+            filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
+            map_type = "pedidos"
+        elif tipo_mapa == "Visitas":
+            filename = manejar_error(generar_mapa_visitas_individuales, ciudad, int(id_ruta), str(fecha_inicio), str(fecha_fin))
+            map_type = "visitas"
+        elif tipo_mapa == "Facturas Vencidas":
+            filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
+            map_type = "facturas"
+        elif tipo_mapa == "Muestras":
+            override_fc = st.session_state.get("muestras_override_fc")
+            promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
+            resultado = manejar_error(
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
+            )
+            if resultado:
+                filename, n_puntos = resultado
+            else:
+                filename, n_puntos = None, 0
+            map_type = "muestras"
+        elif tipo_mapa == "Consultores":
+            if not id_ruta:
+                st.error("Seleccione una ruta válida.")
+                filename = None
+            elif fecha_inicio > fecha_fin:
+                st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
+                filename = None
+            else:
+                # Transformar fechas a strings día-completo
+                f_ini_dt = f"{fecha_inicio} 00:00:00"
+                f_fin_dt = f"{fecha_fin} 23:59:59"
+                # Llamar función simplificada
+                from mapa_consultores import generar_mapa_consultores
+                filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
+                map_type = "consultores"
+        elif tipo_mapa == "Pruebas":
+            filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
+            map_type = "pruebas"
 
-            if filename:
-                map_url = f"{FLASK_SERVER}/maps/{filename}"
-                st.session_state["map_url"] = map_url
-                # Actualizar el placeholder con el enlace
-                link_placeholder.markdown(
-                    f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
-                    unsafe_allow_html=True
-                )
-                
-                # Warning si hay filtro y no hubo puntos
-                if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
-                    st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
+        if filename:
+            # Agregar cache-busting al URL del mapa
+            timestamp = int(time.time())
+            map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
+            st.session_state["map_url"] = map_url
+            # Actualizar el placeholder con el enlace
+            link_placeholder.markdown(
+                f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+                unsafe_allow_html=True
+            )
+            
+            # Warning si hay filtro y no hubo puntos
+            if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+                st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
 
     except Exception as e:
         logging.error(f"❌ Error inesperado: {str(e)}")
@@ -339,4 +423,3 @@ if "map_url" in st.session_state and st.session_state["map_url"] is not None:
         )
 elif not submit_button:
     link_placeholder.empty()
-
