@@ -187,36 +187,35 @@ with st.form(key="filtros_form"):
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
     elif tipo_mapa == "Visitas":
-        # Lista de rutas desde BD (id_ruta, ruta)
-        from pre_procesamiento.preprocesamiento_visitas import listar_rutas_simple
+        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
         df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
         if df_rutas is None or df_rutas.empty:
             st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-            id_ruta = None
-            nombre_ruta_ui = None
+            id_ruta_visitas = None
+            nombre_ruta_ui_visitas = None
         else:
             import re
-            def clean_route_name(name):
-                if pd.isna(name):
-                    return "SIN NOMBRE"
-                name = str(name).strip()
-                name = re.sub(r'[^\w\s-]', '', name)
-                return name if name else "SIN NOMBRE"
+            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
             
-            df_rutas['ruta_clean'] = df_rutas['ruta'].apply(clean_route_name)
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
             
-            # Crear diccionario {nombre_ruta: id_ruta}
-            options_dict = dict(zip(df_rutas['ruta_clean'], df_rutas['id_ruta']))
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
             
-            # UI: mostrar nombres de rutas
-            nombre_ruta_ui = st.selectbox(
-                "Seleccione una ruta de cobro:", 
-                options=[""] + list(options_dict.keys()),
-                key="visitas_ruta_selectbox"
-            )
-            
-            # Obtener id_ruta
-            id_ruta = options_dict.get(nombre_ruta_ui) if nombre_ruta_ui else None
+            # Selector que muestra solo el nombre de la ruta
+            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+            id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+            nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
         
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
@@ -360,7 +359,18 @@ if submit_button:
             filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
             map_type = "pedidos"
         elif tipo_mapa == "Visitas":
-            filename = manejar_error(generar_mapa_visitas_individuales, ciudad, int(id_ruta), str(fecha_inicio), str(fecha_fin))
+            if not id_ruta_visitas:
+                st.error("Seleccione una ruta válida.")
+                filename = None
+            else:
+                filename = manejar_error(
+                    generar_mapa_visitas_individuales,
+                    ciudad,
+                    id_ruta_visitas,  # Pasar ID entero directamente
+                    nombre_ruta_ui_visitas,  # Pasar nombre para mostrar en el mapa
+                    str(fecha_inicio),
+                    str(fecha_fin)
+                )
             map_type = "visitas"
         elif tipo_mapa == "Facturas Vencidas":
             filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
