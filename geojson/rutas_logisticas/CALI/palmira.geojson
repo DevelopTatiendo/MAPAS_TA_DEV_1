@@ -1,0 +1,28 @@
+{
+  "type": "Feature",
+  "properties": {
+    "nombre": "PALMIRA",
+    "ciudad": "CALI",
+    "barrios": 10,
+    "fecha_actualizacion": "2025-01-29"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          3.511421184077412,
+          -76.29941964913812
+        ],
+        [
+          3.5187000030823863,
+          -76.30126722951805
+        ],
+        [
+          3.5154005689042656,
+          -76.2981443154118
+        ]
+      ]
+    ]
+  }
+}
