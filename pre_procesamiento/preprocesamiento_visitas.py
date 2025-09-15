@@ -161,11 +161,11 @@ def nombre_ruta(centroope: int, id_ruta: int) -> str:
 def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
     Retorna todos los eventos de visitas con coordenadas válidas para la ruta y rango especificados.
-    Simplificado para el nuevo flujo: solo consultores en calle (cargo = 5).
+    Filtra por cargos operativos: ca.Id_cargo IN (5, 181) - consultores en calle y gestores.
     
     Args:
         id_centroope (int): ID del centro de operaciones
-        id_ruta (int): ID de la ruta de cobro
+        id_ruta (int): ID de la ruta de cobro (entero de BD)
         f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
         f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
     
@@ -210,7 +210,7 @@ def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: s
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 5
+      AND ca.Id_cargo IN (5, 181)
     ORDER BY 
         e.fecha_evento ASC,
         p.id ASC,
@@ -219,8 +219,13 @@ def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: s
     
     try:
         cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+        # Convertir parámetros a tipos nativos Python para evitar errores numpy.int64
+        params = [int(id_centroope), int(id_ruta), str(f_ini), str(f_fin)]
+        df = pd.read_sql(q, cn, params=params)
         cn.close()
+        
+        # Log inmediato de filas devueltas por la consulta SQL
+        logging.info(f"SQL query devolvió {len(df)} filas para CO:{id_centroope}, Ruta:{id_ruta}")
         
         # Normalizar tipos de datos
         if not df.empty:
@@ -247,7 +252,7 @@ def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: s
         # Logging de tiempo de ejecución y tamaño
         tiempo_ejecucion = time.time() - inicio_tiempo
         filas_resultado = len(df)
-        logging.info(f"eventos_visitas_simple completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados")
+        logging.info(f"eventos_visitas_simple completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados para CO:{id_centroope}, id_ruta:{id_ruta}")
         
         return df
         
