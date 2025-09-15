@@ -1,4 +1,5 @@
 import folium
+from folium.plugins import AntPath
 import json
 import unicodedata
 import re
@@ -6,6 +7,8 @@ import pandas as pd
 import tempfile
 import os
 import glob
+import math
+from datetime import datetime
 from shapely.geometry import shape, Point
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -38,6 +41,128 @@ def _norm_token(token: str) -> str:
     normalizado = re.sub(r'[^\w]', '_', sin_tildes).upper()
     return normalizado
 
+def _parse_dt(s):
+    """Parse datetime string with multiple format support."""
+    for fmt in ("%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%dT%H:%M:%S",
+                "%Y-%m-%dT%H:%M",
+                "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt)
+        except Exception:
+            pass
+    return None
+
+def _es_un_solo_dia(fecha_inicio: str, fecha_fin: str) -> bool:
+    """Devuelve True si ambas fechas están en el mismo día calendario y el rango es <= 24h."""
+    fi = _parse_dt(fecha_inicio)
+    ff = _parse_dt(fecha_fin)
+    if not fi or not ff:
+        return False
+    # Si vienen sin hora, asume 00:00:00 y 23:59:59 del mismo día
+    if len(fecha_inicio.strip()) == 10:  # "YYYY-MM-DD"
+        fi = fi.replace(hour=0, minute=0, second=0)
+    if len(fecha_fin.strip()) == 10:
+        ff = ff.replace(hour=23, minute=59, second=59)
+    return fi.date() == ff.date() and (ff - fi).total_seconds() <= 24*3600 + 60
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    """Distancia geodésica (km) entre dos puntos (WGS84)."""
+    R = 6371.0088
+    φ1, φ2 = math.radians(lat1), math.radians(lat2)
+    Δφ = math.radians(lat2 - lat1)
+    Δλ = math.radians(lon2 - lon1)
+    a = math.sin(Δφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(Δλ/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+def resolve_route_id(ruta_id_ui, ruta_nombre_ui, ciudad):
+    """
+    Resuelve el id_ruta real basado en la entrada de la UI.
+    
+    Args:
+        ruta_id_ui: ID de ruta desde UI (puede ser int, str o None)
+        ruta_nombre_ui: Nombre de ruta desde UI (str)
+        ciudad: Nombre de la ciudad (str)
+        
+    Returns:
+        tuple: (id_ruta_real: int, nombre_ruta_resuelto: str)
+        
+    Raises:
+        ValueError: Si no se puede resolver la ruta
+        
+    Examples:
+        resolve_route_id(None, "ruta 7", "Cali") -> (13, "ruta 7")
+        resolve_route_id(780, "ruta 16 Palmira", "Cali") -> (780, "ruta 16 Palmira")
+    """
+    # Normalizar ciudad
+    ciudadN = _norm_city(ciudad)
+    
+    try:
+        # Si tenemos ID directo de UI, validarlo contra BD
+        if ruta_id_ui is not None:
+            id_ruta_candidato = int(ruta_id_ui)
+            co = get_co(ciudadN)
+            
+            # Validar que existe en BD
+            from pre_procesamiento.preprocesamiento_consultores import nombre_ruta
+            nombre_bd = nombre_ruta(co, id_ruta_candidato)
+            
+            if nombre_bd is not None:
+                return id_ruta_candidato, ruta_nombre_ui or nombre_bd
+            else:
+                logger.warning(f"ID de ruta {id_ruta_candidato} no encontrado en BD para {ciudadN}")
+        
+        # Si no hay ID directo o no se encontró, resolver por nombre
+        if ruta_nombre_ui:
+            co = get_co(ciudadN)
+            from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+            df_rutas = listar_rutas_simple(ciudad)
+            
+            if df_rutas.empty:
+                raise ValueError(f"No hay rutas disponibles para {ciudadN}")
+            
+            # Mapeo específico para casos conocidos
+            mapeo_especifico = {
+                "ruta 7": 13,
+                "ruta 16 palmira": 780,
+                # Agregar más mapeos según se necesiten
+            }
+            
+            nombre_normalizado = ruta_nombre_ui.lower().strip()
+            
+            # Intentar mapeo específico primero
+            if nombre_normalizado in mapeo_especifico:
+                id_ruta_resuelto = mapeo_especifico[nombre_normalizado]
+                # Validar que existe
+                nombre_bd = nombre_ruta(co, id_ruta_resuelto)
+                if nombre_bd is not None:
+                    return id_ruta_resuelto, ruta_nombre_ui
+            
+            # Buscar por coincidencia parcial en BD
+            for _, row in df_rutas.iterrows():
+                nombre_bd = str(row['ruta']).lower().strip()
+                if nombre_normalizado in nombre_bd or nombre_bd in nombre_normalizado:
+                    return int(row['id_ruta']), ruta_nombre_ui
+            
+            # Si no encontramos coincidencia, intentar extraer número
+            import re
+            match = re.search(r'\b(\d+)\b', ruta_nombre_ui)
+            if match:
+                numero_ruta = int(match.group(1))
+                # Buscar ruta que contenga ese número
+                for _, row in df_rutas.iterrows():
+                    if str(numero_ruta) in str(row['ruta']):
+                        return int(row['id_ruta']), ruta_nombre_ui
+        
+        # Si llegamos aquí, no pudimos resolver
+        raise ValueError(f"No se pudo resolver ruta: id_ui={ruta_id_ui}, nombre_ui='{ruta_nombre_ui}' para {ciudadN}")
+        
+    except Exception as e:
+        logger.error(f"Error resolviendo ruta: {e}")
+        raise ValueError(f"Error resolviendo ruta: {e}")
+
 def _coords_and_geojson():
     return {
         'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
@@ -50,9 +175,8 @@ def _coords_and_geojson():
     }
 
 def _es_cuadrante(feature):
-    """Verifica si la feature es un cuadrante (codigo empieza por CL_)."""
-    codigo = (feature.get('properties', {}).get('codigo') or '').upper()
-    return codigo.startswith('CL_')
+    """Determina si un feature es un cuadrante válido (padre o hijo)."""
+    return _es_cuadrante_padre(feature) or _es_cuadrante_hijo(feature)
 
 def _style_cuadrante(feature):
     """Estilo para cuadrantes basado en properties del GeoJSON."""
@@ -187,50 +311,182 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     
     return html
 
-def _cargar_geojson_ruta_exacto(ciudadN: str, id_ruta: int) -> dict | None:
+def filter_features_by_route(feature_collection: dict, id_ruta_real: int, mostrar_todos: bool = False) -> tuple:
     """
-    Carga exactamente el archivo subcuadrante_CL_{id_ruta}_00.geojson para una ruta específica.
+    Filtra features del FeatureCollection por ruta específica.
     
     Args:
-        ciudadN (str): Nombre de ciudad normalizado
-        id_ruta (int): ID de la ruta
+        feature_collection (dict): FeatureCollection completo
+        id_ruta_real (int): ID real de la ruta a filtrar
+        mostrar_todos (bool): Si True, omite filtrado y devuelve todo
         
     Returns:
-        dict | None: FeatureCollection si encuentra el archivo, None si no existe
+        tuple: (padres_ruta: list, hijos_ruta: list, subset_fc: dict)
+        - padres_ruta: Lista de features padre de la ruta
+        - hijos_ruta: Lista de features hijo de la ruta  
+        - subset_fc: FeatureCollection con solo features de la ruta
     """
-    # 1) Ruta ABSOLUTA (Windows del usuario)
-    base_abs = r"C:\Users\ESP_NEGOCIO\Documents\GitHub\MAPAS_TA_DEV_1\geojson\rutas\cali"
-    fname = f"subcuadrante_CL_{id_ruta}_00.geojson"
-    path_abs = os.path.join(base_abs, fname)
+    if mostrar_todos:
+        # Caso "TODOS": devolver todo sin filtrar
+        features = feature_collection.get('features', [])
+        padres = [f for f in features if _es_cuadrante_padre(f)]
+        hijos = [f for f in features if _es_cuadrante_hijo(f)]
+        return padres, hijos, feature_collection
+    
+    padres_ruta = []
+    hijos_ruta = []
+    
+    for feature in feature_collection.get('features', []):
+        props = feature.get('properties', {})
+        
+        # Método 1: Usar propiedades explícitas (preferido)
+        if 'id_ruta' in props and 'nivel' in props:
+            feature_id_ruta = props.get('id_ruta')
+            nivel = props.get('nivel', '').lower()
+            
+            # Convertir id_ruta a int para comparación
+            try:
+                feature_id_ruta = int(feature_id_ruta)
+            except (ValueError, TypeError):
+                continue
+                
+            if feature_id_ruta == id_ruta_real:
+                if nivel == 'cuadrante':
+                    padres_ruta.append(feature)
+                elif nivel == 'subcuadrante':
+                    hijos_ruta.append(feature)
+        
+        # Método 2: Fallback usando patrones de código
+        else:
+            codigo = props.get('codigo', '').upper()
+            if not codigo:
+                continue
+                
+            # Detectar padres: CL_{id_ruta}_00, CL_{id_ruta}_00A, etc.
+            padre_pattern = rf'^CL_{id_ruta_real}_00[A-Z]*$'
+            if re.match(padre_pattern, codigo):
+                padres_ruta.append(feature)
+                continue
+            
+            # Detectar hijos: CL_{id_ruta}_XX donde XX != 00
+            hijo_pattern = rf'^CL_{id_ruta_real}_(\d{{2}}[A-Z]*)$'
+            match = re.match(hijo_pattern, codigo)
+            if match:
+                sufijo = match.group(1)
+                # Excluir 00 y variantes (son padres)
+                if not sufijo.startswith('00'):
+                    hijos_ruta.append(feature)
+                    continue
+            
+            # Detectar hijos por codigo_padre
+            codigo_padre = props.get('codigo_padre', '')
+            if codigo_padre:
+                # Verificar si codigo_padre pertenece a algún padre de esta ruta
+                padre_pattern_check = rf'^CL_{id_ruta_real}_00[A-Z]*$'
+                if re.match(padre_pattern_check, codigo_padre.upper()):
+                    hijos_ruta.append(feature)
+    
+    # Crear FeatureCollection filtrado
+    features_filtradas = padres_ruta + hijos_ruta
+    subset_fc = {
+        'type': 'FeatureCollection',
+        'features': features_filtradas
+    }
+    
+    logger.info(f"Filtrado por ruta {id_ruta_real}: {len(padres_ruta)} padres, {len(hijos_ruta)} hijos")
+    
+    return padres_ruta, hijos_ruta, subset_fc
 
-    # 2) Ruta RELATIVA (por si el programador corre fuera de esa máquina)
-    path_rel = os.path.join("geojson", "rutas", ciudadN.lower(), fname)
+def _es_cuadrante_padre(feature: dict) -> bool:
+    """Detecta si una feature es un cuadrante padre."""
+    props = feature.get('properties', {})
+    
+    # Método 1: Por nivel explícito
+    if props.get('nivel') == 'cuadrante':
+        return True
+        
+    # Método 2: Por patrón de código
+    codigo = props.get('codigo', '').upper()
+    if codigo.startswith('CL_') and '_00' in codigo:
+        return True
+        
+    return False
 
-    for path in (path_abs, path_rel):
+def _es_cuadrante_hijo(feature: dict) -> bool:
+    """Detecta si una feature es un subcuadrante hijo."""
+    props = feature.get('properties', {})
+    
+    # Método 1: Por nivel explícito
+    if props.get('nivel') == 'subcuadrante':
+        return True
+        
+    # Método 2: Por patrón de código o codigo_padre
+    codigo = props.get('codigo', '').upper()
+    codigo_padre = props.get('codigo_padre', '')
+    
+    if codigo_padre and codigo_padre.startswith('CL_'):
+        return True
+        
+    # Patrón CL_X_YY donde YY != 00
+    if codigo.startswith('CL_'):
+        parts = codigo.split('_')
+        if len(parts) >= 3 and parts[2] != '00' and not parts[2].startswith('00'):
+            return True
+            
+    return False
+
+def _cargar_geojson_ciudad_unico(ciudad: str) -> dict:
+    """
+    Carga el archivo GeoJSON único para la ciudad especificada.
+    
+    Args:
+        ciudad (str): Nombre de la ciudad
+        
+    Returns:
+        dict: FeatureCollection del archivo único
+        
+    Raises:
+        FileNotFoundError: Si no se encuentra el archivo para la ciudad
+        Exception: Si hay error leyendo el archivo
+    """
+    ciudadN = _norm_city(ciudad)
+    ciudad_slug = ciudadN.lower()
+    
+    # Construir ruta del archivo único
+    filename = f"cuadrantes_rutas_{ciudad_slug}.geojson"
+    path_rel = os.path.join("geojson", "rutas", ciudad_slug, filename)
+    
+    # También intentar ruta absoluta como fallback
+    base_abs = os.path.join(os.getcwd(), "geojson", "rutas", ciudad_slug)
+    path_abs = os.path.join(base_abs, filename)
+    
+    for path in (path_rel, path_abs):
         if os.path.isfile(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     geojson_data = json.load(f)
-                logger.info(f"✓ Archivo específico cargado: {path}")
+                logger.info(f"✓ Archivo único cargado: {path}")
                 return geojson_data
             except Exception as e:
                 logger.error(f"Error leyendo {path}: {e}")
                 continue
     
-    logger.info(f"No se encontró archivo específico para ruta {id_ruta} en {ciudadN}")
-    return None
+    # Si no encontramos el archivo, error claro
+    error_msg = f"No se encontró el archivo GeoJSON único para {ciudad}: {path_rel}"
+    logger.error(error_msg)
+    raise FileNotFoundError(error_msg)
 
 
 
 def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nombre, mostrar_fuera: bool = False):
     """
-    Genera mapa de consultores con filtro espacial por cuadrantes y popups detallados.
+    Genera mapa de consultores usando archivo único por ciudad y filtrado por ruta.
     
     Args:
         fecha_inicio: string formato 'YYYY-MM-DD HH:MM:SS'
         fecha_fin: string formato 'YYYY-MM-DD HH:MM:SS'
         ciudad: nombre de la ciudad
-        ruta_id: id_ruta numérico
+        ruta_id: id_ruta numérico (desde UI)
         ruta_nombre: nombre de la ruta (string mostrado en UI)
         mostrar_fuera: bool para mostrar puntos fuera de cuadrantes en rojo (default: False)
     """
@@ -241,78 +497,76 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         return None
     location, _ = centers[ciudadN]
     
-    # 2) Obtener CO y datos de eventos
+    # 2) Resolver ID de ruta real
+    try:
+        id_ruta_real, nombre_ruta_resuelto = resolve_route_id(ruta_id, ruta_nombre, ciudad)
+        logger.info(f"Ruta resuelta: {ruta_nombre} -> ID {id_ruta_real}")
+    except ValueError as e:
+        logger.error(f"Error resolviendo ruta: {e}")
+        return None
+    
+    # 3) Cargar archivo GeoJSON único de la ciudad
+    try:
+        geojson_completo = _cargar_geojson_ciudad_unico(ciudad)
+    except FileNotFoundError as e:
+        logger.error(f"Archivo GeoJSON no encontrado: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error cargando GeoJSON: {e}")
+        return None
+    
+    # 4) Filtrar features por ruta específica
+    mostrar_todos = (ruta_nombre and ruta_nombre.strip().upper() == "TODOS")
+    padres_ruta, hijos_ruta, subset_fc = filter_features_by_route(
+        geojson_completo, id_ruta_real, mostrar_todos
+    )
+    
+    if not padres_ruta and not hijos_ruta:
+        logger.warning(f"No hay cuadrantes para la ruta {id_ruta_real} en el archivo")
+        # Continuar pero mostrar mensaje en el mapa
+    
+    # 5) Obtener datos de eventos usando ID real
     co = get_co(ciudadN)
-    id_ruta = int(ruta_id) if not isinstance(ruta_id, int) else int(ruta_id)
-    df_eventos = eventos_por_ruta_en_rango(co, id_ruta, fecha_inicio, fecha_fin)
-    
+    df_eventos = eventos_con_coordenadas_por_ruta_y_rango(co, id_ruta_real, fecha_inicio, fecha_fin)
+    logger.info(f"Recorridos: columnas df_eventos = {list(df_eventos.columns)}")
     total_eventos = len(df_eventos) if df_eventos is not None else 0
-
-    # 3) Cargar GeoJSON: específico por ruta si aplica, sino archivo base
-    geojson_a_usar = None
     
-    # Si ruta_nombre no es "TODOS" y no está vacío, intentar archivo específico
-    if ruta_nombre and ruta_nombre.strip() != "" and ruta_nombre.strip().upper() != "TODOS":
-        geojson_a_usar = _cargar_geojson_ruta_exacto(ciudadN, id_ruta)
-    
-    # Si no se cargó archivo específico, usar archivo base
-    if geojson_a_usar is None:
-        archivo_base = f"geojson/cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson"
-        
-        try:
-            with open(archivo_base, 'r', encoding='utf-8') as f:
-                geojson_a_usar = json.load(f)
-            logger.info(f"GeoJSON base cargado exitosamente: {archivo_base}")
-        except FileNotFoundError:
-            error_msg = f"Error: No se encontró el archivo GeoJSON requerido: {archivo_base}"
-            logger.error(error_msg)
-            print(error_msg)
-            print(f"Por favor, asegúrese de que existe el archivo para la ciudad {ciudad}")
-            geojson_a_usar = None
-        except Exception as e:
-            error_msg = f"Error cargando archivo GeoJSON {archivo_base}: {e}"
-            logger.error(error_msg)
-            print(error_msg)
-            geojson_a_usar = None
-
-    # 4) Obtener DataFrames de agregación para popups
+    # 6) Obtener DataFrames de agregación usando el subconjunto filtrado
     df_resumen = pd.DataFrame()
     df_detalle = pd.DataFrame()
     
-    try:
-        # Intentar obtener los datos de agregación usando las funciones del GRANDE 3
-        geojson_path = None
-        if geojson_a_usar is not None:
-            # Guardar GeoJSON temporalmente para el análisis
+    if subset_fc.get('features'):
+        try:
+            # Guardar subconjunto temporalmente para análisis
             with tempfile.NamedTemporaryFile(mode='w', suffix='.geojson', delete=False, encoding='utf-8') as temp_file:
-                json.dump(geojson_a_usar, temp_file)
+                json.dump(subset_fc, temp_file)
                 geojson_path = temp_file.name
-        
-        df_resumen = obtener_resumen_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, geojson_path)
-        df_detalle = obtener_detalle_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, geojson_path)
-        
-        # Limpiar archivo temporal si se creó
-        if geojson_path:
+            
+            df_resumen = obtener_resumen_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, id_ruta_real, geojson_path)
+            df_detalle = obtener_detalle_cuadrantes_consultores(fecha_inicio, fecha_fin, ciudad, id_ruta_real, geojson_path)
+            
+            # Limpiar archivo temporal
             try:
                 os.unlink(geojson_path)
             except:
                 pass
                 
-        logger.info(f"Datos agregación obtenidos: {len(df_resumen)} cuadrantes, {len(df_detalle)} detalles")
-        
-    except Exception as e:
-        logger.warning(f"No se pudieron obtener datos de agregación para popups: {e}")
+            logger.info(f"Datos agregación obtenidos: {len(df_resumen)} cuadrantes, {len(df_detalle)} detalles")
+            
+        except Exception as e:
+            logger.warning(f"No se pudieron obtener datos de agregación para popups: {e}")
     
-    # 5) Crear mapa base
+    # 7) Crear mapa base
     mapa = folium.Map(location, zoom_start=12)
     
-    # 6) Dibujar GeoJSON (solo cuadrantes con color, resto transparente)
-    if geojson_a_usar is not None:
+    # 8) Dibujar solo features del subconjunto filtrado
+    if subset_fc.get('features'):
         fg_contorno = folium.FeatureGroup(name="Contorno", show=True, control=False)
         fg_cuadrantes = folium.FeatureGroup(name="Cuadrantes", show=True)
         
-        for feat in geojson_a_usar.get('features', []):
-            if _es_cuadrante(feat):
+        for feat in subset_fc['features']:
+            # Verificar si es cuadrante (padre o hijo)
+            if _es_cuadrante_padre(feat) or _es_cuadrante_hijo(feat):
                 # Obtener código del cuadrante para el popup
                 codigo_cuadrante = feat.get('properties', {}).get('codigo', '')
                 
@@ -326,13 +580,7 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                     popup = folium.Popup(popup_html, max_width=300)
                 
                 # Tooltip para mostrar código al hover
-                tooltip = folium.GeoJsonTooltip(
-                    fields=[],
-                    aliases=[],
-                    labels=False,
-                    sticky=True,
-                    tooltip=f"<b>{codigo_cuadrante}</b>"
-                )
+                tooltip = folium.Tooltip(f"<b>{codigo_cuadrante}</b>")
                 
                 folium.GeoJson(
                     data=feat,
@@ -341,61 +589,40 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                     tooltip=tooltip
                 ).add_to(fg_cuadrantes)
             else:
-                # Features no-cuadrante: solo contorno transparente y NO-INTERACTIVO
+                # Features no-cuadrante: solo contorno transparente
                 folium.GeoJson(
                     data=feat,
                     style_function=_style_no_cuadrante,
-                    popup=False,  # Sin popup
-                    tooltip=False  # Sin tooltip
+                    popup=False,
+                    tooltip=False
                 ).add_to(fg_contorno)
         
-        # ORDEN IMPORTANTE: contorno primero (abajo), cuadrantes después (arriba)
+        # ORDEN: contorno primero, cuadrantes después
         fg_contorno.add_to(mapa)
         fg_cuadrantes.add_to(mapa)
     else:
-        # Si no hay GeoJSON, mostrar mensaje informativo en el mapa
+        # Mensaje si no hay features para la ruta
         info_html = f"""
         <div style="position: fixed; 
                     top: 10px; right: 10px; width: 350px; height: 90px; 
                     background-color: rgba(255, 255, 255, 0.9); z-index:9999; 
-                    font-size:14px; padding: 10px; border: 2px solid red; border-radius: 5px;">
-            <b>⚠️ Archivo GeoJSON no encontrado</b><br>
-            <small>No se encontró: cuadrantes_{ciudadN.lower()}_rutas_consultores.geojson<br>
+                    font-size:14px; padding: 10px; border: 2px solid orange; border-radius: 5px;">
+            <b>⚠️ No hay cuadrantes para la ruta seleccionada</b><br>
+            <small>Ruta: {nombre_ruta_resuelto} (ID: {id_ruta_real})<br>
             El mapa mostrará solo los puntos de eventos.</small>
         </div>
         """
         mapa.get_root().html.add_child(folium.Element(info_html))
 
-    # 7) Selección de cuadrantes por ruta (soportar ID y NOMBRE)
-    cuadrantes_ruta = []
-    
-    if geojson_a_usar is not None:
-        # Normalizar nombre de ruta
-        nom = _norm_token(ruta_nombre)
-        
-        # Construir patrones de búsqueda
-        patrones = [
-            rf'^CL_{id_ruta}_[0-9]{{2}}$',           # CL_3_01
-            rf'^CL_{nom}_[0-9]{{2}}$',               # CL_RUTA_NOMBRE_01  
-            rf'^CL_{nom}_{id_ruta}_[0-9]{{2}}$'      # CL_RUTA_NOMBRE_3_01
-        ]
-        
-        def _match_codigo(cod):
-            C = (cod or '').upper()
-            return any(re.match(p, C) for p in patrones)
-        
-        for feat in geojson_a_usar.get('features', []):
-            codigo = feat.get('properties', {}).get('codigo', '')
-            if _match_codigo(codigo):
-                cuadrantes_ruta.append(feat)
-
-    # 8) Filtro espacial de eventos (solo puntos interiores)
+    # 9) Filtro espacial de eventos usando geometría del subconjunto
     df_filtrados = pd.DataFrame()
     
-    if df_eventos is not None and not df_eventos.empty and cuadrantes_ruta:
-        # Construir unión de polígonos de los cuadrantes de esta ruta
+    if df_eventos is not None and not df_eventos.empty and (padres_ruta or hijos_ruta):
+        # Construir geometría de referencia: preferir hijos, fallback padres
+        features_para_filtro = hijos_ruta if hijos_ruta else padres_ruta
+        
         polygons = []
-        for feat in cuadrantes_ruta:
+        for feat in features_para_filtro:
             try:
                 geom = shape(feat['geometry'])
                 if not geom.is_valid:
@@ -422,7 +649,26 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
             mask_in = df_eventos.apply(punto_dentro, axis=1)
             df_filtrados = df_eventos[mask_in].reset_index(drop=True)
 
-    # 9) Pintar SOLO los eventos filtrados (interiores)
+    def _color_evento(row, fuera=False):
+        """
+        Retorna el color del punto según el tipo de evento y si está fuera de cuadrante.
+        Regla nueva: id_evento_tipo == 58 -> VERDE (tanto dentro como fuera).
+        """
+        try:
+            tipo = int(row.get('id_evento_tipo'))
+        except Exception:
+            tipo = None
+
+        # 58 = Venta No Entregada (verde)
+        if tipo == 58:
+            return "#16a34a"  # green-600
+
+        # Si no es 58: mantener comportamiento actual
+        if fuera:
+            return "#B91C1C"  # rojo para puntos fuera
+        return "#374151"      # gris oscuro para puntos dentro
+
+    # 10) Pintar eventos filtrados
     if df_filtrados is not None and not df_filtrados.empty:
         for _, r in df_filtrados.iterrows():
             lat, lon = float(r.lat), float(r.lon)
@@ -433,32 +679,34 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
             folium.CircleMarker(
                 location=[lat, lon],
                 radius=4,
-                color="#374151",  # gris oscuro
+                color=_color_evento(r),
                 fill=True,
+                fillColor=_color_evento(r),
                 fillOpacity=0.7,
                 popup=popup
             ).add_to(mapa)
 
-        # 9.1) Pintar eventos FUERA de cuadrantes en rojo intenso (solo si mostrar_fuera=True)
-        if mostrar_fuera and df_eventos is not None and not df_eventos.empty and geojson_a_usar is not None:
+        # 10.1) Pintar eventos fuera en rojo (si mostrar_fuera=True)
+        if mostrar_fuera and df_eventos is not None and not df_eventos.empty and (padres_ruta or hijos_ruta):
             df_fuera = df_eventos[~mask_in].reset_index(drop=True)
             
             for _, r in df_fuera.iterrows():
                 lat, lon = float(r.lat), float(r.lon)
                 popup = folium.Popup(
-                    f"<b>Evento:</b> {r.id_evento}<br><b>Contacto:</b> {r.id_contacto}<br><b>Fecha:</b> {r.fecha_evento}",
+                    f"<b>Evento FUERA:</b> {r.id_evento}<br><b>Contacto:</b> {r.id_contacto}<br><b>Fecha:</b> {r.fecha_evento}",
                     max_width=300
                 )
                 folium.CircleMarker(
                     location=[lat, lon],
                     radius=4,
-                    color="#B91C1C",  # rojo intenso
+                    color=_color_evento(r, fuera=True),
                     fill=True,
+                    fillColor=_color_evento(r, fuera=True),
                     fillOpacity=0.85,
                     popup=popup
                 ).add_to(mapa)
 
-        # 10) Fit bounds a los puntos filtrados
+        # 11) Fit bounds a los puntos filtrados
         try:
             coords = [[float(r.lat), float(r.lon)] for _, r in df_filtrados.iterrows()]
             if coords:
@@ -466,15 +714,117 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         except Exception:
             pass
 
-    # 11) Leyenda obligatoria (3 líneas exactas con %)
+    def _pick_col(df, candidates):
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
+
+    def _ensure_lat_lon(df):
+        # normaliza nombres típicos
+        rename_map = {}
+        for c in df.columns:
+            lc = c.lower()
+            if lc in ("lat", "latitude", "latitud"):
+                rename_map[c] = "lat"
+            if lc in ("lon", "lng", "long", "longitud", "longitude"):
+                rename_map[c] = "lon"
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
+    # --- Recorridos (solo cuando es un solo día) ---
+    try:
+        # "Un solo día" si la parte de fecha (YYYY-MM-DD) coincide
+        un_solo_dia = fecha_inicio[:10] == fecha_fin[:10]
+        cols_ok = {'id_consultor', 'apellido', 'fecha_evento', 'lat', 'lon'}.issubset(df_eventos.columns)
+
+        # Variables para leyenda (se usarán si realmente trazamos recorridos)
+        rec_stats = {
+            "tracks": 0,
+            "points": 0,
+            "km_total": 0.0,
+            "hora_ini": None,
+            "hora_fin": None,
+        }
+
+        if un_solo_dia and cols_ok:
+            fg_paths = folium.FeatureGroup(name="Recorridos (1 día)", show=True)
+
+            # Usar los mismos puntos que ya estamos mostrando (filtrados por cuadrantes si existen)
+            df_rutas = df_filtrados if (df_filtrados is not None and not df_filtrados.empty) else df_eventos
+            if not df_rutas.empty:
+                # Asegurar datetime
+                df_rutas = df_rutas.copy()
+                df_rutas['fecha_evento'] = pd.to_datetime(df_rutas['fecha_evento'], errors='coerce')
+                df_rutas = df_rutas.dropna(subset=['fecha_evento'])
+
+                # Stats globales de ventana temporal
+                rec_stats["hora_ini"] = df_rutas['fecha_evento'].min()
+                rec_stats["hora_fin"]  = df_rutas['fecha_evento'].max()
+
+                # Orden temporal
+                df_rutas = df_rutas.sort_values('fecha_evento')
+
+                for id_cons, g in df_rutas.groupby('id_consultor'):
+                    if len(g) < 2:
+                        continue
+
+                    # Coordenadas en orden temporal
+                    coords = g[['lat','lon']].astype(float).values.tolist()
+
+                    # Distancia del consultor
+                    dist_km = 0.0
+                    for i in range(len(coords)-1):
+                        lat1, lon1 = coords[i]
+                        lat2, lon2 = coords[i+1]
+                        dist_km += _haversine_km(lat1, lon1, lat2, lon2)
+
+                    # Trazo
+                    AntPath(
+                        locations=coords,
+                        color="#111111",
+                        weight=3,
+                        delay=800,
+                        dash_array=[12, 18],
+                        pulse_color="#2563eb"
+                    ).add_to(fg_paths)
+
+                    # Acumular métricas
+                    rec_stats["tracks"]  += 1
+                    rec_stats["points"]  += len(coords)
+                    rec_stats["km_total"] += dist_km
+
+            fg_paths.add_to(mapa)
+        else:
+            logger.warning("Recorridos: no es un solo día o faltan columnas; no se trazan recorridos.")
+    except Exception as e:
+        logger.error(f"Recorridos: error trazando rutas: {e}")
+
+    # 12) Leyenda con datos coherentes del subconjunto
     n_dentro = len(df_filtrados) if df_filtrados is not None else 0
     pct = (100 * n_dentro / total_eventos) if total_eventos > 0 else 0.0
     
     lineas_leyenda = [
-        f"<b>Consultores — {ruta_nombre} ({ciudadN})</b>",
+        f"<b>Consultores — {nombre_ruta_resuelto} ({ciudadN})</b>",
         f"Total: {total_eventos}",
         f"Dentro: {n_dentro} ({pct:.1f}%)"
     ]
+    
+    # Añadir métricas de recorrido si se calcularon
+    try:
+        if 'rec_stats' in locals() and rec_stats["tracks"] > 0:
+            km_tot = rec_stats["km_total"]
+            h_ini  = rec_stats["hora_ini"].strftime("%H:%M") if rec_stats["hora_ini"] is not None else "—"
+            h_fin  = rec_stats["hora_fin"].strftime("%H:%M") if rec_stats["hora_fin"] is not None else "—"
+
+            lineas_leyenda.append(f"<hr style='border:none;border-top:1px solid #e5e7eb;margin:6px 0;'>")
+            lineas_leyenda.append(f"<b>Recorridos (1 día):</b>")
+            lineas_leyenda.append(f"{rec_stats['tracks']} consultor(es) · {rec_stats['points']} puntos")
+            lineas_leyenda.append(f"Distancia total: {km_tot:.1f} km")
+            lineas_leyenda.append(f"Horario: {h_ini} – {h_fin}")
+    except Exception as _:
+        pass
     
     html_leyenda = f"""
     <div style="position: fixed; top: 20px; left: 20px; background: white; padding: 12px; border-radius: 8px;
@@ -483,8 +833,8 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     </div>"""
     mapa.get_root().html.add_child(folium.Element(html_leyenda))
 
-    # 12) Guardar y retornar
-    folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
+    # 13) Guardar y retornar
+    folium.LayerControl(collapsed=False, position='topright').add_to(mapa)
     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_consultores", permitir_multiples=False)
     mapa.save(f"static/maps/{filename}")
     return filename
@@ -523,6 +873,10 @@ def analizar_consultores_por_cuadrantes(fecha_inicio: str, fecha_fin: str, ciuda
         
         # 3. Obtener eventos con coordenadas
         df_eventos = eventos_con_coordenadas_por_ruta_y_rango(co, ruta_id, fecha_inicio, fecha_fin)
+        
+        # Logging para debugging de estructura de datos
+        if df_eventos is not None and not df_eventos.empty:
+            logger.info(f"Recorridos: columnas df_eventos = {list(df_eventos.columns)}")
         
         # 4. Obtener ventas con coordenadas (opcional)
         try:

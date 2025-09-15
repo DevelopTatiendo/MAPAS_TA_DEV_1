@@ -78,6 +78,26 @@ def ping_db():
         logging.error(f"Ping BD falló: {e}")
         return False
 
+def _pick_col(df, candidates):
+    """Busca la primera columna que existe en el DataFrame de una lista de candidatos."""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
+
+def _ensure_lat_lon(df):
+    """Normaliza nombres de columnas de coordenadas a 'lat' y 'lon'."""
+    rename_map = {}
+    for c in df.columns:
+        lc = c.lower()
+        if lc in ("lat", "latitude", "latitud"):
+            rename_map[c] = "lat"
+        if lc in ("lon", "lng", "long", "longitud", "longitude"):
+            rename_map[c] = "lon"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df
+
 def listar_rutas_simple(ciudad:str)->pd.DataFrame:
     """Devuelve id_ruta, ruta para la ciudad (sin depender de eventos)."""
     # Normalizar ciudad removiendo acentos
@@ -251,6 +271,10 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
                 (df['lat'].between(-5, 13)) & 
                 (df['lon'].between(-81, -66))
             ]
+        
+        # Logging de estructura de datos para debugging
+        if not df.empty:
+            logging.info(f"Recorridos: columnas df_eventos = {list(df.columns)}")
         
         # Logging de tiempo de ejecución y tamaño
         tiempo_ejecucion = time.time() - inicio_tiempo

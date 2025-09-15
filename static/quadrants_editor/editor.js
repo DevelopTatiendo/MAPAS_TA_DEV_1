@@ -140,6 +140,25 @@ function ensureComunaStyleProps(props) {
   return p;
 }
 
+// === UTILIDADES PARA EXPORTACIÓN COMPLETA ===
+
+// Detecta si un feature es un cuadrante válido (para exportación)
+function isQuadrantFeature(f) {
+  const p = f?.properties || {};
+  if (p.nivel === 'cuadrante' || p.nivel === 'subcuadrante') return true;
+  // Fallback para archivos antiguos
+  return typeof p.codigo === 'string' && /^CL_/i.test(p.codigo);
+}
+
+// Convierte layer a feature preservando propiedades de estilo
+function layerToFeature(layer) {
+  // Asegura que layer.feature exista y que estilos estén persistidos en properties
+  const f = layer.toGeoJSON();
+  f.properties = layer.feature?.properties || f.properties || {};
+  // NO modificar opacidades/colores aquí: respetar lo que venga
+  return f;
+}
+
 // FC de comunas base de la ciudad actual
 let COMUNAS_FC = null;
 
@@ -1934,37 +1953,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const exportBtn = document.getElementById('btn-export');
     if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
+        exportBtn.addEventListener('click', (ev) => {
           try {
-            // 1) Construir FeatureCollection a exportar
-            const fc = buildFeatureCollection(activePadre, activeHijos);
+            // Alt+Click (opcional) para exportar SOLO jerarquía activa
+            const onlyActiveHierarchy = ev.altKey === true;
 
-            // 2) Validación (opcional) SOLO para logs
-            const res = validateBeforeExport();
-
-            if (EXPORT_VALIDATION_MODE === 'none') {
-              // No modal, no bloqueos — solo logs
-              if (res.warnings?.length) console.warn('[EXPORT][WARNINGS]', res.warnings);
-              if (res.errors?.length) console.warn('[EXPORT][ERRORS-NO-BLOCK]', res.errors);
-              return doExport(fc); // descarga directa
+            const fc = onlyActiveHierarchy ? buildActiveHierarchyFC() : buildFullFeatureCollection();
+            
+            // Descargar directamente usando el nuevo sistema
+            const fileName = onlyActiveHierarchy ? 
+              `subcuadrante_${activePadre?.feature?.properties?.codigo || 'activa'}.geojson` :
+              suggestFileNameForFullExport();
+            
+            downloadGeoJSON(fc, fileName);
+            
+            const exportType = onlyActiveHierarchy ? 'jerarquía activa' : 'TODO el dataset';
+            console.log(`✅ Exportado ${exportType}: ${fc.features?.length || 0} features`);
+            
+            // Toast notification if available
+            if (typeof toast === 'function') {
+              toast(`✅ Exportado ${exportType}`);
             }
-
-            if (EXPORT_VALIDATION_MODE === 'warn') {
-              if ((res.errors?.length || 0) > 0 || (res.warnings?.length || 0) > 0) {
-                // Modal solo informativo, con "Exportar de todos modos"
-                return openValidationModal(res, { allowExport: true });
-              }
-              return doExport(fc);
-            }
-
-            // strict (comportamiento viejo)
-            if ((res.errors?.length || 0) > 0) {
-              return openValidationModal(res, { allowExport: false });
-            }
-            if ((res.warnings?.length || 0) > 0) {
-              return openValidationModal(res, { allowExport: true });
-            }
-            return doExport(fc);
           } catch (e) {
             console.error('[EXPORT] Falló la exportación:', e);
             alert('No se pudo exportar. Revisa la consola para más detalles.');
@@ -1980,7 +1989,69 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // === FUNCIONES GLOBALES DE EXPORTACIÓN ===
 
-// Función helper para construir FeatureCollection
+// Nueva función para recolectar todo el dataset exportable
+function buildFullFeatureCollection() {
+  const byCode = new Map();         // deduplicación por properties.codigo
+  const push = (f) => {
+    if (!isQuadrantFeature(f)) return;
+    const code = f.properties?.codigo || null;
+    if (code) {
+      // Si existe en editable y en importado, prioriza el de EDITABLE (última edición)
+      byCode.set(code, f);
+    } else {
+      // Sin codigo: usa clave geométrica para evitar duplicados
+      byCode.set(JSON.stringify(f.geometry), f);
+    }
+  };
+
+  // 1) Capas EDITABLES
+  DRAWN_EDITABLE?.eachLayer(l => {
+    try { push(layerToFeature(l)); } catch(e) { console.warn('[EXPORT] Error en EDITABLE:', e); }
+  });
+
+  // 2) Capas IMPORTADAS/BLOQUEADAS
+  DRAWN_LOCKED?.eachLayer?.(l => {
+    try {
+      const f = layerToFeature(l);
+      const code = f.properties?.codigo;
+      // Solo inserta si no está ya (para respetar ediciones en editable)
+      if (code && !byCode.has(code)) byCode.set(code, f);
+      else if (!code) {
+        const key = JSON.stringify(f.geometry);
+        if (!byCode.has(key)) byCode.set(key, f);
+      }
+    } catch(e) { console.warn('[EXPORT] Error en LOCKED:', e); }
+  });
+
+  // 3) Otros contenedores (hijos por padre) si no están en DRAWN_EDITABLE
+  for (const grp of Object.values(state.childGroupsByParent || {})) {
+    grp.eachLayer?.(l => {
+      try { push(layerToFeature(l)); } catch(e) { console.warn('[EXPORT] Error en childGroup:', e); }
+    });
+  }
+
+  const features = Array.from(byCode.values());
+  console.debug(`[EXPORT] Recolectado dataset completo: ${features.length} features`);
+  
+  return { 
+    type: 'FeatureCollection', 
+    properties: {
+      type: 'full_dataset_export',
+      city: CITY,
+      total_features: features.length,
+      export_timestamp: new Date().toISOString(),
+      editor_version: '3.0'
+    },
+    features 
+  };
+}
+
+// Función para exportar SOLO jerarquía activa (Alt+Click)
+function buildActiveHierarchyFC() {
+  return buildFeatureCollection(activePadre, activeHijos);
+}
+
+// Función helper para construir FeatureCollection (original)
 function buildFeatureCollection(padre, hijos) {
   if (padre && hijos && hijos.length > 0) {
     // Exportación de jerarquía específica
@@ -2085,6 +2156,14 @@ function doExport(fc) {
   }
   
   downloadGeoJSON(fc, fileName);
+}
+
+// Sugiere nombre de archivo para exportación completa
+function suggestFileNameForFullExport() {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0,10); // YYYY-MM-DD
+  const timeStr = now.toTimeString().slice(0,5).replace(':', ''); // HHMM
+  return `cuadrantes_rutas_${CITY.toLowerCase()}_${dateStr}-${timeStr}.geojson`;
 }
 
 // Función para exportación directa (global)
@@ -3137,11 +3216,16 @@ async function importGeneralQuadrants(data) {
         let deduplicadas = 0;
         let agregadas = 0;
         
-        // Obtener geometrías existentes para de-dupe
+        // Obtener geometrías y códigos existentes para de-dupe y merge
         const existingGeometries = new Set();
+        const existingCodigos = new Map(); // codigo -> layer
         forEachQuadrantLayer(layer => {
             if (layer.feature && layer.feature.geometry) {
                 existingGeometries.add(JSON.stringify(layer.feature.geometry));
+            }
+            const codigo = layer.feature?.properties?.codigo;
+            if (codigo) {
+                existingCodigos.set(codigo, layer);
             }
         });
         
@@ -3195,6 +3279,26 @@ async function importGeneralQuadrants(data) {
                     continue;
                 }
                 
+                // Verificar si existe por codigo para reemplazar
+                const incomingCodigo = polygonFeature.properties?.codigo;
+                const existingLayer = incomingCodigo ? existingCodigos.get(incomingCodigo) : null;
+                
+                if (existingLayer) {
+                    // Reemplazar layer existente con el mismo codigo
+                    console.debug(`[IMPORT] Reemplazando feature con codigo: ${incomingCodigo}`);
+                    
+                    // Remover layer existente
+                    if (DRAWN_EDITABLE.hasLayer(existingLayer)) DRAWN_EDITABLE.removeLayer(existingLayer);
+                    if (DRAWN_LOCKED.hasLayer(existingLayer)) DRAWN_LOCKED.removeLayer(existingLayer);
+                    
+                    // Remover de grupos de hijos si aplica
+                    for (const grp of Object.values(state.childGroupsByParent || {})) {
+                        if (grp.hasLayer && grp.hasLayer(existingLayer)) {
+                            grp.removeLayer(existingLayer);
+                        }
+                    }
+                }
+                
                 // Crear capa Leaflet
                 const layer = L.geoJSON(polygonFeature, {
                     onEachFeature: (feat, lyr) => {
@@ -3216,6 +3320,7 @@ async function importGeneralQuadrants(data) {
                     // Usar función específica para importados
                     addImportedFeatureLayer(polygonFeature, layer);
                     existingGeometries.add(geomStr);
+                    if (incomingCodigo) existingCodigos.set(incomingCodigo, layer);
                     agregadas++;
                 }
             }
