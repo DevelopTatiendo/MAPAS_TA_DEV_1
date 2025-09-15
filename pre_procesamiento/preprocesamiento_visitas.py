@@ -1,91 +1,319 @@
-import pandas as pd
-from dotenv import load_dotenv
 import os
+import pandas as pd
 import mysql.connector
+import unicodedata
+import logging
+import time
+from datetime import date
+from pathlib import Path
+from dotenv import load_dotenv
 
-# Cargar variables de entorno
-load_dotenv()
+# Cargar variables de entorno desde .env
+dotenv_path = Path(__file__).resolve().parents[1] / ".env"
+if dotenv_path.exists():
+    load_dotenv(dotenv_path=dotenv_path, override=False)
+else:
+    print(f"⚠️ Advertencia: Archivo .env no encontrado en {dotenv_path}")
 
-# Credenciales desde el archivo .env
-DB_HOST = os.getenv("DB_HOST")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# --- Resolver CO por ciudad (reusar mapping de otros módulos) ---
+CENTROOPES = {'CALI':2,'MEDELLIN':3,'MANIZALES':6,'PEREIRA':5,'BOGOTA':4,'BARRANQUILLA':8,'BUCARAMANGA':7}
+def get_co(ciudadN:str)->int:
+    return CENTROOPES[ciudadN]
 
-def consultar_visitas_db(centroope, fecha_inicio, fecha_fin):
-    """
-    Consulta la base de datos para obtener los eventos de muestras filtrados por centroope y fechas.
-    Retorna un DataFrame.
-    """
-    conexion = mysql.connector.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASSWORD
-    )
+def _norm_city(ciudad: str) -> str:
+    """Normalizar ciudad removiendo acentos y convirtiendo a mayúsculas."""
+    return ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
+
+def _conn():
+    """Crear conexión a MySQL validando variables de entorno obligatorias."""
+    # Variables obligatorias
+    required_vars = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
+    missing_vars = []
     
-    query = f"""
-    SELECT 
+    for var in required_vars:
+        value = os.getenv(var)
+        if not value or value.strip() == "":
+            missing_vars.append(var)
     
-        e.idEvento AS id_visita,
-        e.id_contacto,
-        e.fecha_evento, 
-        e.id_autor,
-        e.coordenada_longitud, 
-        e.coordenada_latitud,
-        e.medio_contacto,
-        e.tipo_evento,
-        e.tipo_categoria,
-        con.id_barrio AS id_barrio
-    FROM 
-        fullclean_contactos.vwEventos e
-    LEFT JOIN 
-        fullclean_contactos.vwContactos con ON e.id_contacto = con.id
-    LEFT JOIN 
-        fullclean_contactos.barrios bar ON bar.id = con.id_barrio
-    LEFT JOIN 
-        fullclean_contactos.ciudades ciu ON ciu.id = con.id_ciudad
-    WHERE 
-        e.fecha_evento BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+    if missing_vars:
+        raise ValueError(f"Variables de entorno faltantes para conexión BD: {', '.join(missing_vars)}")
+    
+    # Obtener valores
+    host = os.getenv("DB_HOST").strip()
+    user = os.getenv("DB_USER").strip()
+    password = os.getenv("DB_PASSWORD")
+    database = os.getenv("DB_NAME").strip()
+    
+    # Puerto opcional (sin requerirlo)
+    port = int(os.getenv("DB_PORT", "3306"))
+    
+    # Log de configuración (enmascarando contraseña)
+    user_masked = user[:2] + '*' * (len(user) - 2) if len(user) > 2 else user
+    logging.info(f"Conectando BD - Host: {host}, DB: {database}, Usuario: {user_masked}")
+    
+    try:
+        return mysql.connector.connect(
+            host=host,
+            user=user,
+            password=password,
+            database=database,
+            port=port
+        )
+    except mysql.connector.Error as e:
+        logging.error(f"Error de conexión BD: {e}")
+        raise
 
-        AND (e.id_evento_tipo = 10 or e.id_evento_tipo = 12 or e.id_evento_tipo = 14 or e.id_evento_tipo = 53 or e.id_evento_tipo=63 or e.id_evento_tipo=46 )
-        AND ciu.id_centroope = {centroope}
-        AND coordenada_longitud <> 0 
-        AND coordenada_latitud <> 0;
+def ping_db():
+    """Prueba básica de conectividad a la base de datos."""
+    try:
+        conn = _conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        result = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        logging.info("Ping BD exitoso")
+        return result is not None
+    except Exception as e:
+        logging.error(f"Ping BD falló: {e}")
+        return False
+
+def listar_rutas_simple(ciudad:str)->pd.DataFrame:
+    """Devuelve id_ruta, ruta para la ciudad (sin depender de eventos)."""
+    # Normalizar ciudad removiendo acentos
+    ciudad_norm = _norm_city(ciudad)
+    co = get_co(ciudad_norm)
+    
+    q = """
+    SELECT r.id AS id_ruta, r.ruta
+    FROM fullclean_contactos.rutas_cobro r
+    WHERE r.id_centroope = %s
+    ORDER BY r.ruta;
     """
-    df = pd.read_sql(query, conexion)
-    conexion.close()
-    print(df.shape)
+    cn = _conn()
+    df = pd.read_sql(q, cn, params=[co])
+    cn.close()
     return df
 
-
-def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas):
+def eventos_visitas_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)->pd.DataFrame:
     """
-    Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
-    Retorna un DataFrame listo para usar.
+    Retorna todos los eventos de visitas de la ruta en el rango de fechas con coordenadas válidas.
+    Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_cargo, cargo
     """
-    # Obtener datos de muestras desde la base de datos
-    df_muestras = consultar_visitas_db(centroope, fecha_inicio, fecha_fin)
-    # print('colummmmmmmnas',df_muestras.columns)
-    # Agregar columna id_muestra al inicio
-    #df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
+    q = """
+    SELECT  e.idEvento            AS id_evento,
+            e.id_contacto         AS id_contacto,
+            e.coordenada_latitud  AS lat,
+            e.coordenada_longitud AS lon,
+            e.fecha_evento,
+            p.id_cargo            AS id_cargo,
+            ca.cargo              AS cargo
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
+    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
+    WHERE c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND r.id_centroope = %s
+      AND r.id = %s
+      AND e.fecha_evento BETWEEN %s AND %s
+      AND e.coordenada_latitud  IS NOT NULL
+      AND e.coordenada_longitud IS NOT NULL
+      AND e.coordenada_latitud  <> 0
+      AND e.coordenada_longitud <> 0
+      AND e.coordenada_latitud  BETWEEN -5 AND 13
+      AND e.coordenada_longitud BETWEEN -81 AND -66
+       AND ca.Id_cargo = 181
+      -- AND ca.Id_cargo in (181, 5)
+    ORDER BY e.fecha_evento ASC;
+    """
+    cn = _conn()
+    df = pd.read_sql(q, cn, params=[centroope, id_ruta, f_ini, f_fin])
+    cn.close()
+    
+    # Normalizar tipos por seguridad
+    if not df.empty:
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+        df = df.dropna(subset=['lat','lon'])
+    return df
 
-    # Leer el archivo de coordenadas
-    df_coord = pd.read_csv(ruta_coordenadas)
+def nombre_ruta(centroope: int, id_ruta: int) -> str:
+    """
+    Retorna el nombre de la ruta (r.ruta) para el CO e id_ruta dados.
+    Si no encuentra, retorna None.
+    """
+    q = """
+    SELECT r.ruta
+    FROM fullclean_contactos.rutas_cobro r
+    WHERE r.id_centroope = %s AND r.id = %s
+    LIMIT 1;
+    """
+    cn = _conn()
+    df = pd.read_sql(q, cn, params=[centroope, id_ruta])
+    cn.close()
+    return None if df.empty else str(df.iloc[0]['ruta'])
 
-    # Realizar el merge por 'id_barrio'
-    df_visitas_completo = pd.merge(df_muestras, df_coord, how='left', on='id_barrio')
-# Lista de columnas deseadas (ajusta según tus archivos)
-    columnas_deseadas = [
-        'id_visita', 'id_contacto', 'fecha_evento','id_autor', 'coordenada_longitud', 'coordenada_latitud',
-        'tipo_evento', 'tipo_categoria','id_barrio', 'barrio', 'id_estrato',
-        'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
-    ]
-    # Filtra solo las columnas que existen
-    columnas_existentes = [col for col in columnas_deseadas if col in df_visitas_completo.columns]
-    df_visitas_completo = df_visitas_completo[columnas_existentes]
+def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+    """
+    Retorna todos los eventos de visitas con coordenadas válidas para la ruta y rango especificados.
+    Simplificado para el nuevo flujo: solo consultores en calle (cargo = 5).
+    
+    Args:
+        id_centroope (int): ID del centro de operaciones
+        id_ruta (int): ID de la ruta de cobro
+        f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
+        f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
+    
+    Returns:
+        pd.DataFrame: DataFrame con columnas ['id_evento', 'id_contacto', 'id_consultor', 'apellido', 
+                     'lat', 'lon', 'fecha_evento', 'id_evento_tipo', 'es_visita', 'cargo']
+    
+    Raises:
+        Exception: Si hay error en la conexión o ejecución de la consulta SQL
+    """
+    inicio_tiempo = time.time()
+    logging.info(f"Iniciando eventos_visitas_simple - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
+    
+    q = """
+    SELECT 
+        e.idEvento                AS id_evento,
+        e.id_contacto             AS id_contacto,
+        p.id                      AS id_consultor,
+        p.apellido                AS apellido,
+        e.coordenada_latitud      AS lat,
+        e.coordenada_longitud     AS lon,
+        e.fecha_evento            AS fecha_evento,
+        e.id_evento_tipo          AS id_evento_tipo,
+        1                         AS es_visita,
+        ca.cargo                  AS cargo
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
+    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
+    WHERE 
+          c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND r.id_centroope = %s
+      AND r.id = %s
+      AND e.fecha_evento BETWEEN %s AND %s
+      AND e.coordenada_latitud  IS NOT NULL
+      AND e.coordenada_longitud IS NOT NULL
+      AND e.coordenada_latitud  <> 0
+      AND e.coordenada_longitud <> 0
+      AND e.coordenada_latitud  BETWEEN -5  AND 13
+      AND e.coordenada_longitud BETWEEN -81 AND -66
+      AND ca.Id_cargo = 5
+    ORDER BY 
+        e.fecha_evento ASC,
+        p.id ASC,
+        e.id_contacto ASC;
+    """
+    
+    try:
+        cn = _conn()
+        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+        cn.close()
+        
+        # Normalizar tipos de datos
+        if not df.empty:
+            df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
+            df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+            df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
+            df['es_visita'] = pd.to_numeric(df['es_visita'], errors='coerce').fillna(1).astype(int)
+            df['apellido'] = df['apellido'].fillna('').astype(str)
+            df['cargo'] = df['cargo'].fillna('').astype(str)
+            
+            # Eliminar filas con coordenadas inválidas después de conversión
+            df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
+            
+            # Validar coordenadas realistas
+            df = df[
+                (df['lat'].between(-5, 13)) & 
+                (df['lon'].between(-81, -66))
+            ]
+        
+        # Logging de tiempo de ejecución y tamaño
+        tiempo_ejecucion = time.time() - inicio_tiempo
+        filas_resultado = len(df)
+        logging.info(f"eventos_visitas_simple completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados")
+        
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error en eventos_visitas_simple: {str(e)}")
+        raise e
 
-    # Si el CSV tiene 'barrio' y no 'barrio_x', no necesitas renombrar
-    # Si tienes 'barrio_x', renómbralo a 'barrio'
-    if 'barrio_x' in df_visitas_completo.columns:
-        df_visitas_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
 
-    return df_visitas_completo
+
+
+
+# === FUNCIONES DE COMPATIBILIDAD HACIA ATRÁS ===
+
+def consultar_visitas_db(centroope, id_ruta, fecha_inicio, fecha_fin):
+    """
+    Función de compatibilidad hacia atrás. Usa la nueva función mejorada.
+    DEPRECADA: Usar eventos_visitas_simple() en su lugar.
+    """
+    logging.warning("consultar_visitas_db está deprecada. Usar eventos_visitas_simple() en su lugar.")
+    return eventos_visitas_simple(centroope, id_ruta, fecha_inicio, fecha_fin)
+
+def crear_df(centroope, id_ruta, fecha_inicio, fecha_fin, ruta_coordenadas):
+    """
+    Función de compatibilidad hacia atrás.
+    DEPRECADA: Usar eventos_visitas_simple() en su lugar.
+    """
+    logging.warning("crear_df está deprecada. Usar eventos_visitas_simple() en su lugar.")
+    
+    try:
+        # Obtener datos de visitas desde la base de datos usando la nueva función
+        df_visitas = eventos_visitas_simple(centroope, id_ruta, fecha_inicio, fecha_fin)
+        
+        if df_visitas.empty:
+            logging.info("No se encontraron visitas para los parámetros dados")
+            return pd.DataFrame()
+            
+        # Si se proporciona ruta de coordenadas, intentar merge (para compatibilidad)
+        if ruta_coordenadas and os.path.exists(ruta_coordenadas):
+            try:
+                df_coord = pd.read_csv(ruta_coordenadas)
+                if 'id_barrio' in df_coord.columns and 'id_barrio' in df_visitas.columns:
+                    df_visitas_completo = pd.merge(df_visitas, df_coord, how='left', on='id_barrio')
+                else:
+                    df_visitas_completo = df_visitas
+            except Exception as e:
+                logging.error(f"Error leyendo coordenadas de {ruta_coordenadas}: {e}")
+                df_visitas_completo = df_visitas
+        else:
+            df_visitas_completo = df_visitas
+            
+        # Lista de columnas deseadas (ajustar según archivos existentes)
+        columnas_deseadas = [
+            'id_evento', 'id_contacto', 'fecha_evento', 'id_consultor', 'lon', 'lat',
+            'id_evento_tipo', 'es_visita', 'apellido', 'cargo'
+        ]
+        
+        # Filtrar solo las columnas que existen
+        columnas_existentes = [col for col in columnas_deseadas if col in df_visitas_completo.columns]
+        df_visitas_completo = df_visitas_completo[columnas_existentes]
+        
+        # Renombrar por compatibilidad
+        if 'barrio_x' in df_visitas_completo.columns:
+            df_visitas_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
+            
+        return df_visitas_completo
+        
+    except Exception as e:
+        logging.error(f"Error en crear_df (función de compatibilidad): {str(e)}")
+        return pd.DataFrame()

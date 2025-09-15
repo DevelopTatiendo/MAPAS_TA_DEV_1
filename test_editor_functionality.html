@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Editor de Cuadrantes TA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .status-card {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { border-left: 4px solid #4CAF50; }
+        .warning { border-left: 4px solid #FF9800; }
+        .info { border-left: 4px solid #2196F3; }
+        .btn {
+            background: #2196F3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 5px;
+        }
+        .btn:hover { background: #1976D2; }
+        .code {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 Sistema de Mapas TA - Estado de Funcionalidades</h1>
+
+    <div class="status-card success">
+        <h3>✅ Dependencias Corregidas</h3>
+        <ul>
+            <li><strong>Turf.js v6.5.0:</strong> Biblioteca completa para operaciones geoespaciales</li>
+            <li><strong>Proj4.js v2.9.2:</strong> Sistema de coordenadas y transformaciones</li>
+            <li><strong>CDN Fallbacks:</strong> Respaldo automático si fallan archivos locales</li>
+        </ul>
+    </div>
+
+    <div class="status-card success">
+        <h3>✅ Errores JavaScript Corregidos</h3>
+        <ul>
+            <li><strong>SyntaxError línea ~1581:</strong> Eliminado <code>};</code> extra</li>
+            <li><strong>Validación sintáctica:</strong> Pasa <code>node --check</code></li>
+            <li><strong>Declaraciones duplicadas:</strong> Corregidas en fileInput</li>
+        </ul>
+    </div>
+
+    <div class="status-card success">
+        <h3>✅ Auto-carga Implementada</h3>
+        <ul>
+            <li><strong>Endpoint Flask:</strong> <code>/geojson/default?city=CALI</code></li>
+            <li><strong>Carga automática:</strong> GeoJSON de ciudad al abrir editor</li>
+            <li><strong>Importación mejorada:</strong> Preserva jerarquía cuadrante→subcuadrante</li>
+        </ul>
+    </div>
+
+    <div class="status-card info">
+        <h3>🎯 Sistema Completo T1-T7</h3>
+        <ul>
+            <li><strong>T1:</strong> Estados del editor (crear, editar, validar)</li>
+            <li><strong>T2:</strong> Creación de cuadrantes padre</li>
+            <li><strong>T3:</strong> Creación de subcuadrantes hijo</li>
+            <li><strong>T4:</strong> Validación geométrica automática</li>
+            <li><strong>T5:</strong> Sistema de propiedades jerárquicas</li>
+            <li><strong>T6:</strong> Exportación con estructura completa</li>
+            <li><strong>T7:</strong> Importación con preservación de jerarquía</li>
+        </ul>
+    </div>
+
+    <div class="status-card info">
+        <h3>🌐 Acceso al Editor</h3>
+        <div class="code">
+            1. Iniciar servidor Flask:
+               python flask_server.py
+            
+            2. Abrir en navegador:
+               http://localhost:5000/editor/cuadrantes?city=CALI
+        </div>
+        
+        <a href="http://localhost:5000/editor/cuadrantes?city=CALI" class="btn" target="_blank">
+            🗺️ Abrir Editor de Cuadrantes
+        </a>
+        
+        <a href="http://localhost:5000" class="btn" target="_blank">
+            📊 Dashboard Principal
+        </a>
+    </div>
+
+    <div class="status-card warning">
+        <h3>⚠️ Notas de Producción</h3>
+        <ul>
+            <li><strong>Dependencias:</strong> Verificar conectividad CDN en entorno productivo</li>
+            <li><strong>Archivos GeoJSON:</strong> Confirmar rutas de ciudades en servidor</li>
+            <li><strong>Performance:</strong> Considerar minificación adicional para archivos grandes</li>
+        </ul>
+    </div>
+
+    <script>
+        // Test básico de dependencias
+        function testDependencies() {
+            console.log('🔍 Verificando dependencias...');
+            
+            // Test de disponibilidad de librerías
+            const results = {
+                turf: typeof turf !== 'undefined',
+                proj4: typeof proj4 !== 'undefined',
+                leaflet: typeof L !== 'undefined'
+            };
+            
+            console.log('📋 Resultados:', results);
+            
+            // Mostrar en página
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'status-card ' + (
+                Object.values(results).every(x => x) ? 'success' : 'warning'
+            );
+            resultDiv.innerHTML = `
+                <h3>🧪 Test de Dependencias</h3>
+                <ul>
+                    <li>Turf.js: ${results.turf ? '✅' : '❌'} ${results.turf ? 'Disponible' : 'No encontrado'}</li>
+                    <li>Proj4.js: ${results.proj4 ? '✅' : '❌'} ${results.proj4 ? 'Disponible' : 'No encontrado'}</li>
+                    <li>Leaflet: ${results.leaflet ? '✅' : '❌'} ${results.leaflet ? 'Disponible' : 'No encontrado'}</li>
+                </ul>
+            `;
+            document.body.appendChild(resultDiv);
+        }
+        
+        // Ejecutar test cuando se carguen las dependencias
+        setTimeout(testDependencies, 1000);
+    </script>
+
+    <!-- Cargar dependencias para test -->
+    <script src="/static/vendor/leaflet/leaflet.js" onerror="console.log('Leaflet local failed')"></script>
+    <script src="/static/vendor/turf/turf.min.js" onerror="console.log('Turf local failed'); loadTurfCDN()"></script>
+    <script src="/static/vendor/proj4/proj4.min.js" onerror="console.log('Proj4 local failed'); loadProj4CDN()"></script>
+    
+    <script>
+        function loadTurfCDN() {
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/@turf/turf@6/turf.min.js';
+            document.head.appendChild(script);
+        }
+        
+        function loadProj4CDN() {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.min.js';
+            document.head.appendChild(script);
+        }
+    </script>
+</body>
+</html>

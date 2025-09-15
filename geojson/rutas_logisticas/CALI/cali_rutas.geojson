@@ -1,0 +1,962 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "CENTRO-OESTE 1",
+        "barrios": [
+          "CIUDAD JARDIN",
+          "EL JORDAN",
+          "CIUDAD  JARDIN",
+          "MELENDEZ",
+          "ALTO JORDAN",
+          "PRADO SUR",
+          "NAPOLES",
+          "ALTOS DE LA LUISA",
+          "COLINAS DEL SUR",
+          "ALFERES REAL",
+          "FARALLONES",
+          "BUENOS AIRES",
+          "LOURDES",
+          "CALDAS",
+          "REFUGIO",
+          "JOAQUIN BORRERO SINISTERRA",
+          "CAMINO REAL",
+          "LA CASCADA",
+          "PAMPALINDA",
+          "NUEVO TEQUENDAMA",
+          "TEQUENDAMA",
+          "CUARTO DE LEGUA",
+          "CAMBULOS",
+          "BELISARIO CAICEDO",
+          "SEMINARIO",
+          "TEMPLETE",
+          "CAÑAVERALEJO",
+          "LIDO",
+          "CHAMPAGNAT",
+          "CEDRO",
+          "NUEVA GRANADA",
+          "SANTA ISABEL",
+          "JUNIN",
+          "ALAMEDA",
+          "BRETAÑA",
+          "SAN FERNANDO",
+          "ARANJUEZ",
+          "GUAYAQUIL",
+          "BELALCAZAR",
+          "LOS CRISTALES",
+          "MIRAFLORES",
+          "MORTIÑAL",
+          "LIBERTADORES",
+          "NACIONAL",
+          "SAN CAYETANO",
+          "BELLAVISTA",
+          "SANTA TERESITA",
+          "SAN ANTONIO",
+          "PEÑON",
+          "SANTA RITA",
+          "STA TERESITA"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.54743699352284,
+                3.452253929296281
+              ],
+              [
+                -76.53642151522124,
+                3.450999854653114
+              ],
+              [
+                -76.5245702608383,
+                3.43724089604924
+              ],
+              [
+                -76.54709945039482,
+                3.380432116605571
+              ],
+              [
+                -76.55126869263478,
+                3.3788274136881538
+              ],
+              [
+                -76.55270605218948,
+                3.389973574050956
+              ],
+              [
+                -76.55171305458367,
+                3.4102452817265227
+              ],
+              [
+                -76.54743699352284,
+                3.452253929296281
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "SUR ORIENTE",
+        "barrios": [
+          "CALICANTO",
+          "VALLE DEL LILI",
+          "BOCHALEMA",
+          "LAS VEGAS DE COMFANDI",
+          "UR SAN JUAQUIN",
+          "LAS VEGAS",
+          "SAN JOAQUIN",
+          "LA PLAYA",
+          "CIUDAD REAL",
+          "MAYAPAN",
+          "CIUDADELA COMFANDI",
+          "CANEY",
+          "CAPRI",
+          "CIUDAD 2000",
+          "CORDOBA RESERVADO",
+          "MORICHAL",
+          "CORDOBA .",
+          "CORDOBA",
+          "VALLADO",
+          "MARIANO RAMOS",
+          "REPUBLICA DE ISRAEL",
+          "JOSE HOLGUIN G.",
+          "HOLGUIN GARCES",
+          "UNION",
+          "UNION DE VIVIENDA POPULAR",
+          "VILLA DEL SUR",
+          "SAUCES",
+          "MARACAIBO",
+          "ANTONIO NARINO",
+          "INDEPENDENCIA",
+          "CIUDAD MODELO",
+          "EL DIAMANTE",
+          "POBLADO",
+          "ROBLES",
+          "BONILLA ARAGON",
+          "COMUNEROS",
+          "CALIPSO",
+          "YIRA CASTRO",
+          "CONQUISTADORES"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.51706665369304,
+                3.375047877677703
+              ],
+              [
+                -76.5416786508009,
+                3.3833775249225826
+              ],
+              [
+                -76.5410355403669,
+                3.386794530698425
+              ],
+              [
+                -76.53987340547432,
+                3.3926859131408658
+              ],
+              [
+                -76.50726900087741,
+                3.430675758154175
+              ],
+              [
+                -76.48754561760009,
+                3.423440454373796
+              ],
+              [
+                -76.51045736338357,
+                3.3812732845092035
+              ],
+              [
+                -76.51706665369304,
+                3.375047877677703
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "SUR",
+        "barrios": [
+          "SANTO.DOMINGO",
+          "INGENIO",
+          "MULTICENTRO",
+          "PRADOS DEL LIMONAR",
+          "QUINTAS DE DON SIMON",
+          "LA HACIENDA",
+          "BRISAS DEL LIMONAR",
+          "CAÑAVERALES",
+          "BOSQUE DEL LIMONAR",
+          "VILLA DE GUADALUPE",
+          "LIMONAR",
+          "GUADALUPE",
+          "1 DE MAYO",
+          "GRAN LIMONAR",
+          "SAMANES GUADALUPE",
+          "CAMELIAS",
+          "SANTA ANITA",
+          "NUEVA SELVA",
+          "JORGE SAWASKY",
+          "LA SELVA",
+          "GRANJAS",
+          "VILLA  DE PAL",
+          "SANTO DOMINGO",
+          "SAN JUDAS",
+          "PANAMERICANO",
+          "GUABAL",
+          "DEPARTAMENTAL",
+          "PASOANCHO",
+          "GRAN COLOMBIA",
+          "LISTOS FRESCOS COLON",
+          "LA ESPERANZA",
+          "PRIMAVERA",
+          "SAN CARLOS",
+          "BOYACA",
+          "JARDIN",
+          "LA LIBERTAD",
+          "DORADO",
+          "COLON",
+          "OLIMPICO",
+          "COLSEGUROS",
+          "FORTALEZA",
+          "LEON XIII",
+          "SANTA CLARA",
+          "AGUABLANCA",
+          "LAS ACACIAS",
+          "SANTA ELENA",
+          "SAN BENITO",
+          "EL RECUERDO",
+          "PARAISO",
+          "VILLANUEVA",
+          "PRADOS DE ORIENTE",
+          "PRADOS DE  COMFANDI"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.51562875368406,
+                3.4341243641544903
+              ],
+              [
+                -76.50602889969025,
+                3.4320292269163515
+              ],
+              [
+                -76.50991421385076,
+                3.421984483781769
+              ],
+              [
+                -76.52110361028085,
+                3.399200933422284
+              ],
+              [
+                -76.52873214043393,
+                3.386203183185408
+              ],
+              [
+                -76.53571988671085,
+                3.388512297748596
+              ],
+              [
+                -76.53670475304776,
+                3.407459899339385
+              ],
+              [
+                -76.53565602941961,
+                3.4116352876136222
+              ],
+              [
+                -76.5259000206046,
+                3.428907253721069
+              ],
+              [
+                -76.51562875368406,
+                3.4341243641544903
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "ORIENTE",
+        "barrios": [
+          "CALIMIO DECEPAZ",
+          "REMANSOS DE COM.",
+          "DECEPAZ",
+          "CIUDADELA DEL RIO",
+          "COMPARTIR",
+          "PONDAJE",
+          "LOS CEREZOS",
+          "TALANGA",
+          "RICARDO BALCAZAR",
+          "LLERAS RESTREPO",
+          "VALLE GRANDE",
+          "VILLA DEL LAGO",
+          "ULPIANO LLOREDA",
+          "ARBOLEDA",
+          "POBLADO CAMPESTRE",
+          "7 DE AGOSTO",
+          "CEIBAS",
+          "PINOS",
+          "CIUDAD DEL CAMPO",
+          "CALIBELLA",
+          "ALFONSO LOPEZ",
+          "OMAR TORRIJO"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.46926400822342,
+                3.417124064123777
+              ],
+              [
+                -76.4704477519634,
+                3.437212162321364
+              ],
+              [
+                -76.46634958899689,
+                3.4331361106162204
+              ],
+              [
+                -76.46505013502221,
+                3.426547503465439
+              ],
+              [
+                -76.46494245334512,
+                3.4242239841150486
+              ],
+              [
+                -76.46743408074859,
+                3.4174347672516334
+              ],
+              [
+                -76.46926400822342,
+                3.417124064123777
+              ]
+            ],
+            [
+              [
+                -76.4805504785669,
+                3.441178502358292
+              ],
+              [
+                -76.49395093539549,
+                3.432256813046497
+              ],
+              [
+                -76.49392963520873,
+                3.4346761410234854
+              ],
+              [
+                -76.48887997904978,
+                3.454396044064713
+              ],
+              [
+                -76.48630074853712,
+                3.4638306536981416
+              ],
+              [
+                -76.48214044843564,
+                3.457322085175559
+              ],
+              [
+                -76.4805504785669,
+                3.441178502358292
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "NORTE",
+        "barrios": [
+          "SAN PEDRO",
+          "OASIS DE COMFANDI",
+          "PASO DEL COMERCIO",
+          "LARES COMFENALCO",
+          "GUADUALES",
+          "COMFENALCO",
+          "BRISAS DE LOS ALAMOS",
+          "FLORALIA"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.49631904713524,
+                3.488092379790696
+              ],
+              [
+                -76.50270852718936,
+                3.49303933954378
+              ],
+              [
+                -76.49388784068451,
+                3.494675821557917
+              ],
+              [
+                -76.48948959449373,
+                3.490914127374717
+              ],
+              [
+                -76.49421751235008,
+                3.4885445833421693
+              ],
+              [
+                -76.49631904713524,
+                3.488092379790696
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "ORIENTE 3",
+        "barrios": [
+          "12 DE OCTUBRE",
+          "ASTURIAS",
+          "BELLO HORIZONTE",
+          "SINDICAL",
+          "EDUARDO SANTOS",
+          "RODEO",
+          "BARBERENA",
+          "20 DE JULIO",
+          "FENALCO KENEDY",
+          "NUEVA FLORESTA",
+          "SANTA  MONICA POPULAR",
+          "PRIMITIVO",
+          "URIBE",
+          "SIMON BOLIVAR",
+          "SANTA FE",
+          "SAAVEDRA GALINDO",
+          "TREBOL",
+          "LA FLORESTA",
+          "ATANASIO GIRARDOT",
+          "CHAPINERO",
+          "NUEVA BASE",
+          "BENJAMIN",
+          "MUNICIPAL",
+          "AMERICAS",
+          "LA BASE",
+          "VILLA COLOMBIA",
+          "TRONCAL",
+          "INDUSTRIAL",
+          "BARTOLOME"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.51454122399926,
+                3.449957658959922
+              ],
+              [
+                -76.49153322832947,
+                3.451652125886323
+              ],
+              [
+                -76.49184373912648,
+                3.446609622403153
+              ],
+              [
+                -76.50054311384667,
+                3.429903505204297
+              ],
+              [
+                -76.51283521076022,
+                3.4317669393181065
+              ],
+              [
+                -76.5171150665263,
+                3.440855018677192
+              ],
+              [
+                -76.51543321373458,
+                3.4470704347051644
+              ],
+              [
+                -76.51454122399926,
+                3.449957658959922
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "CENTRO",
+        "barrios": [
+          "SUCRE",
+          "SAN BOSCO",
+          "CENTRO",
+          "OBRERO",
+          "PILOTO",
+          "SAN NICOLAS",
+          "NORMANDIA",
+          "GRANADA",
+          "CENTENARIO",
+          "VERSALLES",
+          "SANTA MONICA RESIDENCIAL",
+          "SAN VICENTE"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.52852219126103,
+                3.4411659326645205
+              ],
+              [
+                -76.53393854644963,
+                3.442548439161184
+              ],
+              [
+                -76.52603164928493,
+                3.468751055502499
+              ],
+              [
+                -76.51376151424428,
+                3.472462385658527
+              ],
+              [
+                -76.51398233190741,
+                3.46726582536662
+              ],
+              [
+                -76.52427121688149,
+                3.444851611991828
+              ],
+              [
+                -76.52852219126103,
+                3.4411659326645205
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "NORORIENTE",
+        "barrios": [
+          "LA ESMERALDA",
+          "PORVENIR",
+          "DELICIAS",
+          "SANTANDER",
+          "NUEVO SALOMIA",
+          "MANZANARES",
+          "VILLA DEL PRADO",
+          "SALOMIA",
+          "BRISAS DEL GUABITO",
+          "ALIANZA",
+          "BOLIVARIANO",
+          "SENA",
+          "SAMAN",
+          "ANDES",
+          "BUENO MADRID",
+          "LA ALIANZA",
+          "BERLIN",
+          "LOS ALMENDROS",
+          "BRISAS DE LOS ANDES",
+          "PRADOS DEL NORTE",
+          "PALMERAS DEL NORTE",
+          "POPULAR",
+          "VILLA DE VERACRUZ",
+          "BARRANQUILLA",
+          "EVARISTO G.",
+          "OLAYA HERRERA",
+          "VILLA DEL PARQUE",
+          "LA MERCED",
+          "VIPASA",
+          "PACARA 1",
+          "FLORA INDUSTRIAL",
+          "CAMPIÑA",
+          "CALIMA",
+          "LOS ALAMOS",
+          "FLORA",
+          "EL BOSQUE",
+          "LA FLORA",
+          "ALTOS MENGA"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.49315974678532,
+                3.469309608829407
+              ],
+              [
+                -76.50699709007644,
+                3.461965230483132
+              ],
+              [
+                -76.51149156726098,
+                3.463853160733236
+              ],
+              [
+                -76.51201372580167,
+                3.464404613655473
+              ],
+              [
+                -76.52574547881476,
+                3.4829988336387143
+              ],
+              [
+                -76.5190107877813,
+                3.4900909256446204
+              ],
+              [
+                -76.5010149681179,
+                3.484427434983027
+              ],
+              [
+                -76.49315974678532,
+                3.469309608829407
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "NORORIENTE 1",
+        "barrios": [
+          "TEJARES SALOMIA",
+          "SANTA BARBARA",
+          "PARQUE BOSQUE",
+          "SOLARES DE COMFANDI",
+          "PORTAL DE  COMFANDI",
+          "QUINTAS DE SALOMIA",
+          "GUAYACANES",
+          "GAITAN",
+          "RIVERA",
+          "TORRES DE COMFANDI",
+          "CHIMINANGOS",
+          "PLAZAS VERDES",
+          "SAN LUIS",
+          "VILLA DEL SOL",
+          "METROPOLITANO",
+          "FONAVIEMCALI",
+          "CALIMIO NORTE",
+          "ALCAZARES",
+          "SAN LUISITO"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.48586330363169,
+                3.48482603292175
+              ],
+              [
+                -76.48555450382712,
+                3.4684921724131152
+              ],
+              [
+                -76.49131495690995,
+                3.468887615232671
+              ],
+              [
+                -76.49990812765165,
+                3.477409813906794
+              ],
+              [
+                -76.49685245110247,
+                3.481573840127262
+              ],
+              [
+                -76.49129526084666,
+                3.4861579846819595
+              ],
+              [
+                -76.48986654287677,
+                3.4862064331006826
+              ],
+              [
+                -76.48586330363169,
+                3.48482603292175
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "YUMBO",
+        "barrios": [
+          "YUMBO",
+          "CENCAR",
+          "CIUDAD GUABINAS",
+          "LA ESTANCIA",
+          "CORVIVALLE",
+          "PORTALES DE COMFANDI",
+          "URIBE",
+          "SAN FERNANDO",
+          "BOLIVAR",
+          "BELALCAZAR",
+          "MUNICIPAL",
+          "GUACANDA",
+          "PORTALES DE YUMBO",
+          "PIZARRO",
+          "GAITAN",
+          "CACIQUE JACINTO"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.4843714265452,
+                3.5894781959599986
+              ],
+              [
+                -76.48228556636131,
+                3.570382715132449
+              ],
+              [
+                -76.49030589999614,
+                3.5748753863382348
+              ],
+              [
+                -76.49653044419044,
+                3.579697028505323
+              ],
+              [
+                -76.49575114934142,
+                3.58226679409938
+              ],
+              [
+                -76.49162202218638,
+                3.58700483387478
+              ],
+              [
+                -76.4874416098649,
+                3.5898757305479405
+              ],
+              [
+                -76.48703574431514,
+                3.5899507790941434
+              ],
+              [
+                -76.48618937704276,
+                3.589839177919246
+              ],
+              [
+                -76.4843714265452,
+                3.5894781959599986
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "PALMIRA",
+        "barrios": [
+          "CHAPINERO",
+          "VILLA FONTANA",
+          "LA ITALIA",
+          "PARQUE ITALIA",
+          "EL SESQUI",
+          "LA INDEPENDENCIA",
+          "SEMBRADOR",
+          "GUAYACANES DEL INGENIO",
+          "LAS AMERICAS",
+          "BARRIO NUEVO",
+          "CIUDADELA PALMIRA",
+          "PETRU",
+          "EL RECREO",
+          "PAPAYAL",
+          "EL TREBOL",
+          "GUAYACANES DEL PARQUE",
+          "FATIMA",
+          "OLIMPICO",
+          "PARAISO",
+          "LAS FLORES",
+          "LUIS CARLOS GALAN SARMIENTO",
+          "EL TRIUNFO",
+          "POPULAR MODELO",
+          "LIBERTADORES",
+          "RINCON DEL BOSQUE",
+          "DANUBIO",
+          "SANTA BARBARA",
+          "LAS ACACIAS",
+          "BUENOS AIRES",
+          "EL BOSQUE",
+          "ALICANTO",
+          "MUNICIPAL",
+          "LAS PALMERAS",
+          "INDUSTRIAL",
+          "PALMIRA",
+          "SAN PEDRO",
+          "SANTA ANA",
+          "COLOMBIA",
+          "BIZERTA",
+          "LA CONCORDIA",
+          "EMILIA",
+          "EL PRADO",
+          "PRIMERO DE MAYO",
+          "ALFONSO LÓPEZ",
+          "CAMPESTRE",
+          "FRAY LUIS",
+          "VERSALLES",
+          "BERLIN",
+          "ESTONIA",
+          "LLANOGRANDE",
+          "SANTA ISABEL",
+          "LLANO GRANDE",
+          "SAMANES DE LAS MERCEDES",
+          "VILLA LAS PALMAS",
+          "POBLADO COMFAUNION",
+          "SANTA TERESITA",
+          "ALMANARES DE LA MERCED",
+          "MERCEDES",
+          "PORTAL DE LAS PALMAS",
+          "VILLA CLAUDIA",
+          "LA BENEDICTA",
+          "JUAN PABLO",
+          "SAN CARLOS",
+          "BOSQUE DE MORELIA",
+          "IGNACIO TORRES G",
+          "DEPARTAMENTAL",
+          "MIRRIÑAO",
+          "LA ESPERANZA",
+          "RESERVA DE ZAMORANO",
+          "MONTECARLO",
+          "ALAMEDA",
+          "ZAMORANO",
+          "LA COSECHA"
+        ],
+        "ciudad": "CALI"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -76.27645100874595,
+                3.528055925569636
+              ],
+              [
+                -76.29828696592456,
+                3.509624110104501
+              ],
+              [
+                -76.30052238425226,
+                3.5108927939709127
+              ],
+              [
+                -76.31517147652089,
+                3.531754891818695
+              ],
+              [
+                -76.3157745849121,
+                3.5339375972171307
+              ],
+              [
+                -76.31324005656253,
+                3.5430222698624774
+              ],
+              [
+                -76.31278817578749,
+                3.543913222023184
+              ],
+              [
+                -76.30265583639522,
+                3.5507704305886194
+              ],
+              [
+                -76.29705254824293,
+                3.554443189903003
+              ],
+              [
+                -76.28657826384163,
+                3.555213222727981
+              ],
+              [
+                -76.27645100874595,
+                3.528055925569636
+              ]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
