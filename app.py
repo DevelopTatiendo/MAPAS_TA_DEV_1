@@ -8,7 +8,7 @@ import pandas as pd
 from mapa_pruebas import generar_mapa_pruebas
 from mapa_pedidos import generar_mapa_pedidos
 from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
-from mapa_visitas import generar_mapa_visitas_individuales
+#from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
@@ -360,7 +360,7 @@ if submit_button:
             filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
             map_type = "pedidos"
         elif tipo_mapa == "Visitas":
-            filename = manejar_error(generar_mapa_visitas_individuales, ciudad, int(id_ruta), str(fecha_inicio), str(fecha_fin))
+            #filename = manejar_error(generar_mapa_visitas_individuales, ciudad, int(id_ruta), str(fecha_inicio), str(fecha_fin))
             map_type = "visitas"
         elif tipo_mapa == "Facturas Vencidas":
             filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
