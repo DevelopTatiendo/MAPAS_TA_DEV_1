@@ -1,85 +1,138 @@
 import pandas as pd
 import folium
-from folium.plugins import HeatMap, MarkerCluster
 import json
-import numpy as np
 import re
-from folium import FeatureGroup
-from matplotlib import cm, colors
-from pre_procesamiento.preprocesamiento_visitas import crear_df, eventos_visitas_con_coordenadas_por_ruta_y_rango, eventos_visitas_no_agrupado_fijo
 import unicodedata
 import logging
+from pre_procesamiento.preprocesamiento_visitas import eventos_visitas_simple
 from utils.gestor_mapas import guardar_mapa_controlado
 
 
-def resolver_id_ruta(rutas_cobro):
+# Mapeo de ciudades para resolver centroope
+CENTROOPES = {
+    'CALI': 2,
+    'MEDELLIN': 3,
+    'MANIZALES': 6,
+    'PEREIRA': 5,
+    'BOGOTA': 4,
+    'BARRANQUILLA': 8,
+    'BUCARAMANGA': 7
+}
+
+# Coordenadas y archivos GeoJSON por ciudad
+COORDENADAS_CIUDADES = {
+    'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
+    'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
+    'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
+    'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
+    'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
+    'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
+    'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
+}
+
+
+def _normalizar_ciudad(ciudad: str) -> str:
+    """Normalizar ciudad removiendo acentos y convirtiendo a mayúsculas."""
+    return ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
+
+
+def _resolver_id_ruta(ruta_cobro: str) -> int:
     """
     Resuelve el ID de ruta desde diferentes formatos de entrada.
     
     Args:
-        rutas_cobro: Puede ser None, "TODOS", número como string, o texto como "16 PALMIRA"
+        ruta_cobro: Puede ser texto como "16 PALMIRA", número como string, o vacío
         
     Returns:
-        int: ID de ruta numérico, o None para usar modo "TODOS"
+        int: ID de ruta numérico
+        
+    Raises:
+        ValueError: Si no se puede resolver la ruta
     """
-    if rutas_cobro is None or rutas_cobro == "" or rutas_cobro == "TODOS":
-        logging.info("resolver_id_ruta: Modo TODOS (rutas_cobro vacío o TODOS)")
-        return None
+    if not ruta_cobro or ruta_cobro.strip() == "":
+        raise ValueError("Debe seleccionar una ruta válida")
     
     # Convertir a string por seguridad
-    rutas_str = str(rutas_cobro).strip()
+    ruta_str = str(ruta_cobro).strip()
     
     # Si es numérico puro
-    if rutas_str.isdigit():
-        id_ruta = int(rutas_str)
-        logging.info(f"resolver_id_ruta: Numérico directo '{rutas_str}' → {id_ruta}")
+    if ruta_str.isdigit():
+        id_ruta = int(ruta_str)
+        logging.info(f"Ruta numérica directa '{ruta_str}' → {id_ruta}")
         return id_ruta
     
     # Normalizar texto para caso especial (sin acentos, mayúsculas)
-    texto_normalizado = ''.join(c for c in unicodedata.normalize('NFD', rutas_str) if unicodedata.category(c) != 'Mn').upper().strip()
+    texto_normalizado = ''.join(c for c in unicodedata.normalize('NFD', ruta_str) if unicodedata.category(c) != 'Mn').upper().strip()
     
     # Caso especial: "16 PALMIRA" → 780
     if texto_normalizado == "16 PALMIRA":
-        logging.info(f"resolver_id_ruta: Caso especial '{rutas_str}' → 780")
+        logging.info(f"Caso especial '{ruta_str}' → 780")
         return 780
     
     # Extraer número inicial con regex
-    match = re.match(r'^(\d+)', rutas_str.strip())
+    match = re.match(r'^(\d+)', ruta_str.strip())
     if match:
         id_ruta = int(match.group(1))
-        logging.info(f"resolver_id_ruta: Regex extraído de '{rutas_str}' → {id_ruta}")
+        logging.info(f"Regex extraído de '{ruta_str}' → {id_ruta}")
         return id_ruta
     
-    # Fallback: no se pudo resolver, usar modo TODOS
-    logging.warning(f"resolver_id_ruta: No se pudo resolver '{rutas_str}', fallback a modo TODOS")
-    return None
+    # No se pudo resolver
+    raise ValueError(f"No se pudo resolver la ruta: '{ruta_str}'")
 
 
-def generar_mapa_visitas_no_agrupado_fijo(location, geojson_file_path):
+def generar_mapa_visitas_individuales(ciudad: str, ruta_cobro: str, fecha_inicio: str, fecha_fin: str) -> str:
     """
-    Genera mapa simplificado para modo "No agrupado" usando consulta SQL fija.
-    Ignora completamente los filtros del formulario (ruta, fechas, etc.).
+    Genera mapa simplificado con puntos individuales de visitas.
+    Solo consultores en calle (cargo = 5), sin clusters, sin heatmap, sin agregaciones.
     
     Args:
-        location: Coordenadas del centro del mapa
-        geojson_file_path: Ruta al archivo GeoJSON de comunas
-        
+        ciudad (str): Nombre de la ciudad
+        ruta_cobro (str): Ruta de cobro (texto o número)
+        fecha_inicio (str): Fecha inicio en formato 'YYYY-MM-DD'
+        fecha_fin (str): Fecha fin en formato 'YYYY-MM-DD'
+    
     Returns:
-        str: Nombre del archivo del mapa generado, o None si hay error
+        str: Nombre del archivo del mapa generado
+        
+    Raises:
+        ValueError: Si hay errores en los parámetros
+        Exception: Si hay errores en la generación del mapa
     """
     try:
-        # Usar consulta SQL fija que ignora filtros de UI
-        logging.info("Modo No agrupado: usando consulta SQL fija (ignorando filtros de UI)")
-        df = eventos_visitas_no_agrupado_fijo()
+        # Normalizar ciudad
+        ciudad_norm = _normalizar_ciudad(ciudad)
+        
+        # Validar ciudad
+        if ciudad_norm not in CENTROOPES:
+            raise ValueError(f"Ciudad no reconocida: {ciudad}")
+        
+        if ciudad_norm not in COORDENADAS_CIUDADES:
+            raise ValueError(f"No hay coordenadas configuradas para: {ciudad}")
+        
+        # Resolver centroope y coordenadas
+        centroope = CENTROOPES[ciudad_norm]
+        location, geojson_file_path = COORDENADAS_CIUDADES[ciudad_norm]
+        
+        # Resolver ID de ruta
+        id_ruta = _resolver_id_ruta(ruta_cobro)
+        
+        # Convertir fechas a formato completo para la consulta
+        fecha_inicio_completa = f"{fecha_inicio} 00:00:00"
+        fecha_fin_completa = f"{fecha_fin} 23:59:59"
+        
+        logging.info(f"Generando mapa visitas individuales - Ciudad: {ciudad_norm}, CO: {centroope}, Ruta: {id_ruta}, Fechas: {fecha_inicio_completa} a {fecha_fin_completa}")
+        
+        # Consultar datos de visitas
+        df = eventos_visitas_simple(centroope, id_ruta, fecha_inicio_completa, fecha_fin_completa)
         
         if df.empty:
-            logging.warning("No hay datos en la consulta SQL fija para modo No agrupado.")
-            return None
-
-        # Crear mapa centrado en la ubicación
+            logging.warning("No hay datos de visitas para los parámetros seleccionados")
+            raise ValueError("No se encontraron visitas para la ruta y fechas seleccionadas")
+        
+        # Crear mapa centrado en la ciudad
         mapa = folium.Map(location=location, zoom_start=12)
-
-        # Cargar y añadir opcional capa de comunas como referencia
+        
+        # Cargar y añadir capa de comunas como referencia
         try:
             with open(geojson_file_path, 'r', encoding='utf-8') as file:
                 comunas_geojson = json.load(file)
@@ -139,7 +192,7 @@ def generar_mapa_visitas_no_agrupado_fijo(location, geojson_file_path):
                 
                 total_eventos += 1
 
-        # Añadir información básica fija en esquina superior izquierda
+        # Añadir etiqueta flotante con información básica
         html_info = f"""
         <div style="
             position: fixed;
@@ -153,57 +206,29 @@ def generar_mapa_visitas_no_agrupado_fijo(location, geojson_file_path):
             font-family: Arial, sans-serif;
             min-width: 200px;
         ">
-            <h4 style="margin: 0 0 8px 0;">Visitas (No Agrupado)</h4>
-            <p style="margin: 2px 0;"><b>Consulta Fija:</b> CO=2, Ruta=780</p>
-            <p style="margin: 2px 0;"><b>Período:</b> 2024-01-01 - 2025-09-01</p>
+            <h4 style="margin: 0 0 8px 0;">Visitas Individuales</h4>
+            <p style="margin: 2px 0;"><b>Ciudad:</b> {ciudad_norm}</p>
+            <p style="margin: 2px 0;"><b>Ruta:</b> {ruta_cobro}</p>
+            <p style="margin: 2px 0;"><b>Período:</b> {fecha_inicio} - {fecha_fin}</p>
             <p style="margin: 2px 0;"><b>Total eventos:</b> {total_eventos}</p>
         </div>
         """
         mapa.get_root().html.add_child(folium.Element(html_info))
-
+        
         # Guardar mapa
-        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_visitas_no_agrupado", permitir_multiples=False)
+        filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_visitas_individuales", permitir_multiples=False)
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         
-        logging.info(f"Mapa de visitas No agrupado (SQL fijo) generado: {filename} con {total_eventos} eventos")
+        logging.info(f"Mapa de visitas individuales generado: {filename} con {total_eventos} eventos")
         return filename
-
+        
+    except ValueError as e:
+        logging.error(f"Error de parámetros en mapa visitas individuales: {str(e)}")
+        raise e
     except Exception as e:
-        logging.error(f"Error generando mapa de visitas No agrupado (SQL fijo): {str(e)}")
-        return None
-
-
-def generar_mapa_visitas_simple(centroope, rutas_cobro, fecha_inicio, fecha_fin, location, geojson_file_path):
-    """
-    Genera un mapa simplificado de visitas individuales sin agrupaciones, clusters o heatmaps.
-    Solo muestra puntos individuales con popups básicos.
-    """
-    try:
-        # Resolver ID de ruta usando función robusta
-        id_ruta = resolver_id_ruta(rutas_cobro)
-        
-        if id_ruta is not None:
-            # Para ruta específica, usar función moderna
-            logging.info(f"Obteniendo datos para ruta específica: {id_ruta}")
-            df = eventos_visitas_con_coordenadas_por_ruta_y_rango(centroope, id_ruta, fecha_inicio, fecha_fin)
-        else:
-            # Para "TODOS" o casos no resueltos, usar función de compatibilidad
-            logging.info("Usando función de compatibilidad para obtener visitas de todas las rutas")
-            from pre_procesamiento.preprocesamiento_visitas import crear_df
-            ruta_coordenadas = ""  # No necesitamos coordenadas de CSV para el modo simple
-            df = crear_df(centroope, rutas_cobro or "TODOS", fecha_inicio, fecha_fin, ruta_coordenadas)
-        
-        if df.empty:
-            logging.warning("No hay datos de visitas para las fechas y ruta seleccionadas.")
-            return None
-
-        # Crear mapa centrado en la ciudad
-        mapa = folium.Map(location=location, zoom_start=12)
-
-        # Cargar y añadir opcional capa de comunas como referencia
-        try:
-            with open(geojson_file_path, 'r', encoding='utf-8') as file:
+        logging.error(f"Error generando mapa visitas individuales: {str(e)}")
+        raise e
                 comunas_geojson = json.load(file)
             
             for feature in comunas_geojson['features']:
@@ -299,7 +324,7 @@ def generar_mapa_visitas_simple(centroope, rutas_cobro, fecha_inicio, fecha_fin,
         return None
 
 
-def generar_mapa_visitas(fecha_inicio, fecha_fin, tipo_agrupacion, ciudad, rutas_cobro=None):
+
     """
     Genera mapa de visitas con dos modos:
     - Agrupado: Mapa con heatmap, clusters y estadísticas
