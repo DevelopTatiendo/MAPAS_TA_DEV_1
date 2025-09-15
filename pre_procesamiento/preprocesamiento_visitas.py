@@ -158,9 +158,10 @@ def nombre_ruta(centroope: int, id_ruta: int) -> str:
     cn.close()
     return None if df.empty else str(df.iloc[0]['ruta'])
 
-def eventos_visitas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+def eventos_visitas_simple(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
-    Trae todos los eventos de visitas con coordenadas válidas para la ruta y rango especificados.
+    Retorna todos los eventos de visitas con coordenadas válidas para la ruta y rango especificados.
+    Simplificado para el nuevo flujo: solo consultores en calle (cargo = 5).
     
     Args:
         id_centroope (int): ID del centro de operaciones
@@ -176,7 +177,7 @@ def eventos_visitas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta:
         Exception: Si hay error en la conexión o ejecución de la consulta SQL
     """
     inicio_tiempo = time.time()
-    logging.info(f"Iniciando eventos_visitas_con_coordenadas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
+    logging.info(f"Iniciando eventos_visitas_simple - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
     
     q = """
     SELECT 
@@ -198,96 +199,6 @@ def eventos_visitas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta:
     JOIN fullclean_personal.personal p               ON p.id = e.id_autor
     JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
     WHERE 
-          c.estado = 1
-      AND c.estado_cxc IN (0,1)
-      AND r.id_centroope = 2
-      AND r.id = 780
-      AND e.fecha_evento BETWEEN %s AND %s
-      AND e.coordenada_latitud  IS NOT NULL
-      AND e.coordenada_longitud IS NOT NULL
-      AND e.coordenada_latitud  <> 0
-      AND e.coordenada_longitud <> 0
-      AND e.coordenada_latitud  BETWEEN -5  AND 13
-      AND e.coordenada_longitud BETWEEN -81 AND -66
-       -- AND ca.Id_cargo = 181
-     AND ca.Id_cargo in (181, 5)
-    ORDER BY 
-        e.fecha_evento ASC,
-        p.id ASC,
-        e.id_contacto ASC;
-    """
-    
-    try:
-        cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
-        cn.close()
-        
-        # Normalizar tipos de datos
-        if not df.empty:
-            df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
-            df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
-            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
-            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
-            df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
-            df['es_visita'] = pd.to_numeric(df['es_visita'], errors='coerce').fillna(1).astype(int)
-            df['apellido'] = df['apellido'].fillna('').astype(str)
-            df['cargo'] = df['cargo'].fillna('').astype(str)
-            
-            # Eliminar filas con coordenadas inválidas después de conversión
-            df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
-            
-            # Validar coordenadas realistas
-            df = df[
-                (df['lat'].between(-5, 13)) & 
-                (df['lon'].between(-81, -66))
-            ]
-        
-        # Logging de tiempo de ejecución y tamaño
-        tiempo_ejecucion = time.time() - inicio_tiempo
-        filas_resultado = len(df)
-        logging.info(f"eventos_visitas_con_coordenadas_por_ruta_y_rango completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados")
-        
-        return df
-        
-    except Exception as e:
-        logging.error(f"Error en eventos_visitas_con_coordenadas_por_ruta_y_rango: {str(e)}")
-        raise e
-
-def consultores_metricas_visitas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
-    """
-    Ejecuta consulta SQL agregada por consultor para obtener métricas de visitas realizadas.
-    
-    Args:
-        id_centroope (int): ID del centro de operaciones
-        id_ruta (int): ID de la ruta de cobro
-        f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
-        f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
-    
-    Returns:
-        pd.DataFrame: DataFrame con columnas ['id_consultor', 'apellido', 'cant_visitas']
-    
-    Raises:
-        Exception: Si hay error en la conexión o ejecución de la consulta SQL
-    """
-    inicio_tiempo = time.time()
-    logging.info(f"Iniciando consultores_metricas_visitas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
-    
-    # Consulta SQL parametrizada siguiendo exactamente el patrón del Gestor
-    q = """
-    SELECT
-        p.id  AS id_consultor,
-        p.apellido,
-        COUNT(e.idEvento) AS cant_visitas
-    FROM fullclean_contactos.vwEventos e
-    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
-    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
-    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
-    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
-    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
-    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
-    WHERE
           c.estado = 1
       AND c.estado_cxc IN (0,1)
       AND r.id_centroope = %s
@@ -299,87 +210,7 @@ def consultores_metricas_visitas_por_ruta_y_rango(id_centroope: int, id_ruta: in
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 181
-    GROUP BY
-        p.id, p.apellido
-    ORDER BY
-        cant_visitas DESC;
-    """
-    
-    try:
-        cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
-        cn.close()
-        
-        # Asegurar tipos de datos correctos
-        if not df.empty:
-            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
-            df['cant_visitas'] = pd.to_numeric(df['cant_visitas'], errors='coerce').fillna(0).astype(int)
-            df['apellido'] = df['apellido'].fillna('').astype(str)
-        
-        # Logging de tiempo de ejecución y tamaño
-        tiempo_ejecucion = time.time() - inicio_tiempo
-        filas_resultado = len(df)
-        logging.info(f"consultores_metricas_visitas_por_ruta_y_rango completada en {tiempo_ejecucion:.2f}s - {filas_resultado} filas retornadas")
-        
-        return df
-        
-    except Exception as e:
-        logging.error(f"Error en consultores_metricas_visitas_por_ruta_y_rango: {str(e)}")
-        raise e
-
-def eventos_visitas_no_agrupado_fijo() -> pd.DataFrame:
-    """
-    Ejecuta consulta SQL fija para modo "No agrupado" sin parámetros variables.
-    Valores hardcodeados según especificación del Gerente:
-    - id_centroope = 2 (CALI)
-    - id_ruta = 780 (16 PALMIRA)
-    - Rango de fechas: "2024-01-01" a "2025-09-01"
-    
-    Returns:
-        pd.DataFrame: DataFrame con columnas ['id_evento', 'id_contacto', 'id_consultor', 'apellido', 
-                     'lat', 'lon', 'fecha_evento', 'id_evento_tipo', 'es_visita', 'cargo']
-    
-    Raises:
-        Exception: Si hay error en la conexión o ejecución de la consulta SQL
-    """
-    inicio_tiempo = time.time()
-    logging.info("Iniciando eventos_visitas_no_agrupado_fijo - Consulta SQL fija sin parámetros")
-    
-    # Consulta SQL completamente fija según especificación del Gerente
-    q = """
-    SELECT 
-        e.idEvento                AS id_evento,
-        e.id_contacto             AS id_contacto,
-        p.id                      AS id_consultor,
-        p.apellido                AS apellido,
-        e.coordenada_latitud      AS lat,
-        e.coordenada_longitud     AS lon,
-        e.fecha_evento            AS fecha_evento,
-        e.id_evento_tipo          AS id_evento_tipo,
-        1                         AS es_visita,
-        ca.cargo                  AS cargo
-    FROM fullclean_contactos.vwEventos e
-    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
-    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
-    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
-    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
-    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
-    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
-    WHERE 
-          c.estado = 1
-      AND c.estado_cxc IN (0,1)
-      AND r.id_centroope = 2
-      AND r.id = 780
-      AND e.fecha_evento BETWEEN "2024-01-01" AND "2025-09-01"
-      AND e.coordenada_latitud  IS NOT NULL
-      AND e.coordenada_longitud IS NOT NULL
-      AND e.coordenada_latitud  <> 0
-      AND e.coordenada_longitud <> 0
-      AND e.coordenada_latitud  BETWEEN -5  AND 13
-      AND e.coordenada_longitud BETWEEN -81 AND -66
-       -- AND ca.Id_cargo = 181
-      AND ca.Id_cargo in (181, 5)
+      AND ca.Id_cargo = 5
     ORDER BY 
         e.fecha_evento ASC,
         p.id ASC,
@@ -388,8 +219,7 @@ def eventos_visitas_no_agrupado_fijo() -> pd.DataFrame:
     
     try:
         cn = _conn()
-        # Ejecutar consulta sin parámetros (todo hardcodeado)
-        df = pd.read_sql(q, cn)
+        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
         cn.close()
         
         # Normalizar tipos de datos
@@ -417,34 +247,38 @@ def eventos_visitas_no_agrupado_fijo() -> pd.DataFrame:
         # Logging de tiempo de ejecución y tamaño
         tiempo_ejecucion = time.time() - inicio_tiempo
         filas_resultado = len(df)
-        logging.info(f"eventos_visitas_no_agrupado_fijo completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados (SQL fijo: CO=2, ruta=780, 2024-01-01 a 2025-09-01)")
+        logging.info(f"eventos_visitas_simple completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados")
         
         return df
         
     except Exception as e:
-        logging.error(f"Error en eventos_visitas_no_agrupado_fijo: {str(e)}")
+        logging.error(f"Error en eventos_visitas_simple: {str(e)}")
         raise e
+
+
+
+
 
 # === FUNCIONES DE COMPATIBILIDAD HACIA ATRÁS ===
 
 def consultar_visitas_db(centroope, id_ruta, fecha_inicio, fecha_fin):
     """
     Función de compatibilidad hacia atrás. Usa la nueva función mejorada.
-    DEPRECADA: Usar eventos_visitas_por_ruta_en_rango() en su lugar.
+    DEPRECADA: Usar eventos_visitas_simple() en su lugar.
     """
-    logging.warning("consultar_visitas_db está deprecada. Usar eventos_visitas_por_ruta_en_rango() en su lugar.")
-    return eventos_visitas_por_ruta_en_rango(centroope, id_ruta, fecha_inicio, fecha_fin)
+    logging.warning("consultar_visitas_db está deprecada. Usar eventos_visitas_simple() en su lugar.")
+    return eventos_visitas_simple(centroope, id_ruta, fecha_inicio, fecha_fin)
 
 def crear_df(centroope, id_ruta, fecha_inicio, fecha_fin, ruta_coordenadas):
     """
     Función de compatibilidad hacia atrás.
-    DEPRECADA: Usar las nuevas funciones específicas en su lugar.
+    DEPRECADA: Usar eventos_visitas_simple() en su lugar.
     """
-    logging.warning("crear_df está deprecada. Usar eventos_visitas_con_coordenadas_por_ruta_y_rango() en su lugar.")
+    logging.warning("crear_df está deprecada. Usar eventos_visitas_simple() en su lugar.")
     
     try:
         # Obtener datos de visitas desde la base de datos usando la nueva función
-        df_visitas = eventos_visitas_con_coordenadas_por_ruta_y_rango(centroope, id_ruta, fecha_inicio, fecha_fin)
+        df_visitas = eventos_visitas_simple(centroope, id_ruta, fecha_inicio, fecha_fin)
         
         if df_visitas.empty:
             logging.info("No se encontraron visitas para los parámetros dados")

@@ -8,7 +8,7 @@ import pandas as pd
 from mapa_pruebas import generar_mapa_pruebas
 from mapa_pedidos import generar_mapa_pedidos
 from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
-from mapa_visitas import generar_mapa_visitas
+from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
@@ -187,9 +187,37 @@ with st.form(key="filtros_form"):
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
     elif tipo_mapa == "Visitas":
-        rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
-        ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-        agrupacion = st.radio("Tipo de agrupación:", ["Agrupado", "No agrupado"], index=0)
+        # Lista de rutas desde BD (id_ruta, ruta)
+        from pre_procesamiento.preprocesamiento_visitas import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta = None
+            nombre_ruta_ui = None
+        else:
+            import re
+            def clean_route_name(name):
+                if pd.isna(name):
+                    return "SIN NOMBRE"
+                name = str(name).strip()
+                name = re.sub(r'[^\w\s-]', '', name)
+                return name if name else "SIN NOMBRE"
+            
+            df_rutas['ruta_clean'] = df_rutas['ruta'].apply(clean_route_name)
+            
+            # Crear diccionario {nombre_ruta: id_ruta}
+            options_dict = dict(zip(df_rutas['ruta_clean'], df_rutas['id_ruta']))
+            
+            # UI: mostrar nombres de rutas
+            nombre_ruta_ui = st.selectbox(
+                "Seleccione una ruta de cobro:", 
+                options=[""] + list(options_dict.keys()),
+                key="visitas_ruta_selectbox"
+            )
+            
+            # Obtener id_ruta
+            id_ruta = options_dict.get(nombre_ruta_ui) if nombre_ruta_ui else None
+        
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
     elif tipo_mapa == "Consultores":
@@ -332,7 +360,7 @@ if submit_button:
             filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
             map_type = "pedidos"
         elif tipo_mapa == "Visitas":
-            filename = manejar_error(generar_mapa_visitas, fecha_inicio, fecha_fin, agrupacion, ciudad, ruta_cobro)
+            filename = manejar_error(generar_mapa_visitas_individuales, ciudad, int(id_ruta), str(fecha_inicio), str(fecha_fin))
             map_type = "visitas"
         elif tipo_mapa == "Facturas Vencidas":
             filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)

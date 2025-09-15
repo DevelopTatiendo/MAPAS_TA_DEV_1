@@ -783,11 +783,11 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                     # Trazo
                     AntPath(
                         locations=coords,
-                        color="#111111",
-                        weight=3,
-                        delay=800,
-                        dash_array=[12, 18],
-                        pulse_color="#2563eb"
+                        color="#000000",        # antes "#111111"
+                        weight=4,               # antes 3
+                        delay=600,              # antes 800 (más fluido)
+                        dash_array=[8, 12],     # antes [12, 18] (más definido en zooms bajos)
+                        pulse_color="#00FFFF"   # antes "#2563eb"
                     ).add_to(fg_paths)
 
                     # Acumular métricas
