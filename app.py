@@ -258,6 +258,56 @@ with st.form(key="filtros_form"):
         
         # Checkbox para mostrar puntos fuera de cuadrantes
         mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
+    elif tipo_mapa == "Pruebas":
+        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta_pruebas = None
+            nombre_ruta_ui_pruebas = None
+        else:
+            import re
+            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+            
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+            
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+            
+            # Selector que muestra solo el nombre de la ruta
+            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+            id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+            nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
+        
+        # Campo fecha objetivo con default = mañana (America/Bogota)
+        from datetime import datetime, timedelta
+        import pytz
+        
+        # Obtener fecha de mañana en zona horaria Colombia
+        try:
+            tz_colombia = pytz.timezone('America/Bogota')
+            hoy_colombia = datetime.now(tz_colombia).date()
+            manana_colombia = hoy_colombia + timedelta(days=1)
+        except:
+            # Fallback si hay problemas con timezone
+            from datetime import date
+            manana_colombia = date.today() + timedelta(days=1)
+        
+        fecha_objetivo = st.date_input(
+            "Fecha objetivo (proyección visitas):", 
+            value=manana_colombia,
+            help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
+        )
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -402,7 +452,18 @@ if submit_button:
                 filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
                 map_type = "consultores"
         elif tipo_mapa == "Pruebas":
-            filename = manejar_error(generar_mapa_pruebas, fecha_inicio, fecha_fin, ciudad, ruta)
+            if not id_ruta_pruebas:
+                st.error("Seleccione una ruta válida.")
+                filename = None
+            else:
+                from mapa_pruebas import generar_mapa_pruebas_proyeccion
+                filename = manejar_error(
+                    generar_mapa_pruebas_proyeccion,
+                    ciudad,
+                    id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
+                    nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
+                    str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
+                )
             map_type = "pruebas"
 
         if filename:
