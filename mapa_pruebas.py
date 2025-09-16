@@ -360,3 +360,189 @@ def generar_mapa_pruebas(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
     filepath = f"static/maps/{filename}"
     mapa.save(filepath)
     return filename
+
+def generar_mapa_pruebas_proyeccion(ciudad: str,
+                                    ruta_id_ui: int|None,
+                                    ruta_nombre_ui: str|None,
+                                    fecha_objetivo: str) -> str:
+    """
+    1) Resolver id_ruta real (mismo flujo que Consultores).
+    2) Cargar GeoJSON único por ciudad (mismo flujo que Consultores).
+    3) Filtrar features de la ruta (padres/hijos).
+    4) Llamar al prepro de proyección para obtener contactos + coords robustas.
+    5) Pintar cuadrantes + puntos con popup (id_contacto, fecha_prox, eventos_usados, dispersion_m, confianza).
+    6) Fit bounds y devolver path del HTML generado (p.ej. 'mapa_pruebas_proyeccion.html').
+    """
+    try:
+        # Importar utilidades reutilizables de Consultores
+        from mapa_consultores import (
+            _cargar_geojson_ciudad_unico, filter_features_by_route, 
+            resolve_route_id, get_co, _style_cuadrante, _style_no_cuadrante,
+            _es_cuadrante, _coords_and_geojson, _norm_city
+        )
+        from pre_procesamiento.preprocesamiento_proyeccion_visitas import contactos_proyeccion_visitas
+        
+        logging.info(f"Generando mapa proyección visitas - Ciudad: {ciudad}, ruta_id_ui: {ruta_id_ui}, ruta_nombre_ui: {ruta_nombre_ui}, fecha: {fecha_objetivo}")
+        
+        # 1) Resolver id_ruta real (mismo flujo que Consultores)
+        ruta_result = resolve_route_id(ruta_id_ui, ruta_nombre_ui, ciudad)
+        if ruta_result is None:
+            logging.warning(f"No se pudo resolver ruta para: id_ui={ruta_id_ui}, nombre_ui={ruta_nombre_ui}")
+            raise ValueError("Ruta no resuelta")
+        
+        id_ruta_real, nombre_ruta_resuelto = ruta_result
+        
+        # 2) Cargar GeoJSON único por ciudad (mismo flujo que Consultores)
+        try:
+            geojson_completo = _cargar_geojson_ciudad_unico(ciudad)
+        except FileNotFoundError as e:
+            logging.warning(f"GeoJSON no encontrado para {ciudad}: {e}")
+            raise e
+        
+        # 3) Filtrar features de la ruta (padres/hijos)
+        padres_ruta, hijos_ruta, subset_fc = filter_features_by_route(
+            geojson_completo, id_ruta_real, mostrar_todos=False
+        )
+        
+        if not padres_ruta and not hijos_ruta:
+            logging.warning(f"No se encontraron cuadrantes para la ruta {id_ruta_real}")
+        
+        # 4) Llamar al prepro de proyección para obtener contactos + coords robustas
+        co = get_co(ciudad)
+        df_contactos = contactos_proyeccion_visitas(co, id_ruta_real, fecha_objetivo)
+        
+        total_contactos = len(df_contactos) if df_contactos is not None and not df_contactos.empty else 0
+        contactos_con_coords = 0
+        
+        if df_contactos is not None and not df_contactos.empty:
+            contactos_con_coords = len(df_contactos[
+                (df_contactos['lat'].notna()) & (df_contactos['lon'].notna())
+            ])
+        
+        logging.info(f"Contactos encontrados: {total_contactos}, con coordenadas: {contactos_con_coords}")
+        
+        # 5) Crear mapa base y configurar ubicación
+        ciudadN = _norm_city(ciudad)
+        centers = _coords_and_geojson()
+        location = centers.get(ciudadN, [4.6097, -74.0817])[0]  # Default Bogotá
+        
+        mapa = folium.Map(location=location, zoom_start=12)
+        
+        # 6) Pintar cuadrantes filtrados (mismo estilo/leyenda que Consultores)
+        if subset_fc.get('features'):
+            for feature in subset_fc['features']:
+                if _es_cuadrante(feature):
+                    # Es un cuadrante: aplicar estilo normal
+                    folium.GeoJson(
+                        data=feature,
+                        style_function=lambda f: _style_cuadrante(f),
+                        popup=folium.Popup(
+                            f"<b>Cuadrante:</b> {feature.get('properties', {}).get('codigo', 'Sin código')}",
+                            max_width=200
+                        )
+                    ).add_to(mapa)
+                else:
+                    # No es cuadrante: estilo transparente
+                    folium.GeoJson(
+                        data=feature,
+                        style_function=_style_no_cuadrante,
+                        popup=folium.Popup(
+                            f"Comuna: {feature.get('properties', {}).get('NOMBRE', 'Sin nombre')}",
+                            max_width=200
+                        )
+                    ).add_to(mapa)
+        
+        # 7) Pintar puntos (CircleMarker) por contacto con colores por confianza
+        if df_contactos is not None and not df_contactos.empty:
+            bounds_coords = []
+            
+            for _, contacto in df_contactos.iterrows():
+                lat = contacto.get('lat')
+                lon = contacto.get('lon')
+                
+                if pd.notna(lat) and pd.notna(lon):
+                    bounds_coords.append([lat, lon])
+                    
+                    # Colores por confianza: alta → verde, media → naranja, baja → rojo
+                    confianza = contacto.get('confianza', 'sin_datos')
+                    if confianza == 'alta':
+                        color = 'green'
+                    elif confianza == 'media':
+                        color = 'orange'
+                    else:  # baja o sin_datos
+                        color = 'red'
+                    
+                    # Popup: id_contacto, fecha_prox_visita_venta, eventos_usados, dispersion_m (m), confianza_coord
+                    id_contacto = contacto.get('id_contacto', 'N/A')
+                    fecha_prox = contacto.get('fecha_prox_visita_venta', fecha_objetivo)
+                    eventos_usados = contacto.get('k_eventos_usados', 0)
+                    dispersion = contacto.get('dispersion_m')
+                    dispersion_str = f"{dispersion:.1f} m" if dispersion is not None else "N/A"
+                    nombre = contacto.get('nombre_contacto', 'Sin nombre')
+                    telefono = contacto.get('telefono', 'Sin teléfono')
+                    
+                    popup_text = f"""
+                    <b>ID Contacto:</b> {id_contacto}<br>
+                    <b>Nombre:</b> {nombre}<br>
+                    <b>Teléfono:</b> {telefono}<br>
+                    <b>Fecha próx visita:</b> {fecha_prox}<br>
+                    <b>Eventos usados:</b> {eventos_usados}<br>
+                    <b>Dispersión:</b> {dispersion_str}<br>
+                    <b>Confianza:</b> {confianza}
+                    """
+                    
+                    folium.CircleMarker(
+                        location=[lat, lon],
+                        radius=7,
+                        color=color,
+                        fill=True,
+                        fillColor=color,
+                        fillOpacity=0.7,
+                        weight=2,
+                        popup=folium.Popup(popup_text, max_width=300)
+                    ).add_to(mapa)
+            
+            # Fit bounds compacto si hay puntos
+            if bounds_coords:
+                if len(bounds_coords) == 1:
+                    # Un solo punto: centrar con zoom moderado
+                    mapa.location = bounds_coords[0]
+                    mapa.zoom_start = 15
+                else:
+                    # Múltiples puntos: fit bounds
+                    mapa.fit_bounds(bounds_coords, padding=(20, 20))
+        
+        # 8) Banner si no hay puntos
+        mensaje_contactos = f"{contactos_con_coords} contactos" if contactos_con_coords > 0 else "Sin contactos para la fecha seleccionada"
+        
+        # 9) Leyenda con información
+        nombre_ruta_display = nombre_ruta_resuelto or ruta_nombre_ui or f"Ruta {id_ruta_real}"
+        html_leyenda = f"""
+        <div style="position: fixed; top: 20px; left: 20px; background: white; padding: 15px; border-radius: 8px;
+                    box-shadow: 0 0 10px rgba(0,0,0,.15); z-index: 1000; font-family: Arial, sans-serif; min-width: 280px;">
+            <h4 style="margin: 0 0 10px 0; color: #2563eb;">Proyección Visitas - {nombre_ruta_display}</h4>
+            <p style="margin: 2px 0;"><b>Ciudad:</b> {ciudad}</p>
+            <p style="margin: 2px 0;"><b>Fecha objetivo:</b> {fecha_objetivo}</p>
+            <p style="margin: 2px 0;"><b>Contactos:</b> {mensaje_contactos}</p>
+            <hr style="margin: 8px 0;">
+            <p style="margin: 2px 0; font-size: 12px;"><span style="color: green;">●</span> Alta confianza</p>
+            <p style="margin: 2px 0; font-size: 12px;"><span style="color: orange;">●</span> Media confianza</p>
+            <p style="margin: 2px 0; font-size: 12px;"><span style="color: red;">●</span> Baja confianza</p>
+        </div>
+        """
+        mapa.get_root().html.add_child(folium.Element(html_leyenda))
+        
+        # 10) Guardar con filename único y limpio
+        filename = "mapa_pruebas_proyeccion.html"
+        filepath = f"static/maps/{filename}"
+        mapa.save(filepath)
+        
+        logging.info(f"Mapa proyección visitas generado: {filename} con {contactos_con_coords} contactos")
+        return filename
+        
+    except ValueError as e:
+        logging.error(f"Error de parámetros en mapa proyección visitas: {str(e)}")
+        raise e
+    except Exception as e:
+        logging.error(f"Error generando mapa proyección visitas: {str(e)}")
+        raise e
