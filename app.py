@@ -316,6 +316,61 @@ with st.form(key="filtros_form"):
     # Placeholder fijo para el enlace del mapa generado
     link_placeholder = st.empty()
 
+# Botón de descarga CSV para Consultores (fuera del form para mantener estado)
+if tipo_mapa == "Consultores":
+    df_export = st.session_state.get("consultores_export_df")
+    export_meta = st.session_state.get("consultores_export_meta")
+    
+    if df_export is not None and not df_export.empty and export_meta is not None:
+        # Generar nombre del archivo CSV usando metadatos guardados
+        from datetime import datetime
+        import re
+        
+        # Normalizar ciudad (sin acentos/espacios)
+        ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', export_meta["ciudad"].upper())
+        ciudad_csv = ciudad_csv.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        
+        # Formatear fechas para el nombre del archivo
+        fecha_ini_str = export_meta["fecha_inicio"].strftime("%Y%m%d")
+        fecha_fin_str = export_meta["fecha_fin"].strftime("%Y%m%d")
+        
+        # Timestamp actual
+        timestamp = datetime.now().strftime("%H%M%S")
+        
+        # Nombre del archivo
+        filename_csv = f"consultores_{ciudad_csv}_{export_meta['id_ruta']}_{fecha_ini_str}-{fecha_fin_str}_{timestamp}.csv"
+        
+        # Preparar DataFrame para CSV (formatear fecha_evento)
+        df_csv = df_export.copy()
+        if 'fecha_evento' in df_csv.columns:
+            # Convertir fecha_evento a string para evitar problemas en Excel
+            df_csv['fecha_evento'] = pd.to_datetime(df_csv['fecha_evento']).dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Generar CSV con encoding UTF-8-SIG para Excel
+        csv_data = df_csv.to_csv(index=False).encode('utf-8-sig')
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.download_button(
+                label="📥 Descargar CSV (datos mostrados)",
+                data=csv_data,
+                file_name=filename_csv,
+                mime="text/csv",
+                type="secondary",
+                use_container_width=True,
+                help=f"Descarga {len(df_export)} registros mostrados en el mapa"
+            )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Descargar CSV (datos mostrados)",
+                disabled=True,
+                type="secondary",
+                use_container_width=True,
+                help="No hay datos para descargar. Genere primero un mapa exitoso."
+            )
+
 # Separador sutil entre secciones
 st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
 
@@ -440,16 +495,34 @@ if submit_button:
             if not id_ruta:
                 st.error("Seleccione una ruta válida.")
                 filename = None
+                st.session_state["consultores_export_df"] = None
             elif fecha_inicio > fecha_fin:
                 st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
                 filename = None
+                st.session_state["consultores_export_df"] = None
             else:
                 # Transformar fechas a strings día-completo
                 f_ini_dt = f"{fecha_inicio} 00:00:00"
                 f_fin_dt = f"{fecha_fin} 23:59:59"
-                # Llamar función simplificada
+                # Llamar función que ahora retorna tupla (filename, df_export)
                 from mapa_consultores import generar_mapa_consultores
-                filename = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
+                resultado = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
+                
+                if resultado and isinstance(resultado, tuple) and len(resultado) == 2:
+                    filename, df_export = resultado
+                    st.session_state["consultores_export_df"] = df_export
+                    # Guardar metadatos para el nombrado del CSV
+                    st.session_state["consultores_export_meta"] = {
+                        "ciudad": ciudad,
+                        "id_ruta": id_ruta,
+                        "fecha_inicio": fecha_inicio,
+                        "fecha_fin": fecha_fin
+                    }
+                else:
+                    filename = resultado  # Compatibilidad hacia atrás si algo sale mal
+                    st.session_state["consultores_export_df"] = None
+                    st.session_state["consultores_export_meta"] = None
+                    
                 map_type = "consultores"
         elif tipo_mapa == "Pruebas":
             if not id_ruta_pruebas:

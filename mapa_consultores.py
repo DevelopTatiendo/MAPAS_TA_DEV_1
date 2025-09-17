@@ -833,11 +833,55 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     </div>"""
     mapa.get_root().html.add_child(folium.Element(html_leyenda))
 
+    # 12) Preparar DataFrame de exportación
+    df_export = pd.DataFrame()
+    
+    if df_eventos is not None and not df_eventos.empty:
+        if padres_ruta or hijos_ruta:
+            # Hay cuadrantes: separar dentro/fuera
+            df_in = df_filtrados.copy() if not df_filtrados.empty else pd.DataFrame()
+            df_out = pd.DataFrame()
+            
+            if mostrar_fuera and 'mask_in' in locals():
+                df_out = df_eventos[~mask_in].reset_index(drop=True)
+            
+            # Construir df_export según mostrar_fuera
+            if mostrar_fuera:
+                # Incluir ambos: dentro y fuera
+                if not df_in.empty:
+                    df_in = df_in.copy()
+                    df_in['dentro_cuadrante'] = True
+                
+                if not df_out.empty:
+                    df_out = df_out.copy()
+                    df_out['dentro_cuadrante'] = False
+                
+                # Concatenar
+                dfs_to_concat = []
+                if not df_in.empty:
+                    dfs_to_concat.append(df_in)
+                if not df_out.empty:
+                    dfs_to_concat.append(df_out)
+                
+                if dfs_to_concat:
+                    df_export = pd.concat(dfs_to_concat, ignore_index=True)
+            else:
+                # Solo dentro de cuadrantes
+                if not df_in.empty:
+                    df_export = df_in.copy()
+                    df_export['dentro_cuadrante'] = True
+        else:
+            # No hay cuadrantes: todos los eventos son "fuera"
+            df_export = df_eventos.copy()
+            df_export['dentro_cuadrante'] = False
+    
     # 13) Guardar y retornar
     folium.LayerControl(collapsed=False, position='topright').add_to(mapa)
     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_consultores", permitir_multiples=False)
     mapa.save(f"static/maps/{filename}")
-    return filename
+    
+    # Retornar tupla: (filename, df_export)
+    return filename, df_export
 
 def analizar_consultores_por_cuadrantes(fecha_inicio: str, fecha_fin: str, ciudad: str, 
                                        ruta_id: int, geojson_path: str = None) -> tuple:
