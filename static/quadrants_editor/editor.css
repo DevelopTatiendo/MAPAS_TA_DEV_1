@@ -645,3 +645,233 @@ input:checked + .slider:before { transform:translateX(20px); }
   margin-top: 4px;
   font-style: italic;
 }
+
+/* === ProjectRegistry System UI Styles === */
+
+/* Import Mode Selector */
+.import-mode-info {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border-left: 4px solid #00b894;
+}
+
+.data-summary {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.import-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.import-mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  padding: 20px;
+  border: 2px solid #e9ecef;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #fff;
+}
+
+.import-mode-option:hover {
+  border-color: #667eea;
+  background: #f8f9fc;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.mode-icon {
+  font-size: 32px;
+  line-height: 1;
+  margin-top: 5px;
+}
+
+.mode-content h4 {
+  margin: 0 0 8px 0;
+  color: #2d3436;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mode-content p {
+  margin: 0 0 10px 0;
+  color: #636e72;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.mode-details {
+  font-size: 12px;
+  color: #00b894;
+  line-height: 1.3;
+}
+
+/* Route Editor Selector */
+.route-summary {
+  background: #fff3cd;
+  padding: 12px;
+  border-radius: 6px;
+  border-left: 4px solid #ffd93d;
+  margin-bottom: 15px;
+}
+
+.route-summary div {
+  margin: 2px 0;
+  font-size: 14px;
+  color: #856404;
+}
+
+.route-preview-details {
+  background: #e3f2fd;
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 4px solid #2196f3;
+}
+
+.route-edit-preview {
+  font-size: 14px;
+}
+
+.preview-item {
+  margin: 8px 0;
+  padding: 4px 0;
+}
+
+.preview-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #bbdefb;
+  font-style: italic;
+  color: #1976d2;
+}
+
+/* Enhanced Hierarchy Selector */
+.hierarchy-summary {
+  display: flex;
+  gap: 20px;
+  background: #f0f4f8;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+}
+
+.hierarchy-summary div {
+  font-size: 14px;
+  color: #2d3748;
+  font-weight: 500;
+}
+
+.hijos-preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.hijo-preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  margin: 2px 0;
+  background: white;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.hijo-preview-item.no-children {
+  color: #6c757d;
+  font-style: italic;
+  justify-content: center;
+}
+
+.codigo {
+  font-weight: 600;
+  color: #495057;
+}
+
+.orden {
+  font-size: 11px;
+  color: #6c757d;
+}
+
+/* Success Notifications - Enhanced */
+.import-success-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  max-width: 350px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  z-index: 10000;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Modal enhancements for dual import */
+.cuadrante-modal-content h3 {
+  color: #2d3436;
+  margin-bottom: 20px;
+  font-size: 18px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid #e9ecef;
+}
+
+.btn-info {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s ease;
+}
+
+.btn-info:hover {
+  background: #138496;
+}
+
+/* Isolation mode cursor enhancement */
+.map-isolated {
+  cursor: crosshair !important;
+}
+
+.map-isolated .leaflet-interactive {
+  cursor: crosshair !important;
+}
