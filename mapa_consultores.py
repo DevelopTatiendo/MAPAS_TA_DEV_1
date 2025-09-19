@@ -1,5 +1,6 @@
 import folium
 from folium.plugins import AntPath
+from branca.element import MacroElement, Template
 import json
 import unicodedata
 import re
@@ -67,6 +68,21 @@ def _es_un_solo_dia(fecha_inicio: str, fecha_fin: str) -> bool:
         ff = ff.replace(hour=23, minute=59, second=59)
     return fi.date() == ff.date() and (ff - fi).total_seconds() <= 24*3600 + 60
 
+def _formatear_rango_leyenda(fecha_inicio: str, fecha_fin: str) -> str:
+    """Devuelve el texto para leyenda según si es un día o un rango."""
+    fi = _parse_dt(fecha_inicio)
+    ff = _parse_dt(fecha_fin)
+    if not fi or not ff:
+        # Fallback defensivo: tomar solo la parte de fecha
+        fi_txt = (fecha_inicio or "")[:10]
+        ff_txt = (fecha_fin or "")[:10]
+        return f"Fecha: {fi_txt}" if fi_txt == ff_txt else f"Fechas: {fi_txt} – {ff_txt}"
+
+    if fi.date() == ff.date():
+        return f"Fecha: {fi.strftime('%Y-%m-%d')}"
+    else:
+        return f"Fechas: {fi.strftime('%Y-%m-%d')} – {ff.strftime('%Y-%m-%d')}"
+
 def _haversine_km(lat1, lon1, lat2, lon2):
     """Distancia geodésica (km) entre dos puntos (WGS84)."""
     R = 6371.0088
@@ -76,6 +92,8 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     a = math.sin(Δφ/2)**2 + math.cos(φ1)*math.cos(φ2)*math.sin(Δλ/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+
+
 
 def resolve_route_id(ruta_id_ui, ruta_nombre_ui, ciudad):
     """
@@ -805,8 +823,12 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     n_dentro = len(df_filtrados) if df_filtrados is not None else 0
     pct = (100 * n_dentro / total_eventos) if total_eventos > 0 else 0.0
     
+    # NUEVO: preparar texto de fechas
+    texto_fecha = _formatear_rango_leyenda(fecha_inicio, fecha_fin)
+    
     lineas_leyenda = [
         f"<b>Consultores — {nombre_ruta_resuelto} ({ciudadN})</b>",
+        texto_fecha,
         f"Total: {total_eventos}",
         f"Dentro: {n_dentro} ({pct:.1f}%)"
     ]
@@ -827,11 +849,51 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         pass
     
     html_leyenda = f"""
-    <div style="position: fixed; top: 20px; left: 20px; background: white; padding: 12px; border-radius: 8px;
-                box-shadow: 0 0 10px rgba(0,0,0,.15); z-index: 1000; font-family: Arial, sans-serif;">
+    <div class="legend-consultores">
       {'<br>'.join(lineas_leyenda)}
     </div>"""
     mapa.get_root().html.add_child(folium.Element(html_leyenda))
+
+    _css = """
+{% macro html(this, kwargs) %}
+<style>
+/* --- Leyenda compacta (tarjeta) — fija al viewport --- */
+.legend-consultores{
+  position: fixed;          /* fijo al viewport para que no "empuje" el mapa */
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+
+  /* tamaño y estética de tarjeta */
+  max-width: 260px;         /* tamaño compacto como antes */
+  background: #ffffff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,.15);
+  font-family: Arial, sans-serif;
+  line-height: 1.25;
+}
+
+/* Asegurar que el control de zoom conserve su margen por defecto */
+.leaflet-top.leaflet-left .leaflet-control-zoom{
+  margin-top: 0;
+  margin-left: 4px;
+}
+
+/* En pantallas pequeñas, subimos la leyenda para no tapar */
+@media (max-height: 640px), (max-width: 640px){
+  .legend-consultores{
+    top: 10px;
+    transform: none;
+  }
+}
+</style>
+{% endmacro %}
+"""
+    macro = MacroElement()
+    macro._template = Template(_css)
+    mapa.get_root().add_child(macro)
 
     # 12) Preparar DataFrame de exportación
     df_export = pd.DataFrame()
@@ -874,6 +936,15 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
             # No hay cuadrantes: todos los eventos son "fuera"
             df_export = df_eventos.copy()
             df_export['dentro_cuadrante'] = False
+    
+    # Reordenar columnas en df_export para asegurar tipo_evento después de id_evento_tipo
+    if df_export is not None and not df_export.empty:
+        cols = list(df_export.columns)
+        if 'id_evento_tipo' in cols and 'tipo_evento' in cols:
+            cols.remove('tipo_evento')
+            insert_at = cols.index('id_evento_tipo') + 1
+            cols.insert(insert_at, 'tipo_evento')
+            df_export = df_export[cols]
     
     # 13) Guardar y retornar
     folium.LayerControl(collapsed=False, position='topright').add_to(mapa)

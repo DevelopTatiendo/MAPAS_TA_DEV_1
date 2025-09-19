@@ -346,8 +346,16 @@ if tipo_mapa == "Consultores":
             # Convertir fecha_evento a string para evitar problemas en Excel
             df_csv['fecha_evento'] = pd.to_datetime(df_csv['fecha_evento']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
+        # Reordenar columnas si existen ambas (id_evento_tipo y tipo_evento)
+        if 'id_evento_tipo' in df_csv.columns and 'tipo_evento' in df_csv.columns:
+            cols = list(df_csv.columns)
+            cols.remove('tipo_evento')
+            insert_at = cols.index('id_evento_tipo') + 1
+            cols.insert(insert_at, 'tipo_evento')
+            df_csv = df_csv[cols]
+        
         # Generar CSV con encoding UTF-8-SIG para Excel
-        csv_data = df_csv.to_csv(index=False).encode('utf-8-sig')
+        csv_data = df_csv.to_csv(index=False, sep=';').encode('utf-8-sig')
         
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:

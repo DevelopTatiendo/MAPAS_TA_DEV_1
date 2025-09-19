@@ -1,12 +1,5 @@
 {
   "type": "FeatureCollection",
-  "properties": {
-    "type": "full_dataset_export",
-    "city": "CALI",
-    "total_features": 17,
-    "export_timestamp": "2025-09-15T16:57:48.888Z",
-    "editor_version": "3.0"
-  },
   "features": [
     {
       "type": "Feature",
@@ -22,7 +15,8 @@
         "fillColor": "#667eea",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.4
+        "fillOpacity": 0.4,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -247,7 +241,8 @@
         "fillColor": "#EF553B",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -352,7 +347,8 @@
         "fillColor": "#636EFA",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -465,7 +461,8 @@
         "fillColor": "#AB63FA",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -542,7 +539,8 @@
         "fillColor": "#FFA15A",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -627,7 +625,8 @@
         "fillColor": "#FF6692",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -704,7 +703,8 @@
         "fillColor": "#FECB52",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -765,7 +765,8 @@
         "fillColor": "#19D3F3",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -822,7 +823,8 @@
         "fillColor": "#B6E880",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -907,7 +909,8 @@
         "fillColor": "#FF97FF",
         "color": "#000000",
         "weight": 2,
-        "fillOpacity": 0.6
+        "fillOpacity": 0.6,
+        "ruta_publica": "Ruta 16 PALMIRA"
       },
       "geometry": {
         "type": "Polygon",
@@ -968,7 +971,8 @@
         "fillColor": "#667eea",
         "fillOpacity": 0.35,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "ruta_publica": "Ruta 7"
       },
       "geometry": {
         "type": "Polygon",
@@ -1075,16 +1079,24 @@
               3.453754
             ],
             [
-              -76.509588,
-              3.453968
+              -76.509465,
+              3.453965
             ],
             [
-              -76.510318,
-              3.457168
+              -76.509862,
+              3.455989
             ],
             [
-              -76.516176,
-              3.455372
+              -76.510441,
+              3.458034
+            ],
+            [
+              -76.513553,
+              3.45707
+            ],
+            [
+              -76.516578,
+              3.456106
             ],
             [
               -76.517028,
@@ -1114,7 +1126,10 @@
         "fillColor": "#AB63FA",
         "fillOpacity": 0.6,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "_originalFillColor": "#AB63FA",
+        "_originalColor": "#000000",
+        "ruta_publica": "Ruta 7"
       },
       "geometry": {
         "type": "Polygon",
@@ -1156,7 +1171,10 @@
         "fillColor": "#11998e",
         "fillOpacity": 0.6,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "_originalFillColor": "#11998e",
+        "_originalColor": "#000000",
+        "ruta_publica": "Ruta 7"
       },
       "geometry": {
         "type": "Polygon",
@@ -1207,12 +1225,24 @@
               3.453272
             ],
             [
-              -76.505128,
-              3.453286
+              -76.505216,
+              3.45329
             ],
             [
-              -76.502789,
-              3.444212
+              -76.505002,
+              3.452433
+            ],
+            [
+              -76.504605,
+              3.450955
+            ],
+            [
+              -76.504025,
+              3.448653
+            ],
+            [
+              -76.502835,
+              3.444208
             ],
             [
               -76.4935,
@@ -1234,7 +1264,10 @@
         "fillColor": "#19D3F3",
         "fillOpacity": 0.6,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "_originalFillColor": "#19D3F3",
+        "_originalColor": "#000000",
+        "ruta_publica": "Ruta 7"
       },
       "geometry": {
         "type": "Polygon",
@@ -1288,7 +1321,10 @@
         "fillColor": "#FFA15A",
         "fillOpacity": 0.6,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "_originalFillColor": "#FFA15A",
+        "_originalColor": "#000000",
+        "ruta_publica": "Ruta 7"
       },
       "geometry": {
         "type": "Polygon",
@@ -1319,32 +1355,44 @@
               3.444176
             ],
             [
-              -76.505491,
-              3.45334
+              -76.504079,
+              3.44876
             ],
             [
-              -76.509666,
-              3.453982
+              -76.505281,
+              3.453343
             ],
             [
-              -76.510159,
-              3.456272
+              -76.509562,
+              3.454007
             ],
             [
-              -76.511329,
-              3.456036
+              -76.509916,
+              3.455957
             ],
             [
-              -76.510771,
-              3.454249
+              -76.510237,
+              3.457092
             ],
             [
-              -76.512574,
-              3.454389
+              -76.510484,
+              3.457959
             ],
             [
-              -76.517886,
-              3.453319
+              -76.513767,
+              3.456899
+            ],
+            [
+              -76.516449,
+              3.455999
+            ],
+            [
+              -76.517029,
+              3.453959
+            ],
+            [
+              -76.518145,
+              3.453472
             ],
             [
               -76.517844,
@@ -1365,7 +1413,8 @@
         "fillColor": "#667eea",
         "fillOpacity": 0.35,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "ruta_publica": "Ruta 3"
       },
       "geometry": {
         "type": "Polygon",
@@ -1530,7 +1579,8 @@
         "fillColor": "#667eea",
         "fillOpacity": 0.35,
         "weight": 2,
-        "color": "#000000"
+        "color": "#000000",
+        "ruta_publica": "Ruta 3"
       },
       "geometry": {
         "type": "Polygon",

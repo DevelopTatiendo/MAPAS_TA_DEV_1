@@ -252,8 +252,8 @@ let activeHijos = [];
 let isAislado = false;
 let padreOpacity = 0.4; // Opacidad del padre
 
-// Sesión de edición activa (Leaflet.Draw)
-let EDIT_SESSION = { tempGroup: null, handler: null };
+// Sesión de edición simple por capas (sin grupos temporales)
+let EDIT_SESSION = { layers: [] };
 
 // Backup para edición de hijos
 let _childrenBackup = null;
@@ -1625,117 +1625,59 @@ function clearChildrenHighlight(children) {
 function startParentEditing() {
   if (!state.activeParent) return;
   
-  // ENHANCED: Preserve colors before editing
-  preserveColorsBeforeEdit(state.activeParent);
-  
-  // ENHANCED: Enforce color stability for parent and children
-  enforceColorStabilityDuringEdit(state.activeParent);
-  if (state.children && state.children.length > 0) {
-    enforceColorStabilityDuringEdit(state.children);
-  }
-  
-  // Guardar backup de la geometría
-  state._parentBackup = state.activeParent.toGeoJSON().geometry;
-  
   // Cambiar estado
   setEditorState(EditorState.EDITANDO_PADRE);
   
-  // Habilitar edición solo del padre
+  // Habilitar edición REAL del padre
   enableEditMode([state.activeParent]);
   
-  console.debug('[EDIT_PARENT] Iniciando edición del padre con preservación de colores');
+  // Evitar interferencias durante la edición
+  setRecolorMode(false);
+  if (state.activeParent?.options) {
+    state.activeParent.options.interactive = true;
+  }
+  
+  // Traer el padre al frente y dar feedback visual sutil
+  state.activeParent.bringToFront?.();
+  state.activeParent.setStyle({ weight: 4, dashArray: null, fillOpacity: 0.25 });
+  
+  // Baja un poco la opacidad de los hijos para ver mejor la deformación
+  (state.children || []).forEach(h => h.setStyle({ fillOpacity: 0.35 }));
+  
+  console.debug('[EDIT_PARENT] Iniciando edición real del padre');
 }
 
-// ENHANCED: Guardar cambios del padre con validación robusta
 function saveParentEditing() {
   if (!state.activeParent || state.mode !== EditorState.EDITANDO_PADRE) return;
   
   console.debug('[SAVE_PARENT] Iniciando guardado de padre');
   
-  const padreGeom = state.activeParent.toGeoJSON();
+  // Persistir la geometría con toGeoJSON()
+  const feat = state.activeParent.toGeoJSON();
   const parentCode = state.activeParent.feature?.properties?.codigo;
   
-  // === NUEVO: Manejo especial para rutas sin subcuadrantes (caso Ruta 3) ===
-  if (!state.children || state.children.length === 0) {
-    console.debug('[SAVE_PARENT] Ruta sin hijos detectada - saltando validación');
-    
-    const feat = state.activeParent.toGeoJSON();  // Feature completo
-    state.changeLog.set(feat.properties.codigo, feat);
-    endEditMode(true); // salir de edición y refrescar UI
-    
-    showToast("Cambios guardados en el cuadrante.");
-    console.debug(`[SAVE_PARENT] Padre ${parentCode} guardado exitosamente (sin hijos)`);
-    return;
+  // Sincronizar geometría en el feature interno
+  state.activeParent.feature.geometry = feat.geometry;
+  
+  // Registrar cambios en changeLog
+  if (parentCode) {
+    state.changeLog.set(parentCode, feat);
   }
   
-  // ENHANCED: Robust validation using turf.js if available, with fallback
-  const containmentErrors = validateChildrenContainmentRobust(padreGeom, state.children);
-  
-  if (containmentErrors.length > 0) {
-    // Resaltar hijos problemáticos con más detalle
-    highlightContainmentErrors(containmentErrors);
-    
-    // Crear mensaje detallado con opciones
-    const errorDetails = containmentErrors.map(error => 
-      `• ${error.childCode}: ${error.reason}`
-    ).join('\n');
-    
-    const confirmed = confirm(
-      `❌ PROBLEMA DE CONTENCIÓN\n\n` +
-      `Los siguientes subcuadrantes quedarían fuera del padre:\n${errorDetails}\n\n` +
-      `OPCIONES:\n` +
-      `• ✅ Cancelar: Volver a editar el padre\n` +
-      `• ❌ Continuar: Guardar y expulsar hijos (NO RECOMENDADO)\n\n` +
-      `¿Cancelar para ajustar el padre?`
-    );
-    
-    if (confirmed) {
-      // User chose to cancel and fix
-      clearContainmentHighlight(state.children);
-      console.debug('[EDIT_PARENT] User cancelled to fix containment issues');
-      return; // Stay in editing mode
-    } else {
-      // User chose to continue despite errors (not recommended)
-      console.warn('[EDIT_PARENT] User chose to save despite containment errors');
-      clearContainmentHighlight(state.children);
-    }
-  }
-  
-  // === NUEVO: Registrar cambios en changeLog ===
-  const feat = state.activeParent.toGeoJSON();
-  state.changeLog.set(feat.properties.codigo, feat);
-  
-  // Persistir la geometría nueva
-  const newGeometry = feat.geometry;
-  state.activeParent.feature.geometry = newGeometry;
-  
-  // ENHANCED: Update ProjectRegistry with new parent geometry
-  const key = ProjectRegistry.generateKey(state.activeParent.feature);
-  ProjectRegistry.setFeature(key, state.activeParent.feature);
-  
-  // Preserve and restore style properties
-  const styleProps = state.activeParent.feature.properties;
-  ensureStyleProps(state.activeParent, true);
-  
-  // Limpiar backup
-  state._parentBackup = null;
-  
-  // Cerrar edición visual y volver a estado normal
+  // Cerrar edición
   endEditMode(true);
   
-  // Restaurar opacidad específica del padre (preservar fillOpacity personalizada)
-  const parentOpacity = styleProps.fillOpacity || PARENT_FILL_OPACITY;
-  state.activeParent.setStyle({ fillOpacity: parentOpacity });
+  // Restaurar estilos
+  state.activeParent.setStyle({ weight: 3, dashArray: "5, 5", fillOpacity: PARENT_FILL_OPACITY });
+  (state.children || []).forEach(h => applyStyleFromProperties(h));
+  
+  // Volver a mandar el padre detrás de los hijos para que los hijos sigan clicables
+  state.activeParent.bringToBack?.();
   
   setEditorState(EditorState.PADRE_ACTIVO);
-  setRecolorMode(false);
-  
-  // === NUEVO: normalizar propiedades de ruta al guardar
-  const props = state.activeParent.feature.properties || {};
-  normalizeRouteProps(props);
   
   showToast("Cambios guardados en el cuadrante.");
-  console.debug(`[SAVE_PARENT] Parent ${parentCode} saved successfully with ${containmentErrors.length} containment warnings`);
+  console.debug(`[SAVE_PARENT] Padre ${parentCode} guardado exitosamente`);
 }
 
 // ENHANCED: Robust containment validation with detailed error reporting
@@ -2325,34 +2267,17 @@ console.log(`
 function cancelParentEditing() {
   if (!state.activeParent || state.mode !== EditorState.EDITANDO_PADRE) return;
   
-  // Restaurar geometría desde backup
-  if (state._parentBackup) {
-    const restored = L.geoJSON({ 
-      type: 'Feature', 
-      properties: state.activeParent.feature.properties, 
-      geometry: state._parentBackup 
-    });
-    
-    const restoredLayer = restored.getLayers()[0];
-    state.activeParent.setLatLngs(restoredLayer.getLatLngs());
-  }
-  
-  // Limpiar backup
-  state._parentBackup = null;
-  
-  // Limpiar cualquier resaltado
-  clearChildrenHighlight(state.children);
-  
-  // Cerrar edición visual y volver a estado normal
+  // Revertir geometría con el handler
   endEditMode(false);
   
-  // Restaurar opacidad fija del padre
-  state.activeParent.setStyle({ fillOpacity: PARENT_FILL_OPACITY });
+  // Restaurar estilos
+  state.activeParent.setStyle({ weight: 3, dashArray: "5, 5", fillOpacity: PARENT_FILL_OPACITY });
+  (state.children || []).forEach(h => applyStyleFromProperties(h));
+  
+  // Volver a mandar el padre detrás
+  state.activeParent.bringToBack?.();
   
   setEditorState(EditorState.PADRE_ACTIVO);
-  
-  // Apagar recolor al cancelar
-  setRecolorMode(false);
   
   console.debug('[EDIT_PARENT] Edición cancelada');
 }
@@ -2870,6 +2795,10 @@ function handlePadreCreated(layer) {
     const key = ProjectRegistry.generateKey(layer.feature);
     ProjectRegistry.setFeature(key, layer.feature);
     
+    // Register in changeLog for export tracking
+    const feat = layer.toGeoJSON();
+    state.changeLog.set(feat.properties.codigo, feat);
+    
     // Persistir props de estilo en properties
     ensureStyleProps(layer, true);
     applyStyleFromProperties(layer);
@@ -2940,6 +2869,10 @@ function handleHijoCreated(layer) {
     fillColor: HIJO_STYLE.fillColor,
     ...HIJO_STYLE
   };
+  
+  // Register in changeLog for export tracking
+  const feat = layer.toGeoJSON();
+  state.changeLog.set(feat.properties.codigo, feat);
   
   // Aplicar estilos
   layer.setStyle(HIJO_STYLE);
@@ -3313,30 +3246,10 @@ document.addEventListener('DOMContentLoaded', function() {
       console.debug('Botón recolor configurado');
     }
 
-    const exportBtn = document.getElementById('btn-export');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', (ev) => {
-          try {
-            // === NUEVO: Exportar siempre todo lo visible (LOCKED + EDITABLE) ===
-            const fc = collectQuadrantsFC();
-            if (fc.features.length === 0) {
-              showToast("No hay cuadrantes para exportar", "warning");
-              return;
-            }
-            const timestamp = new Date().toISOString().slice(0,16).replace(/[-:]/g, '').replace('T', '_');
-            const fileName = `cuadrantes_completo_${timestamp}.geojson`;
-            downloadGeoJSON(fc, fileName);
-            showToast(`✅ Exportado completo: ${fc.features.length} cuadrantes`, 'success');
-          } catch (e) {
-            console.error('[EXPORT] Falló la exportación:', e);
-            showToast("Error al exportar. Revisar consola.", "error");
-          }
-        });
-        
-        console.debug('Botón de exportación configurado para usar exportMerged()');
-    } else {
-        console.warn('Botón con id "btn-export" no encontrado');
-    }
+const exportBtn = document.getElementById('btn-export');
+if (exportBtn) {
+  exportBtn.addEventListener('click', () => exportMergedFull());
+}
 
     // Nota: La configuración de importación se hace más abajo con la lógica de jerarquía
 
@@ -3374,6 +3287,46 @@ function nombreSugerido() {
 // Helper para deep copy
 function deepCopy(obj) {
   return JSON.parse(JSON.stringify(obj));
+}
+
+function exportMergedFull() {
+  // 1) Base: todo lo importado originalmente
+  if (!state.masterFC || !Array.isArray(state.masterFC.features)) {
+    showToast("No hay datos 'master' para exportar", "warning");
+    return;
+  }
+  const byCode = new Map();
+  (state.masterFC.features || []).forEach(f => {
+    const code = f?.properties?.codigo;
+    if (code) byCode.set(code, deepCopy(f));
+  });
+
+  // 2) Suma: todo lo que esté en el ProjectRegistry (incluye capas que se crearon y no están en master)
+  ProjectRegistry.getAllFeatures().forEach(f => {
+    const code = f?.properties?.codigo;
+    if (!code) return;
+    if (!byCode.has(code)) byCode.set(code, deepCopy(f));
+  });
+
+  // 3) Suma/Override: estado visual actual (capas en el mapa) — por si hay ediciones sin volcar aún
+  [DRAWN_EDITABLE, DRAWN_LOCKED].forEach(group => {
+    group?.eachLayer?.(l => {
+      const f = layerToFeature(l);
+      const code = f?.properties?.codigo;
+      if (code) byCode.set(code, deepCopy(f)); // lo visible manda sobre master
+    });
+  });
+
+  // 4) Override final: todo lo registrado en changeLog (última palabra sobre lo anterior)
+  for (const [codigo, feat] of state.changeLog.entries()) {
+    byCode.set(codigo, deepCopy(feat));
+  }
+
+  // 5) Armar FC y descargar
+  const merged = { type: "FeatureCollection", features: Array.from(byCode.values()) };
+  const ts = new Date().toISOString().slice(0,16).replace(/[-:]/g,'').replace('T','_');
+  downloadGeoJSON(merged, `cuadrantes_merged_${merged.features.length}f_${ts}.geojson`);
+  showToast(`✅ Exportado: ${merged.features.length} features`, "success");
 }
 
 // Nueva función para recolectar todo el dataset exportable
@@ -3996,48 +3949,36 @@ function loadFeatureCollection(featureCollection, options = {}) {
 
 // === FUNCIONES DE VALIDACIÓN EXPORTACIÓN ===
 
-// Habilitar modo de edición para capas específicas
 function enableEditMode(layers) {
-  // Cerrar edición previa si existiera
-  if (EDIT_SESSION.handler) endEditMode(false);
+  if (!Array.isArray(layers)) layers = [layers].filter(Boolean);
 
-  // 1) Mover capas a un FeatureGroup temporal
-  const tempGroup = new L.FeatureGroup();
-  layers.forEach(layer => {
-    if (DRAWN_EDITABLE.hasLayer(layer)) DRAWN_EDITABLE.removeLayer(layer);
-    if (DRAWN_LOCKED.hasLayer(layer))   DRAWN_LOCKED.removeLayer(layer);
-    tempGroup.addLayer(layer);
+  // desactivar cualquier sesión previa
+  endEditMode(false);
+
+  EDIT_SESSION.layers = layers;
+
+  // habilitar edición nativa por capa (Leaflet.Draw la provee)
+  layers.forEach(l => {
+    if (l && l.editing && typeof l.editing.enable === 'function') {
+      l.editing.enable();
+    }
   });
-  map.addLayer(tempGroup);
 
-  // 2) Crear y habilitar el handler de edición
-  const handler = new L.EditToolbar.Edit(map, { featureGroup: tempGroup });
-  handler.enable();
-
-  // 3) Guardar sesión
-  EDIT_SESSION = { tempGroup, handler };
   isEditingActive = true;
 }
 
-// Finalizar modo de edición
-function endEditMode(commit = true) {
-  if (!EDIT_SESSION.handler) return;
+function endEditMode(save = true) {
+  // En este enfoque no hay que guardar nada aquí: las funciones saveParentEditing/saveChildrenEditing
+  // ya toman la geometría actual con toGeoJSON() y la persisten.
+  (EDIT_SESSION.layers || []).forEach(l => {
+    try {
+      if (l && l.editing && typeof l.editing.disable === 'function') {
+        l.editing.disable();
+      }
+    } catch (e) {}
+  });
 
-  // 1) Deshabilitar edición visual
-  EDIT_SESSION.handler.disable();
-
-  // 2) Regresar capas al grupo editable por defecto
-  const { tempGroup } = EDIT_SESSION;
-  if (tempGroup) {
-    tempGroup.eachLayer(layer => {
-      tempGroup.removeLayer(layer);
-      DRAWN_EDITABLE.addLayer(layer);
-    });
-    map.removeLayer(tempGroup);
-  }
-
-  // 3) Limpiar sesión
-  EDIT_SESSION = { tempGroup: null, handler: null };
+  EDIT_SESSION.layers = [];
   isEditingActive = false;
 }
 
@@ -4194,6 +4135,18 @@ async function onImportFileChanged(evt) {
         
         // Parsear JSON
         const data = JSON.parse(text);
+        
+        // Guardar el archivo completo como "master"
+        state.masterFC = data;  // FeatureCollection completo
+
+        // Reinicializar e indexar TODO en el registro del proyecto
+        ProjectRegistry.clear();
+        (data.features || []).forEach(f => {
+          f.properties = f.properties || {};
+          normalizeRouteProps(f.properties); // mantener id_ruta/ruta_publica
+          const key = ProjectRegistry.generateKey(f);
+          ProjectRegistry.setFeature(key, f); // indexar TODOS (se muestren o no)
+        });
         
         // Logs de depuración
         console.debug('[IMPORT] archivo leído OK, longitud:', text.length);
@@ -4364,85 +4317,82 @@ async function importPanoramaMode(data, hierarchyInfo) {
 
 // Import EDIT ROUTE mode - specific route for editing
 function importEditRouteMode(data, hierarchyInfo, selectedRouteId) {
-    const features = data.features || [data];
+    // Limpiar el mapa antes de cargar la ruta
+    DRAWN_EDITABLE.clearLayers();
+    DRAWN_LOCKED.clearLayers();
 
-    // Asegurar número
+    // Construir el conjunto de "padres" de la ruta seleccionada
+    const features = data.features || [];
     const routeId = Number(selectedRouteId);
 
-    // 1) Encontrar CÓDIGOS PADRE de la ruta
+    // Códigos de padres pertenecientes a la ruta
     const parentCodes = new Set(
         features
-            .filter(f => f?.properties?.nivel?.toLowerCase() === 'cuadrante' &&
-                        Number(f.properties.id_ruta) === routeId)
-            .map(f => (f.properties.codigo || '').toUpperCase())
+            .filter(f => (f.properties?.nivel || '').toLowerCase() === 'cuadrante'
+                      && Number(f.properties?.id_ruta) === routeId)
+            .map(f => (f.properties?.codigo || '').toUpperCase())
     );
 
-    // 2) Función de pertenencia robusta
+    // Función de pertenencia a la ruta (padre o hijo)
     const belongsToRoute = (f) => {
         const p = f?.properties || {};
         const lvl = (p.nivel || '').toLowerCase();
         const code = (p.codigo || '').toUpperCase();
         const codePadre = (p.codigo_padre || '').toUpperCase();
 
-        // A) por id_ruta explícito
+        // Regla A: id_ruta explícito
         if (Number(p.id_ruta) === routeId) return true;
 
-        // B) hijo por codigo_padre ∈ parentCodes
+        // Regla B: hijo cuyo codigo_padre es uno de los padres detectados
         if (lvl === 'subcuadrante' && codePadre && parentCodes.has(codePadre)) return true;
 
-        // C) fallback por patrón de código (si faltan props)
-        //   Padres:  CL_{id}_00...
-        //   Hijos:   CL_{id}_NN  con NN != 00
-        const padrePat = new RegExp(`^CL_${routeId}_00[A-Z]*$`, 'i');
-        const hijoPat  = new RegExp(`^CL_${routeId}_(\\d{2}[A-Z]*)$`, 'i');
-        if (padrePat.test(code)) return true;
-        const m = code.match(hijoPat);
+        // Regla C (fallback por patrón de código, por si faltan props):
+        const patPadre = new RegExp(`^CL_${routeId}_00[A-Z]*$`, 'i');
+        const patHijo  = new RegExp(`^CL_${routeId}_(\\d{2}[A-Z]*)$`, 'i');
+        if (patPadre.test(code)) return true;
+        const m = code.match(patHijo);
         if (m && !m[1].toUpperCase().startsWith('00')) return true;
-
-        if (lvl === 'subcuadrante' && codePadre && padrePat.test(codePadre)) return true;
+        if (lvl === 'subcuadrante' && codePadre && patPadre.test(codePadre)) return true;
 
         return false;
     };
 
-    // 3) Separar y cargar
-    const editable = [];
-    const locked   = [];
-    for (const f of features) {
-        if (!f.geometry) continue;
-        if (!['cuadrante','subcuadrante'].includes((f.properties?.nivel || '').toLowerCase())) continue;
-        (belongsToRoute(f) ? editable : locked).push(f);
-    }
+    // Añadir al mapa solo las features que pertenecen a la ruta (todas a DRAWN_EDITABLE)
+    const selected = features.filter(belongsToRoute);
 
-    // 4) Registrar en state.masterFC y state.worksetFC (deep copy)
-    state.masterFC = { type: 'FeatureCollection', features: features.map(x => JSON.parse(JSON.stringify(x))) };
-    state.worksetFC = { type: 'FeatureCollection', features: editable.map(x => JSON.parse(JSON.stringify(x))) };
-
-    // 5) Pintar: EDITABLE para la ruta, LOCKED para el resto (preservando estilos)
-    const push = (arr, targetState) => arr.forEach(feature => {
-        const layer = L.geoJSON(feature, {
+    selected.forEach(f => {
+        const nivel = (f.properties?.nivel || '').toLowerCase();
+        const layer = L.geoJSON(f, {
             onEachFeature: (feat, lyr) => {
                 lyr.feature = feat;
-                const isPadre = (feat.properties?.nivel?.toLowerCase() === 'cuadrante');
-                ensureStyleProps(lyr, isPadre);      // solo completar faltantes
-                applyStyleFromProperties(lyr);       // no recolorear si ya viene fillColor
+                ensureStyleProps(lyr, nivel === 'cuadrante');     // solo completar faltantes
+                applyStyleFromProperties(lyr);                    // respeta colores existentes
                 enforceStrokePolicy(lyr);
-                if (typeof attachRecolorOnClick === 'function') attachRecolorOnClick(lyr);
+                lyr.options = lyr.options || {};
+                lyr.options.interactive = true;
+                lyr.options.bubblingMouseEvents = true;
+
+                if (nivel === 'cuadrante') {
+                    registerParent(lyr);
+                } else if (nivel === 'subcuadrante') {
+                    registerChild(lyr, feat.properties?.codigo_padre);
+                }
             }
         }).getLayers()[0];
-        if (layer) addImportedFeatureLayer(feature, layer, targetState); // 'DRAWN_EDITABLE' | 'DRAWN_LOCKED'
+
+        if (layer) DRAWN_EDITABLE.addLayer(layer);
     });
 
-    push(locked,   'DRAWN_LOCKED');
-    push(editable, 'DRAWN_EDITABLE');
+    // Ajustar vista y activar un padre automáticamente (mejor UX, no rompe nada)
+    const firstParent = DRAWN_EDITABLE.getLayers()
+        .find(l => (l.feature?.properties?.nivel || '').toLowerCase() === 'cuadrante');
+    if (firstParent) setActiveParent(firstParent);
+    fitBoundsOfLayers(DRAWN_EDITABLE);
 
-    // 6) Ajustar vista a la envolvente de la ruta editada
-    if (typeof fitBoundsOfLayers === 'function') {
-        fitBoundsOfLayers(DRAWN_EDITABLE);
-    } else {
-        fitToAllIfAny();
-    }
+    // Mantener el proyecto completo para exportar (sin dibujarlo)
+    state.masterFC = data;   // guardar el archivo completo para el merge en export
 
-    showToast(`✏️ Ruta lista para edición: ${getRouteLabel(routeId)} (${editable.length} geom.)`, 'success');
+    showToast(`✏️ Ruta lista para edición: ${getRouteLabel(routeId)} (${selected.length} geom.)`, 'success');
 }
 
 // Import PROJECT mode - complete integration

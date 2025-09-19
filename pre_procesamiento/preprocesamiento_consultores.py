@@ -121,13 +121,25 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
     Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_cargo, cargo
     """
     q = """
-    SELECT  e.idEvento            AS id_evento,
-            e.id_contacto         AS id_contacto,
-            e.coordenada_latitud  AS lat,
-            e.coordenada_longitud AS lon,
-            e.fecha_evento,
-            p.id_cargo            AS id_cargo,
-            ca.cargo              AS cargo
+    SELECT  e.idEvento                AS idEvento,
+            e.id_autor                AS id_autor,
+            e.id_contacto             AS id_contacto,
+            e.fecha_evento            AS fecha_evento,
+            e.id_evento_tipo          AS id_evento_tipo,
+            e.tipo_evento            AS tipo_evento,
+            e.coordenada_longitud     AS coordenada_longitud,
+            e.coordenada_latitud      AS coordenada_latitud,
+            e.coordenada_altitud      AS coordenada_altitud,
+            e.medio_contacto          AS medio_contacto,
+           
+           
+            -- Mantener aliases existentes para compatibilidad
+            e.idEvento                AS id_evento,
+            
+            e.coordenada_latitud      AS lat,
+            e.coordenada_longitud     AS lon,
+            p.id_cargo                AS id_cargo,
+            ca.cargo                  AS cargo
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -201,23 +213,18 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     
     q = """
     SELECT 
-        e.idEvento                AS id_evento,
-        e.id_contacto             AS id_contacto,
-        p.id                      AS id_consultor,
-        p.apellido                AS apellido,
-        e.coordenada_latitud      AS lat,
-        e.coordenada_longitud     AS lon,
-        e.fecha_evento            AS fecha_evento,
-        e.id_evento_tipo          AS id_evento_tipo,
-        1                         AS es_visita,
-        CASE 
-            WHEN e.id_evento_tipo IN (73,62,71,64,74) THEN 1 
-            ELSE 0 
-        END                       AS es_apertura,
-        CASE 
-            WHEN e.id_evento_tipo = 58 THEN 1 
-            ELSE 0 
-        END                       AS es_venta_evento
+        e.idEvento               AS id_evento,
+        e.id_contacto            AS id_contacto,
+        p.id                     AS id_consultor,
+        p.apellido               AS apellido,
+        e.coordenada_latitud     AS lat,
+        e.coordenada_longitud    AS lon,
+        e.fecha_evento           AS fecha_evento,
+        e.id_evento_tipo         AS id_evento_tipo,
+        e.tipo_evento            AS tipo_evento,
+        1                        AS es_visita,
+        CASE WHEN e.id_evento_tipo IN (73,62,71,64,74) THEN 1 ELSE 0 END AS es_apertura,
+        CASE WHEN e.id_evento_tipo = 58 THEN 1 ELSE 0 END AS es_venta_evento
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -237,9 +244,8 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 181
-       AND e.id_evento_tipo not in (48,51,50,66,65)
-      -- AND ca.Id_cargo in (181, 5)
+      AND ca.Id_cargo = 181
+      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
     ORDER BY 
         e.fecha_evento ASC,
         p.id ASC,
@@ -374,13 +380,14 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
         
         q_eventos = """
         SELECT 
-            e.idEvento                AS id_evento,
-            e.id_contacto             AS id_contacto,
-            p.id                      AS id_consultor,
-            e.coordenada_latitud      AS lat,
-            e.coordenada_longitud     AS lon,
-            e.fecha_evento            AS fecha_evento,
-            e.id_evento_tipo          AS id_evento_tipo
+            e.idEvento               AS id_evento,
+            e.id_contacto            AS id_contacto,
+            p.id                     AS id_consultor,
+            e.coordenada_latitud     AS lat,
+            e.coordenada_longitud    AS lon,
+            e.fecha_evento           AS fecha_evento,
+            e.id_evento_tipo         AS id_evento_tipo,
+            e.tipo_evento            AS tipo_evento
         FROM fullclean_contactos.vwEventos e
         JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
         JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
