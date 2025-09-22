@@ -121,13 +121,25 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
     Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_cargo, cargo
     """
     q = """
-    SELECT  e.idEvento            AS id_evento,
-            e.id_contacto         AS id_contacto,
-            e.coordenada_latitud  AS lat,
-            e.coordenada_longitud AS lon,
-            e.fecha_evento,
-            p.id_cargo            AS id_cargo,
-            ca.cargo              AS cargo
+    SELECT  e.idEvento                AS idEvento,
+            e.id_autor                AS id_autor,
+            e.id_contacto             AS id_contacto,
+            e.fecha_evento            AS fecha_evento,
+            e.id_evento_tipo          AS id_evento_tipo,
+            e.tipo_evento            AS tipo_evento,
+            e.coordenada_longitud     AS coordenada_longitud,
+            e.coordenada_latitud      AS coordenada_latitud,
+            e.coordenada_altitud      AS coordenada_altitud,
+            e.medio_contacto          AS medio_contacto,
+           
+           
+            -- Mantener aliases existentes para compatibilidad
+            e.idEvento                AS id_evento,
+            
+            e.coordenada_latitud      AS lat,
+            e.coordenada_longitud     AS lon,
+            p.id_cargo                AS id_cargo,
+            ca.cargo                  AS cargo
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -147,6 +159,7 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
        AND ca.Id_cargo = 181
+        AND e.id_evento_tipo not in (48,51,50,66,65)
       -- AND ca.Id_cargo in (181, 5)
     ORDER BY e.fecha_evento ASC;
     """
@@ -200,23 +213,18 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     
     q = """
     SELECT 
-        e.idEvento                AS id_evento,
-        e.id_contacto             AS id_contacto,
-        p.id                      AS id_consultor,
-        p.apellido                AS apellido,
-        e.coordenada_latitud      AS lat,
-        e.coordenada_longitud     AS lon,
-        e.fecha_evento            AS fecha_evento,
-        e.id_evento_tipo          AS id_evento_tipo,
-        1                         AS es_visita,
-        CASE 
-            WHEN e.id_evento_tipo IN (73,62,71,64,74) THEN 1 
-            ELSE 0 
-        END                       AS es_apertura,
-        CASE 
-            WHEN e.id_evento_tipo = 58 THEN 1 
-            ELSE 0 
-        END                       AS es_venta_evento
+        e.idEvento               AS id_evento,
+        e.id_contacto            AS id_contacto,
+        p.id                     AS id_consultor,
+        p.apellido               AS apellido,
+        e.coordenada_latitud     AS lat,
+        e.coordenada_longitud    AS lon,
+        e.fecha_evento           AS fecha_evento,
+        e.id_evento_tipo         AS id_evento_tipo,
+        e.tipo_evento            AS tipo_evento,
+        1                        AS es_visita,
+        CASE WHEN e.id_evento_tipo IN (73,62,71,64,74) THEN 1 ELSE 0 END AS es_apertura,
+        CASE WHEN e.id_evento_tipo = 58 THEN 1 ELSE 0 END AS es_venta_evento
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -236,8 +244,8 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 181
-      -- AND ca.Id_cargo in (181, 5)
+      AND ca.Id_cargo = 181
+      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
     ORDER BY 
         e.fecha_evento ASC,
         p.id ASC,
@@ -372,13 +380,14 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
         
         q_eventos = """
         SELECT 
-            e.idEvento                AS id_evento,
-            e.id_contacto             AS id_contacto,
-            p.id                      AS id_consultor,
-            e.coordenada_latitud      AS lat,
-            e.coordenada_longitud     AS lon,
-            e.fecha_evento            AS fecha_evento,
-            e.id_evento_tipo          AS id_evento_tipo
+            e.idEvento               AS id_evento,
+            e.id_contacto            AS id_contacto,
+            p.id                     AS id_consultor,
+            e.coordenada_latitud     AS lat,
+            e.coordenada_longitud    AS lon,
+            e.fecha_evento           AS fecha_evento,
+            e.id_evento_tipo         AS id_evento_tipo,
+            e.tipo_evento            AS tipo_evento
         FROM fullclean_contactos.vwEventos e
         JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
         JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -399,6 +408,7 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
           AND e.coordenada_latitud  BETWEEN -5  AND 13
           AND e.coordenada_longitud BETWEEN -81 AND -66
           AND ca.Id_cargo = 181
+          AND e.id_evento_tipo NOT IN (48,51,50,66,65)
         ORDER BY 
             e.fecha_evento ASC;
         """
@@ -518,7 +528,7 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
     inicio_tiempo = time.time()
     logging.info(f"Iniciando consultores_metricas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
     
-    # Consulta SQL parametrizada siguiendo exactamente el patrón del Gestor
+    # Consulta SQL parametrizada con nueva regla de negocio: total_venta_conIVA directo desde pedidos
     q = """
     SELECT
         eagg.id_consultor,
@@ -555,46 +565,29 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
           AND e.coordenada_latitud  BETWEEN -5  AND 13
           AND e.coordenada_longitud BETWEEN -81 AND -66
           AND ca.Id_cargo = 181
+          AND e.id_evento_tipo NOT IN (48,51,50,66,65)
         GROUP BY
             p.id, p.apellido
     ) AS eagg
     LEFT JOIN (
-        /* Sumar ventas solo para consultores que tuvieron ventas registradas en eventos */
+        /* Sumar ventas directamente desde pedidos por consultor (sin depender de eventos tipo 58) */
         SELECT
             pe.id_vendedor           AS id_consultor,
             SUM(pe.total_conIVA)     AS total_venta_conIVA
         FROM fullclean_telemercadeo.pedidos pe
-        /* Lista de consultores con ventas (id_evento_tipo = 58) bajo los mismos filtros de eventos */
-        JOIN (
-            SELECT
-                p2.id AS id_consultor
-            FROM fullclean_contactos.vwEventos e2
-            JOIN fullclean_contactos.vwContactos c2        ON c2.id = e2.id_contacto
-            JOIN fullclean_contactos.barrios b2            ON b2.id = c2.id_barrio
-            JOIN fullclean_contactos.rutas_cobro_zonas rc2 ON rc2.id_barrio = b2.id
-            JOIN fullclean_contactos.rutas_cobro r2        ON r2.id = rc2.id_ruta_cobro
-            JOIN fullclean_personal.personal p2            ON p2.id = e2.id_autor
-            JOIN fullclean_personal.cargos ca2             ON ca2.Id_cargo = p2.id_cargo
-            WHERE
-                  c2.estado = 1
-              AND c2.estado_cxc IN (0,1)
-              AND r2.id_centroope = %s
-              AND r2.id = %s
-              AND e2.fecha_evento BETWEEN %s AND %s
-              AND e2.coordenada_latitud  IS NOT NULL
-              AND e2.coordenada_longitud IS NOT NULL
-              AND e2.coordenada_latitud  <> 0
-              AND e2.coordenada_longitud <> 0
-              AND e2.coordenada_latitud  BETWEEN -5  AND 13
-              AND e2.coordenada_longitud BETWEEN -81 AND -66
-              AND ca2.Id_cargo = 181
-              AND e2.id_evento_tipo = 58   /* solo ventas */
-            GROUP BY p2.id
-        ) AS vv
-          ON vv.id_consultor = pe.id_vendedor
+        JOIN fullclean_personal.personal p               ON p.id = pe.id_vendedor
+        JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
+        JOIN fullclean_contactos.vwContactos c           ON c.id = pe.id_contacto
+        JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
+        JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
+        JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
         WHERE
-            /* mismo rango temporal para ventas por pedidos */
-            pe.fecha_factura BETWEEN %s AND %s
+              c.estado = 1
+          AND c.estado_cxc IN (0,1)
+          AND r.id_centroope = %s
+          AND r.id = %s
+          AND pe.fecha_factura BETWEEN %s AND %s
+          AND ca.Id_cargo = 181
         GROUP BY pe.id_vendedor
     ) AS v
       ON v.id_consultor = eagg.id_consultor
@@ -604,11 +597,10 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
     
     try:
         cn = _conn()
-        # Parámetros seguros: id_centroope, id_ruta, f_ini, f_fin se repiten para ambas subconsultas
+        # Parámetros simplificados: id_centroope, id_ruta, f_ini, f_fin para ambas subconsultas
         params = [
             id_centroope, id_ruta, f_ini, f_fin,  # Primera subconsulta (eagg)
-            id_centroope, id_ruta, f_ini, f_fin,  # Segunda subconsulta (vv dentro de v)
-            f_ini, f_fin                          # Filtro de fecha_factura en pedidos
+            id_centroope, id_ruta, f_ini, f_fin   # Segunda subconsulta (v) - pedidos directos
         ]
         
         df = pd.read_sql(q, cn, params=params)
