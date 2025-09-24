@@ -118,28 +118,30 @@ def listar_rutas_simple(ciudad:str)->pd.DataFrame:
 def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)->pd.DataFrame:
     """
     Retorna todos los eventos de la ruta en el rango de fechas con coordenadas válidas.
-    Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_cargo, cargo
+    Columnas principales: id_evento, id_autor, id_consultor, apellido, lat, lon, fecha_evento, id_cargo, cargo
     """
     q = """
     SELECT  e.idEvento                AS idEvento,
-            e.id_autor                AS id_autor,
+            e.id_autor                AS id_autor,         -- Semántica original (EVENTOS)
+            p.apellido                AS apellido,         -- Alias estándar que usa el mapa
             e.id_contacto             AS id_contacto,
             e.fecha_evento            AS fecha_evento,
             e.id_evento_tipo          AS id_evento_tipo,
-            e.tipo_evento            AS tipo_evento,
+            e.tipo_evento             AS tipo_evento,
             e.coordenada_longitud     AS coordenada_longitud,
             e.coordenada_latitud      AS coordenada_latitud,
             e.coordenada_altitud      AS coordenada_altitud,
             e.medio_contacto          AS medio_contacto,
-           
-           
-            -- Mantener aliases existentes para compatibilidad
-            e.idEvento                AS id_evento,
             
+            -- Aliases legacy / técnicos para mantener compatibilidad aguas abajo
+            e.idEvento                AS id_evento,
             e.coordenada_latitud      AS lat,
             e.coordenada_longitud     AS lon,
             p.id_cargo                AS id_cargo,
-            ca.cargo                  AS cargo
+            ca.cargo                  AS cargo,
+            
+            -- Alias técnico para no romper groupby/rutas: id_consultor := id_autor (EVENTOS)
+            e.id_autor                AS id_consultor
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -169,6 +171,9 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
     
     # Normalizar tipos por seguridad
     if not df.empty:
+        df['id_autor'] = pd.to_numeric(df['id_autor'], errors='coerce')
+        df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+        df['apellido'] = df['apellido'].fillna('').astype(str)
         df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
         df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
         df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
@@ -202,8 +207,9 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
         f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
     
     Returns:
-        pd.DataFrame: DataFrame con columnas ['id_evento', 'id_contacto', 'id_consultor', 'apellido', 
-                     'lat', 'lon', 'fecha_evento', 'id_evento_tipo', 'es_visita', 'es_apertura', 'es_venta_evento']
+        pd.DataFrame: DataFrame con columnas principales: ['id_evento', 'id_autor', 'id_consultor', 'consultor', 'apellido', 
+                     'lat', 'lon', 'fecha_evento', 'id_evento_tipo', 'tipo_evento', 'apertura', 'apertura_sac',
+                     'venta_ruta', 'venta_fuera_ruta', 'entrega_muestras', 'es_visita', 'es_apertura', 'es_venta_evento'] + otros
     
     Raises:
         Exception: Si hay error en la conexión o ejecución de la consulta SQL
@@ -211,20 +217,42 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     inicio_tiempo = time.time()
     logging.info(f"Iniciando eventos_con_coordenadas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
     
+    # EV_MAIN: eventos válidos por ruta y fechas (con coordenadas) + flags unificadas
     q = """
-    SELECT 
-        e.idEvento               AS id_evento,
-        e.id_contacto            AS id_contacto,
-        p.id                     AS id_consultor,
-        p.apellido               AS apellido,
-        e.coordenada_latitud     AS lat,
-        e.coordenada_longitud    AS lon,
-        e.fecha_evento           AS fecha_evento,
-        e.id_evento_tipo         AS id_evento_tipo,
-        e.tipo_evento            AS tipo_evento,
-        1                        AS es_visita,
-        CASE WHEN e.id_evento_tipo IN (73,62,71,64,74) THEN 1 ELSE 0 END AS es_apertura,
-        CASE WHEN e.id_evento_tipo = 58 THEN 1 ELSE 0 END AS es_venta_evento
+    SELECT
+        e.idEvento                AS idEvento,
+        e.id_autor                AS id_autor,
+        p.apellido                AS consultor,
+        e.id_contacto             AS id_contacto,
+        e.fecha_evento            AS fecha_evento,
+        e.id_evento_tipo          AS id_evento_tipo,
+        e.tipo_evento             AS tipo_evento,
+        e.coordenada_longitud     AS coordenada_longitud,
+        e.coordenada_latitud      AS coordenada_latitud,
+        e.medio_contacto          AS medio_contacto,
+
+        -- Aliases legacy / técnicos para mantener compatibilidad aguas abajo
+        e.idEvento                AS id_evento,
+        e.coordenada_latitud      AS lat,
+        e.coordenada_longitud     AS lon,
+        p.id_cargo                AS id_cargo,
+        ca.cargo                  AS cargo,
+
+        /* Banderas */
+        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS apertura,
+        CASE WHEN e.id_evento_tipo IN (42,72,74,75,76) THEN 1 ELSE 0 END AS apertura_sac,
+        CASE WHEN e.id_evento_tipo IN (58,57) THEN 1 ELSE 0 END AS venta_ruta,
+        CASE WHEN e.id_evento_tipo = 20 THEN 1 ELSE 0 END AS venta_fuera_ruta,
+        CASE WHEN e.id_evento_tipo = 15 THEN 1 ELSE 0 END AS entrega_muestras,
+
+        -- Compatibilidad hacia atrás en pipelines actuales:
+        1  AS es_visita,
+        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS es_apertura,
+        CASE WHEN e.id_evento_tipo = 58 THEN 1 ELSE 0 END AS es_venta_evento,
+
+        -- Alias técnico para no romper groupby/rutas: id_consultor := id_autor (EVENTOS)
+        e.id_autor                AS id_consultor
+
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -232,24 +260,21 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
     JOIN fullclean_personal.personal p               ON p.id = e.id_autor
     JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
-    WHERE 
+    WHERE
           c.estado = 1
       AND c.estado_cxc IN (0,1)
+      AND p.id_cargo = 181
       AND r.id_centroope = %s
       AND r.id = %s
       AND e.fecha_evento BETWEEN %s AND %s
+      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
       AND e.coordenada_latitud  IS NOT NULL
       AND e.coordenada_longitud IS NOT NULL
       AND e.coordenada_latitud  <> 0
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 181
-      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
-    ORDER BY 
-        e.fecha_evento ASC,
-        p.id ASC,
-        e.id_contacto ASC;
+    ORDER BY e.fecha_evento ASC;
     """
     
     try:
@@ -261,7 +286,11 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
         if not df.empty:
             df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
             df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
-            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['id_autor'] = pd.to_numeric(df['id_autor'], errors='coerce')
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')  # ahora existe
+            df['consultor'] = df['consultor'].fillna('').astype(str)
+            # Agregar alias para compatibilidad
+            df['apellido'] = df['consultor']
             df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
             df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
             df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
@@ -269,7 +298,6 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
             df['es_visita'] = pd.to_numeric(df['es_visita'], errors='coerce').fillna(0).astype(int)
             df['es_apertura'] = pd.to_numeric(df['es_apertura'], errors='coerce').fillna(0).astype(int)
             df['es_venta_evento'] = pd.to_numeric(df['es_venta_evento'], errors='coerce').fillna(0).astype(int)
-            df['apellido'] = df['apellido'].fillna('').astype(str)
             
             # Eliminar filas con coordenadas inválidas después de conversión
             df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
@@ -283,6 +311,26 @@ def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
         # Logging de estructura de datos para debugging
         if not df.empty:
             logging.info(f"Recorridos: columnas df_eventos = {list(df.columns)}")
+            
+            # Smoke test SQL/DF: resumen de banderas
+            total = len(df)
+            sum_venta_ruta = df['venta_ruta'].sum() if 'venta_ruta' in df.columns else 0
+            sum_venta_fuera = df['venta_fuera_ruta'].sum() if 'venta_fuera_ruta' in df.columns else 0
+            sum_sac = df['apertura_sac'].sum() if 'apertura_sac' in df.columns else 0
+            sum_muestras = df['entrega_muestras'].sum() if 'entrega_muestras' in df.columns else 0
+            logging.info(f"Resumen banderas - Total: {total}, Venta ruta: {sum_venta_ruta}, Venta fuera: {sum_venta_fuera}, SAC: {sum_sac}, Muestras: {sum_muestras}")
+            
+            # Verificación de consistencia de flags (sanity check)
+            count_tipo_20 = len(df[df['id_evento_tipo'] == 20])
+            count_tipo_57_58 = len(df[df['id_evento_tipo'].isin([57, 58])])
+            count_tipo_15 = len(df[df['id_evento_tipo'] == 15])
+            
+            if sum_venta_fuera != count_tipo_20:
+                logging.warning(f"Inconsistencia venta_fuera_ruta: flag_sum={sum_venta_fuera}, tipo_20_count={count_tipo_20}")
+            if sum_venta_ruta != count_tipo_57_58:
+                logging.warning(f"Inconsistencia venta_ruta: flag_sum={sum_venta_ruta}, tipo_57_58_count={count_tipo_57_58}")
+            if sum_muestras != count_tipo_15:
+                logging.warning(f"Inconsistencia entrega_muestras: flag_sum={sum_muestras}, tipo_15_count={count_tipo_15}")
         
         # Logging de tiempo de ejecución y tamaño
         tiempo_ejecucion = time.time() - inicio_tiempo
@@ -624,4 +672,301 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
         
     except Exception as e:
         logging.error(f"Error en consultores_metricas_por_ruta_y_rango: {str(e)}")
+        raise e
+
+def ventas_totales_por_consultores(fi: str, ff: str, ids_consultor: list[int]) -> pd.DataFrame:
+    """
+    Obtiene totales de ventas por consultor(es) para un rango de fechas (global día).
+    
+    Args:
+        fi (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
+        ff (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
+        ids_consultor (list[int]): Lista de IDs de consultores
+    
+    Returns:
+        pd.DataFrame: DataFrame con columnas ['id_consultor', 'consultor', 'n_pedidos', 'total_venta_conIVA']
+    
+    Raises:
+        Exception: Si hay error en la conexión o ejecución de la consulta SQL
+    """
+    inicio_tiempo = time.time()
+    logging.info(f"Iniciando ventas_totales_por_consultores - Rango:{fi} a {ff}, {len(ids_consultor)} consultores")
+    
+    # Si la lista está vacía, retornar DF vacío con columnas correctas
+    if not ids_consultor:
+        logging.warning("Lista de consultores vacía - retornando DataFrame vacío")
+        return pd.DataFrame(columns=['id_consultor', 'consultor', 'n_pedidos', 'total_venta_conIVA'])
+    
+    # Crear placeholder dinámico para IN clause
+    placeholders = ', '.join(['%s'] * len(ids_consultor))
+    
+    # SALES_GLOBAL_POR_CONSULTORES
+    q = f"""
+    SELECT 
+        pe.id_vendedor       AS id_consultor,
+        pr.apellido          AS consultor,
+        COUNT(*)             AS n_pedidos,
+        SUM(pe.total_conIVA) AS total_venta_conIVA
+    FROM fullclean_telemercadeo.pedidos pe
+    JOIN fullclean_personal.personal pr ON pr.id = pe.id_vendedor
+    WHERE
+          pr.estado = 1
+      AND pr.id_cargo = 181
+      AND pe.id_vendedor IN ({placeholders})
+      AND pe.fecha_hora_pedido BETWEEN %s AND %s
+    GROUP BY pe.id_vendedor, pr.apellido
+    ORDER BY total_venta_conIVA DESC;
+    """
+    
+    try:
+        cn = _conn()
+        # Parámetros: ids_consultor + fi + ff
+        params = ids_consultor + [fi, ff]
+        df = pd.read_sql(q, cn, params=params)
+        cn.close()
+        
+        # Normalizar tipos de datos
+        if not df.empty:
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['consultor'] = df['consultor'].fillna('').astype(str)
+            df['n_pedidos'] = pd.to_numeric(df['n_pedidos'], errors='coerce').fillna(0).astype(int)
+            df['total_venta_conIVA'] = pd.to_numeric(df['total_venta_conIVA'], errors='coerce').fillna(0.0)
+        
+        # Logging de tiempo de ejecución y tamaño
+        tiempo_ejecucion = time.time() - inicio_tiempo
+        filas_resultado = len(df)
+        logging.info(f"ventas_totales_por_consultores completada en {tiempo_ejecucion:.2f}s - {filas_resultado} consultores con ventas")
+        
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error en ventas_totales_por_consultores: {str(e)}")
+        raise e
+
+def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+    """
+    Obtiene contadores agregados por consultor sin exigir coordenadas (para popup padre).
+    
+    Args:
+        id_centroope (int): ID del centro de operaciones
+        id_ruta (int): ID de la ruta de cobro
+        f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
+        f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
+    
+    Returns:
+        pd.DataFrame: DataFrame con columnas ['id_consultor', 'consultor', 'cant_visitas', 
+                     'cant_aperturas', 'cant_sac', 'cant_venta_ruta', 'cant_venta_no_ruta']
+    
+    Raises:
+        Exception: Si hay error en la conexión o ejecución de la consulta SQL
+    """
+    inicio_tiempo = time.time()
+    logging.info(f"Iniciando conteo_eventos_sin_coords_por_consultor - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
+    
+    # EV_AGG_SIN_COORDS: contadores por consultor sin exigir coordenadas
+    q = """
+    /* EV_AGG_SIN_COORDS: contadores por consultor sin exigir coordenadas */
+    SELECT
+        p.id                         AS id_consultor,
+        p.apellido                   AS consultor,
+        COUNT(*)                     AS cant_visitas,
+        SUM(CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END) AS cant_aperturas,
+        SUM(CASE WHEN e.id_evento_tipo IN (42,72,74,75,76) THEN 1 ELSE 0 END) AS cant_sac,
+        SUM(CASE WHEN e.id_evento_tipo IN (58,57) THEN 1 ELSE 0 END) AS cant_venta_ruta,
+        SUM(CASE WHEN e.id_evento_tipo = 20 THEN 1 ELSE 0 END) AS cant_venta_no_ruta
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c        ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b            ON b.id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc ON rc.id_barrio = b.id
+    JOIN fullclean_contactos.rutas_cobro r        ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p            ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca             ON ca.Id_cargo = p.id_cargo
+    WHERE
+          c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND p.id_cargo = 181
+      AND r.id_centroope = %s
+      AND r.id = %s
+      AND e.fecha_evento BETWEEN %s AND %s
+      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
+    GROUP BY p.id, p.apellido;
+    """
+    
+    try:
+        cn = _conn()
+        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+        cn.close()
+        
+        # Normalizar tipos de datos
+        if not df.empty:
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['consultor'] = df['consultor'].fillna('').astype(str)
+            df['cant_visitas'] = pd.to_numeric(df['cant_visitas'], errors='coerce').fillna(0).astype(int)
+            df['cant_aperturas'] = pd.to_numeric(df['cant_aperturas'], errors='coerce').fillna(0).astype(int)
+            df['cant_sac'] = pd.to_numeric(df['cant_sac'], errors='coerce').fillna(0).astype(int)
+            df['cant_venta_ruta'] = pd.to_numeric(df['cant_venta_ruta'], errors='coerce').fillna(0).astype(int)
+            df['cant_venta_no_ruta'] = pd.to_numeric(df['cant_venta_no_ruta'], errors='coerce').fillna(0).astype(int)
+        
+        # Logging de tiempo de ejecución y tamaño
+        tiempo_ejecucion = time.time() - inicio_tiempo
+        filas_resultado = len(df)
+        logging.info(f"conteo_eventos_sin_coords_por_consultor completada en {tiempo_ejecucion:.2f}s - {filas_resultado} consultores")
+        
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error en conteo_eventos_sin_coords_por_consultor: {str(e)}")
+        raise e
+
+def eventos_tipo20_por_consultor(fi: str, ff: str, ids_consultor: list) -> pd.DataFrame:
+    """
+    Retorna filas de eventos tipo 20 (venta no ruta) sin exigir coordenadas,
+    filtradas por los consultores pasados y por rango de fechas.
+    
+    Args:
+        fi: Fecha inicial en formato 'YYYY-MM-DD HH:MM:SS'
+        ff: Fecha final en formato 'YYYY-MM-DD HH:MM:SS'
+        ids_consultor: Lista de IDs de consultores
+    
+    Returns:
+        pd.DataFrame: DataFrame con eventos tipo 20 y columnas de clasificación
+    """
+    if not ids_consultor:
+        return pd.DataFrame()
+    
+    # Crear placeholders dinámicos para la consulta
+    placeholders = ', '.join(['%s'] * len(ids_consultor))
+    
+    query = f"""
+    SELECT
+        e.idEvento       AS id_evento,
+        e.id_autor       AS id_consultor,
+        p.apellido       AS consultor,
+        e.id_contacto    AS id_contacto,
+        e.fecha_evento   AS fecha_evento,
+        e.id_evento_tipo AS id_evento_tipo,
+        e.tipo_evento    AS tipo_evento,
+        NULL             AS lat,
+        NULL             AS lon,
+        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS apertura,
+        CASE WHEN e.id_evento_tipo IN (42,72,74,75,76) THEN 1 ELSE 0 END AS apertura_sac,
+        CASE WHEN e.id_evento_tipo IN (58,57) THEN 1 ELSE 0 END AS venta_ruta,
+        CASE WHEN e.id_evento_tipo = 20 THEN 1 ELSE 0 END AS venta_fuera_ruta,
+        CASE WHEN e.id_evento_tipo = 15 THEN 1 ELSE 0 END AS entrega_muestras
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_personal.personal p ON p.id = e.id_autor
+    WHERE p.id_cargo = 181
+      AND e.fecha_evento BETWEEN %s AND %s
+      AND e.id_evento_tipo = 20
+      AND e.id_autor IN ({placeholders})
+    ORDER BY e.fecha_evento ASC
+    """
+    
+    # Parámetros: fechas + lista de consultores
+    params = [fi, ff] + list(ids_consultor)
+    
+    try:
+        cn = _conn()
+        df = pd.read_sql(query, cn, params=params)
+        
+        if df.empty:
+            logging.info("No se encontraron eventos tipo 20 para los consultores especificados")
+            return pd.DataFrame()
+        
+        logging.info(f"Eventos tipo 20 por consultor: {len(df)} registros encontrados")
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error obteniendo eventos tipo 20 por consultor: {e}")
+        return pd.DataFrame()
+
+def eventos_sin_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+    """
+    Obtiene eventos sin exigir coordenadas para complementar el CSV con eventos tipo 20.
+    
+    Args:
+        id_centroope (int): ID del centro de operaciones
+        id_ruta (int): ID de la ruta de cobro
+        f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
+        f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
+    
+    Returns:
+        pd.DataFrame: DataFrame con columnas ['id_evento', 'id_consultor', 'consultor', 'id_contacto',
+                     'fecha_evento', 'id_evento_tipo', 'tipo_evento', 'lat', 'lon', 'apertura', 
+                     'apertura_sac', 'venta_ruta', 'venta_fuera_ruta', 'entrega_muestras']
+    
+    Raises:
+        Exception: Si hay error en la conexión o ejecución de la consulta SQL
+    """
+    inicio_tiempo = time.time()
+    logging.info(f"Iniciando eventos_sin_coordenadas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
+    
+    # EV_DET_SIN_COORDS: filas de eventos sin exigir coordenadas
+    q = """
+    /* EV_DET_SIN_COORDS: filas de eventos sin exigir coordenadas */
+    SELECT
+        e.idEvento             AS id_evento,
+        e.id_autor             AS id_consultor,
+        p.apellido             AS consultor,
+        e.id_contacto          AS id_contacto,
+        e.fecha_evento         AS fecha_evento,
+        e.id_evento_tipo       AS id_evento_tipo,
+        e.tipo_evento          AS tipo_evento,
+        NULL                   AS lat,     -- sin coordenadas
+        NULL                   AS lon,     -- sin coordenadas
+        /* flags */
+        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS apertura,
+        CASE WHEN e.id_evento_tipo IN (42,72,74,75,76) THEN 1 ELSE 0 END AS apertura_sac,
+        CASE WHEN e.id_evento_tipo IN (58,57) THEN 1 ELSE 0 END AS venta_ruta,
+        CASE WHEN e.id_evento_tipo = 20 THEN 1 ELSE 0 END AS venta_fuera_ruta,
+        CASE WHEN e.id_evento_tipo = 15 THEN 1 ELSE 0 END AS entrega_muestras
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c        ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b            ON b.id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc ON rc.id_barrio = b.id
+    JOIN fullclean_contactos.rutas_cobro r        ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p            ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca             ON ca.Id_cargo = p.id_cargo
+    WHERE
+          c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND p.id_cargo = 181
+      AND r.id_centroope = %s
+      AND r.id = %s
+      AND e.fecha_evento BETWEEN %s AND %s
+      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
+    ORDER BY e.fecha_evento ASC;
+    """
+    
+    try:
+        cn = _conn()
+        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+        cn.close()
+        
+        # Normalizar tipos de datos
+        if not df.empty:
+            df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['consultor'] = df['consultor'].fillna('').astype(str)
+            df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
+            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+            df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
+            # lat y lon quedan como None (NULL)
+            
+            # Flags
+            df['apertura'] = pd.to_numeric(df['apertura'], errors='coerce').fillna(0).astype(int)
+            df['apertura_sac'] = pd.to_numeric(df['apertura_sac'], errors='coerce').fillna(0).astype(int)
+            df['venta_ruta'] = pd.to_numeric(df['venta_ruta'], errors='coerce').fillna(0).astype(int)
+            df['venta_fuera_ruta'] = pd.to_numeric(df['venta_fuera_ruta'], errors='coerce').fillna(0).astype(int)
+            df['entrega_muestras'] = pd.to_numeric(df['entrega_muestras'], errors='coerce').fillna(0).astype(int)
+        
+        # Logging de tiempo de ejecución y tamaño
+        tiempo_ejecucion = time.time() - inicio_tiempo
+        filas_resultado = len(df)
+        logging.info(f"eventos_sin_coordenadas_por_ruta_y_rango completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos sin coordenadas")
+        
+        return df
+        
+    except Exception as e:
+        logging.error(f"Error en eventos_sin_coordenadas_por_ruta_y_rango: {str(e)}")
         raise e

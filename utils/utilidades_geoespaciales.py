@@ -195,7 +195,7 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
     
     Returns:
         pd.DataFrame: Resumen con columnas ['codigo_cuadrante', 'area_m2', 'visitas_tot', 
-                     'visitas_por_m2', 'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
+                     'visitas_por_m2', 'aperturas_tot', 'aperturas_sac_tot', 'ventas_58_tot', 'ventas_fuera_tot', 'total_venta_tot', 'consultores']
     """
     inicio_tiempo = time.time()
     logger.info("Generando resumen por cuadrante")
@@ -209,24 +209,38 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
         logger.warning("No hay eventos dentro de cuadrantes")
         # Retornar estructura vacía pero correcta
         return pd.DataFrame(columns=['codigo_cuadrante', 'area_m2', 'visitas_tot', 
-                                   'visitas_por_m2', 'aperturas_tot', 'ventas_tot', 
-                                   'total_venta_tot', 'consultores'])
+                                   'visitas_por_m2', 'aperturas_tot', 'aperturas_sac_tot', 
+                                   'ventas_58_tot', 'ventas_fuera_tot', 'total_venta_tot', 'consultores'])
     
-    # Agregar por cuadrante
+    # Agregar por cuadrante - usando nuevos campos unificados
     resumen = df_en_cuadrantes.groupby('codigo_cuadrante').agg({
         'es_visita': 'sum',           # Total visitas
-        'es_apertura': 'sum',         # Total aperturas  
-        'es_venta_evento': 'sum',     # Total eventos de venta
+        'apertura': 'sum',            # Total aperturas
+        'apertura_sac': 'sum',        # Total aperturas SAC
+        'venta_ruta': 'sum',          # Total ventas 58
+        'venta_fuera_ruta': 'sum',    # Total ventas fuera
         'id_consultor': 'nunique'     # Número de consultores únicos
     }).reset_index()
     
-    # Renombrar columnas
+    # Renombrar columnas según especificación
     resumen = resumen.rename(columns={
         'es_visita': 'visitas_tot',
-        'es_apertura': 'aperturas_tot', 
-        'es_venta_evento': 'ventas_tot',
+        'apertura': 'aperturas_tot',
+        'apertura_sac': 'aperturas_sac_tot',
+        'venta_ruta': 'ventas_58_tot',
+        'venta_fuera_ruta': 'ventas_fuera_tot',
         'id_consultor': 'consultores'
     })
+    
+    # Manejar compatibilidad si algunas columnas no existen
+    if 'aperturas_tot' not in resumen.columns:
+        resumen['aperturas_tot'] = 0
+    if 'aperturas_sac_tot' not in resumen.columns:
+        resumen['aperturas_sac_tot'] = 0
+    if 'ventas_58_tot' not in resumen.columns:
+        resumen['ventas_58_tot'] = 0
+    if 'ventas_fuera_tot' not in resumen.columns:
+        resumen['ventas_fuera_tot'] = 0
     
     # Agregar áreas desde GeoDataFrame
     areas_df = gdf_cuadrantes[['codigo', 'area_m2']].copy()
@@ -247,9 +261,9 @@ def generar_resumen_por_cuadrante(df_eventos_con_cuadrantes: pd.DataFrame,
     # Por ahora inicializar en 0, se actualizará con datos de ventas reales
     resumen['total_venta_tot'] = 0.0
     
-    # Reordenar columnas
+    # Reordenar columnas según especificación
     columnas_finales = ['codigo_cuadrante', 'area_m2', 'visitas_tot', 'visitas_por_m2', 
-                       'aperturas_tot', 'ventas_tot', 'total_venta_tot', 'consultores']
+                       'aperturas_tot', 'aperturas_sac_tot', 'ventas_58_tot', 'ventas_fuera_tot', 'total_venta_tot', 'consultores']
     resumen = resumen[columnas_finales]
     
     # Validaciones
@@ -271,7 +285,7 @@ def generar_detalle_por_cuadrante_consultor(df_eventos_con_cuadrantes: pd.DataFr
     
     Returns:
         pd.DataFrame: Detalle con columnas ['codigo_cuadrante', 'id_consultor', 'apellido', 
-                     'visitas', 'aperturas', 'ventas', 'total_venta_conIVA']
+                     'visitas', 'aperturas', 'aperturas_sac', 'sac', 'ventas_58', 'ventas_fuera', 'total_venta_conIVA']
     """
     inicio_tiempo = time.time()
     logger.info("Generando detalle por cuadrante-consultor")
@@ -286,36 +300,67 @@ def generar_detalle_por_cuadrante_consultor(df_eventos_con_cuadrantes: pd.DataFr
         return pd.DataFrame(columns=['codigo_cuadrante', 'id_consultor', 'apellido', 
                                    'visitas', 'aperturas', 'ventas', 'total_venta_conIVA'])
     
-    # Agregar por cuadrante y consultor
-    detalle = df_en_cuadrantes.groupby(['codigo_cuadrante', 'id_consultor', 'apellido']).agg({
-        'es_visita': 'sum',           # Total visitas
-        'es_apertura': 'sum',         # Total aperturas
-        'es_venta_evento': 'sum'      # Total eventos de venta
+    # Agregar por cuadrante y consultor - usando nuevos campos unificados
+    # Usar 'consultor' si existe, sino usar 'apellido' para compatibilidad
+    nombre_col = 'consultor' if 'consultor' in df_en_cuadrantes.columns else 'apellido'
+    detalle = df_en_cuadrantes.groupby(['codigo_cuadrante', 'id_consultor', nombre_col]).agg({
+        'es_visita': 'sum',                    # COUNT(*) -> visitas
+        'apertura': 'sum',                     # SUM(apertura) -> aperturas
+        'apertura_sac': 'sum',                 # SUM(apertura_sac) -> aperturas_sac
+        'entrega_muestras': 'sum',             # SUM(entrega_muestras) -> muestras
+        'venta_ruta': 'sum',                   # SUM(venta_ruta) -> ventas_58
+        'venta_fuera_ruta': 'sum'              # SUM(venta_fuera_ruta) -> ventas_fuera
     }).reset_index()
     
-    # Renombrar columnas
-    detalle = detalle.rename(columns={
+    # Renombrar columnas según especificación
+    rename_dict = {
         'es_visita': 'visitas',
-        'es_apertura': 'aperturas',
-        'es_venta_evento': 'ventas'
-    })
+        'apertura': 'aperturas',
+        'apertura_sac': 'aperturas_sac',
+        'entrega_muestras': 'muestras',
+        'venta_ruta': 'ventas_58',
+        'venta_fuera_ruta': 'ventas_fuera'
+    }
+    # Si usamos 'consultor', renombrarlo a 'apellido' para compatibilidad del popup
+    if nombre_col == 'consultor':
+        rename_dict['consultor'] = 'apellido'
+    
+    detalle = detalle.rename(columns=rename_dict)
+    
+    # Manejar compatibilidad si algunas columnas no existen
+    if 'aperturas' not in detalle.columns:
+        detalle['aperturas'] = 0
+    if 'aperturas_sac' not in detalle.columns:
+        detalle['aperturas_sac'] = 0
+    if 'muestras' not in detalle.columns:
+        detalle['muestras'] = 0
+    if 'ventas_58' not in detalle.columns:
+        detalle['ventas_58'] = 0
+    if 'ventas_fuera' not in detalle.columns:
+        detalle['ventas_fuera'] = 0
     
     # Agregar total_venta_conIVA (se actualizará con datos de ventas reales)
     detalle['total_venta_conIVA'] = 0.0
     
-    # Reordenar columnas
+    # Agregar alias 'sac' para el popup
+    detalle['sac'] = detalle['aperturas_sac']
+    
+    # Reordenar columnas según especificación (incluyendo 'sac' para el popup)
     columnas_finales = ['codigo_cuadrante', 'id_consultor', 'apellido', 
-                       'visitas', 'aperturas', 'ventas', 'total_venta_conIVA']
+                       'visitas', 'aperturas', 'aperturas_sac', 'sac', 'muestras', 'ventas_58', 'ventas_fuera', 'total_venta_conIVA']
     detalle = detalle[columnas_finales]
     
     # Validaciones de consistencia
     total_visitas = detalle['visitas'].sum()
     total_aperturas = detalle['aperturas'].sum()
-    total_ventas = detalle['ventas'].sum()
+    total_aperturas_sac = detalle['aperturas_sac'].sum()
+    total_muestras = detalle['muestras'].sum()
+    total_ventas_58 = detalle['ventas_58'].sum()
+    total_ventas_fuera = detalle['ventas_fuera'].sum()
     
     tiempo_ejecucion = time.time() - inicio_tiempo
     logger.info(f"Detalle por cuadrante-consultor generado en {tiempo_ejecucion:.2f}s - {len(detalle)} registros")
-    logger.info(f"Totales: {total_visitas} visitas, {total_aperturas} aperturas, {total_ventas} ventas")
+    logger.info(f"Totales: {total_visitas} visitas, {total_aperturas} aperturas, {total_aperturas_sac} aperturas SAC, {total_muestras} muestras, {total_ventas_58} ventas 58, {total_ventas_fuera} ventas fuera")
     
     return detalle
 
