@@ -2707,6 +2707,10 @@ function registerParent(layer) {
   if (!state.parents.includes(layer)) state.parents.push(layer);
   if (!state.childrenByParent[code]) state.childrenByParent[code] = [];
 
+  // Configurar popup para cuadrante padre
+  const tipo = layer.feature.properties?.tipo_cuadrante || 'RUTA';
+  layer.bindPopup(`<b>Cuadrante Padre</b><br>ID: ${code}<br>Tipo: ${tipo}`);
+
   // Click para activar este padre (si no estamos editando)
   layer.on('click', () => {
     if (isEditingActive) return;
