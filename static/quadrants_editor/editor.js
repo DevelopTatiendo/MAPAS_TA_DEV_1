@@ -1185,6 +1185,8 @@ function onChildCreated(e) {
       p.id_ruta = parentProps.id_ruta || p.id_ruta;
       p.ruta_publica = getRouteLabel(p.id_ruta);
       p.ciudad = p.ciudad || parentProps.ciudad || getRouteCityById(p.id_ruta);
+      // Heredar tipo_cuadrante del padre
+      p.tipo_cuadrante = parentProps.tipo_cuadrante || "RUTA";
       
       // Persistir props de estilo en properties
       ensureStyleProps(layer, false);
@@ -1557,7 +1559,8 @@ function addChildLayer(layer) {
 
   // Popup sencillo
   const code = layer.feature.properties?.codigo || '(sin código)';
-  layer.bindPopup(`<b>Subcuadrante</b><br>Código: ${code}`);
+  const tipo = layer.feature.properties?.tipo_cuadrante || 'RUTA';
+  layer.bindPopup(`<b>Subcuadrante</b><br>Código: ${code}<br>Tipo: ${tipo}`);
   
   // Agregar funcionalidad de recolor
   attachRecolorOnClick(layer);
@@ -2788,7 +2791,8 @@ function handlePadreCreated(layer) {
       codigo: config.codigo,
       ciudad: config.ciudad,
       id_ruta: config.ruta,
-      tipo: 'PADRE' // Identificador de tipo
+      tipo: 'PADRE', // Identificador de tipo
+      tipo_cuadrante: config.tipo // Nuevo: tipo de cuadrante (RUTA/PAP)
     };
     
     // ENHANCED: Register in ProjectRegistry for data integrity
@@ -3159,6 +3163,20 @@ function showPadreConfigDialog(callback) {
       </div>
       
       <div class="form-group">
+        <label>Tipo de cuadrante:</label>
+        <div style="display: flex; gap: 15px; margin-top: 8px;">
+          <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+            <input type="radio" name="modal-tipo" id="modal-tipo-ruta" value="RUTA" checked>
+            Ruta
+          </label>
+          <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
+            <input type="radio" name="modal-tipo" id="modal-tipo-pap" value="PAP">
+            PAP
+          </label>
+        </div>
+      </div>
+      
+      <div class="form-group">
         <label>Código (se generará automáticamente):</label>
         <div id="codigo-preview" class="codigo-preview">CL_1_01</div>
       </div>
@@ -3193,6 +3211,7 @@ function showPadreConfigDialog(callback) {
   
   document.getElementById('modal-confirm').addEventListener('click', () => {
     const ruta = rutaInput.value;
+    const tipo = document.querySelector('input[name="modal-tipo"]:checked').value;
     
     if (!ruta || ruta < 1) {
       alert('Ingrese un ID de ruta válido');
@@ -3202,6 +3221,7 @@ function showPadreConfigDialog(callback) {
     const config = {
       ciudad: ciudad,
       ruta: ruta,
+      tipo: tipo,
       codigo: codigoPreview.textContent
     };
     
@@ -3458,6 +3478,7 @@ function buildFeatureCollection(padre, hijos) {
         ciudad: padre.feature.properties.ciudad,
         id_ruta: padre.feature.properties.id_ruta,
         ruta: padre.feature.properties.id_ruta,
+        tipo_cuadrante: padre.feature.properties.tipo_cuadrante || "RUTA",
         created_at: timestamp,
         editor_version: "3.0",
         total_hijos: hijos.length,
@@ -3480,6 +3501,7 @@ function buildFeatureCollection(padre, hijos) {
           ciudad: padre.feature.properties.ciudad,
           id_ruta: padre.feature.properties.id_ruta,
           ruta: padre.feature.properties.id_ruta,
+          tipo_cuadrante: hijo.feature.properties.tipo_cuadrante || padre.feature.properties.tipo_cuadrante || "RUTA",
           orden: index + 1,
           created_at: timestamp,
           editor_version: "3.0",
