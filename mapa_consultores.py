@@ -18,7 +18,11 @@ from pre_procesamiento.preprocesamiento_consultores import (
     eventos_por_ruta_en_rango, 
     get_co,
     eventos_con_coordenadas_por_ruta_y_rango,
-    ventas_con_coordenadas_por_ruta_y_rango
+    ventas_con_coordenadas_por_ruta_y_rango,
+    ventas_totales_por_consultores,
+    conteo_eventos_sin_coords_por_consultor,
+    eventos_sin_coordenadas_por_ruta_y_rango,
+    eventos_tipo20_por_consultor
 )
 from utils.utilidades_geoespaciales import (
     procesar_consultores_por_cuadrantes,
@@ -278,7 +282,14 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     
     # Construir HTML del popup
     html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 400px;">
+    <div style="
+      font-family: Arial, sans-serif;
+      max-width: 600px;     /* más ancho para evitar scroll */
+      min-width: 600px;     /* fija ancho estable */
+      max-height: 560px;    /* más alto */
+      overflow-x: hidden;   /* sin scroll horizontal */
+      overflow-y: auto;     /* solo vertical si hace falta */
+    ">
         <h4 style="margin: 0 0 8px 0; color: #2563eb;">{codigo_cuadrante}</h4>
         <p style="margin: 0 0 12px 0; font-size: 12px; color: #6b7280;">
             <b>Área:</b> {area_texto} | <b>Visitas/m²:</b> {densidad_texto}
@@ -288,13 +299,20 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
     # Agregar tabla de consultores si hay datos
     if not detalle_cuadrante.empty:
         html += """
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto;">
+            <colgroup>
+              <col span="7">
+              <col style="width: auto;">
+            </colgroup>
             <thead>
                 <tr style="background: #f3f4f6; text-align: left;">
                     <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Consultor</th>
                     <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Visitas</th>
                     <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Aperturas</th>
-                    <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Ventas</th>
+                    <th style="padding: 4px 6px; border: 1px solid #d1d5db;">SAC</th>
+                    <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Muestras</th>
+                    <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Venta en ruta</th>
+                    <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Venta no ruta</th>
                     <th style="padding: 4px 6px; border: 1px solid #d1d5db;">Total venta</th>
                 </tr>
             </thead>
@@ -305,7 +323,11 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
             apellido = str(det_row.get('apellido', 'N/A'))
             visitas = int(float(det_row.get('visitas', 0)))
             aperturas = int(float(det_row.get('aperturas', 0)))
-            ventas = int(float(det_row.get('ventas', 0)))
+            # Nuevos campos con compatibilidad - usar 0 si no existen
+            sac = int(float(det_row.get('sac', 0)))
+            muestras = int(float(det_row.get('muestras', 0)))
+            ventas_58 = int(float(det_row.get('ventas_58', 0)))
+            ventas_fuera = int(float(det_row.get('ventas_fuera', 0)))
             total_venta = float(det_row.get('total_venta_conIVA', 0))
             
             html += f"""
@@ -313,8 +335,11 @@ def _generar_popup_cuadrante(codigo_cuadrante: str, df_resumen: pd.DataFrame, df
                     <td style="padding: 3px 6px; border: 1px solid #d1d5db;">{apellido}</td>
                     <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{visitas}</td>
                     <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{aperturas}</td>
-                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{ventas}</td>
-                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: right;">${total_venta:,.0f}</td>
+                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{sac}</td>
+                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{muestras}</td>
+                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{ventas_58}</td>
+                    <td style="padding: 3px 6px; border: 1px solid #d1d5db; text-align: center;">{ventas_fuera}</td>
+                    <td style="text-align: right; white-space: nowrap;">${total_venta:,.0f}</td>
                 </tr>
             """
         
@@ -549,6 +574,20 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     logger.info(f"Recorridos: columnas df_eventos = {list(df_eventos.columns)}")
     total_eventos = len(df_eventos) if df_eventos is not None else 0
     
+    # 5.1) Calcular totales globales de ventas por consultor para popups padre
+    from pre_procesamiento.preprocesamiento_consultores import ventas_totales_por_consultores
+    
+    ids_evento = sorted(df_eventos['id_autor'].dropna().astype(int).unique().tolist()) if df_eventos is not None and not df_eventos.empty else []
+    df_totales = ventas_totales_por_consultores(fecha_inicio, fecha_fin, ids_evento)
+    mapa_totales = {int(r.id_consultor): float(r.total_venta_conIVA) for _, r in df_totales.iterrows()}  # dict
+    logger.info(f"Totales globales calculados para {len(mapa_totales)} consultores")
+    
+    # 5.2) Obtener contadores sin coordenadas para popup padre
+    from pre_procesamiento.preprocesamiento_consultores import conteo_eventos_sin_coords_por_consultor
+    df_agg_sin = conteo_eventos_sin_coords_por_consultor(co, id_ruta_real, fecha_inicio, fecha_fin)
+    mapa_agg_sin = {int(r.id_consultor): r for _, r in df_agg_sin.iterrows()}  # dict de filas completas
+    logger.info(f"Contadores sin coordenadas calculados para {len(mapa_agg_sin)} consultores")
+    
     # 6) Obtener DataFrames de agregación usando el subconjunto filtrado
     df_resumen = pd.DataFrame()
     df_detalle = pd.DataFrame()
@@ -590,8 +629,34 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                 
                 # Generar popup con datos de agregación
                 if not df_resumen.empty and not df_detalle.empty:
-                    popup_html = _generar_popup_cuadrante(codigo_cuadrante, df_resumen, df_detalle)
-                    popup = folium.Popup(popup_html, max_width=450)
+                    # Diferenciar entre cuadrante padre e hijo
+                    if _es_cuadrante_padre(feat):
+                        # PADRE: usar totales globales en lugar de geolocalizados
+                        det_padre = df_detalle[df_detalle['codigo_cuadrante'] == codigo_cuadrante].copy()
+                        if not det_padre.empty:
+                            # Sobrescribir con totales globales (ventas desde pedidos)
+                            det_padre['total_venta_conIVA'] = det_padre['id_consultor'].map(mapa_totales).fillna(0.0)
+                            
+                            # Sobrescribir contadores con datos sin coordenadas
+                            def aplicar_contadores_sin_coords(row):
+                                id_cons = int(row['id_consultor'])
+                                if id_cons in mapa_agg_sin:
+                                    agg_row = mapa_agg_sin[id_cons]
+                                    row['visitas'] = int(agg_row.cant_visitas)
+                                    row['aperturas'] = int(agg_row.cant_aperturas)
+                                    row['sac'] = int(agg_row.cant_sac)
+                                    row['ventas_58'] = int(agg_row.cant_venta_ruta)
+                                    row['ventas_fuera'] = int(agg_row.cant_venta_no_ruta)
+                                return row
+                            
+                            det_padre = det_padre.apply(aplicar_contadores_sin_coords, axis=1)
+                        
+                        popup_html = _generar_popup_cuadrante(codigo_cuadrante, df_resumen, det_padre)
+                    else:
+                        # HIJO: mantener venta geolocalizada (sin cambios)
+                        popup_html = _generar_popup_cuadrante(codigo_cuadrante, df_resumen, df_detalle)
+                    
+                    popup = folium.Popup(popup_html, max_width=600)
                 else:
                     # Popup básico si no hay datos de agregación
                     popup_html = f"<b>{codigo_cuadrante}</b><br>Datos de agregación no disponibles"
@@ -670,15 +735,15 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     def _color_evento(row, fuera=False):
         """
         Retorna el color del punto según el tipo de evento y si está fuera de cuadrante.
-        Regla nueva: id_evento_tipo == 58 -> VERDE (tanto dentro como fuera).
+        Regla nueva: id_evento_tipo en [58,57] -> VERDE (tanto dentro como fuera).
         """
         try:
             tipo = int(row.get('id_evento_tipo'))
         except Exception:
             tipo = None
 
-        # 58 = Venta No Entregada (verde)
-        if tipo == 58:
+        # 58, 57 = Ventas (verde)
+        if tipo in [58, 57]:
             return "#16a34a"  # green-600
 
         # Si no es 58: mantener comportamiento actual
@@ -819,40 +884,7 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     except Exception as e:
         logger.error(f"Recorridos: error trazando rutas: {e}")
 
-    # 12) Leyenda con datos coherentes del subconjunto
-    n_dentro = len(df_filtrados) if df_filtrados is not None else 0
-    pct = (100 * n_dentro / total_eventos) if total_eventos > 0 else 0.0
-    
-    # NUEVO: preparar texto de fechas
-    texto_fecha = _formatear_rango_leyenda(fecha_inicio, fecha_fin)
-    
-    lineas_leyenda = [
-        f"<b>Consultores — {nombre_ruta_resuelto} ({ciudadN})</b>",
-        texto_fecha,
-        f"Total: {total_eventos}",
-        f"Dentro: {n_dentro} ({pct:.1f}%)"
-    ]
-    
-    # Añadir métricas de recorrido si se calcularon
-    try:
-        if 'rec_stats' in locals() and rec_stats["tracks"] > 0:
-            km_tot = rec_stats["km_total"]
-            h_ini  = rec_stats["hora_ini"].strftime("%H:%M") if rec_stats["hora_ini"] is not None else "—"
-            h_fin  = rec_stats["hora_fin"].strftime("%H:%M") if rec_stats["hora_fin"] is not None else "—"
-
-            lineas_leyenda.append(f"<hr style='border:none;border-top:1px solid #e5e7eb;margin:6px 0;'>")
-            lineas_leyenda.append(f"<b>Recorridos (1 día):</b>")
-            lineas_leyenda.append(f"{rec_stats['tracks']} consultor(es) · {rec_stats['points']} puntos")
-            lineas_leyenda.append(f"Distancia total: {km_tot:.1f} km")
-            lineas_leyenda.append(f"Horario: {h_ini} – {h_fin}")
-    except Exception as _:
-        pass
-    
-    html_leyenda = f"""
-    <div class="legend-consultores">
-      {'<br>'.join(lineas_leyenda)}
-    </div>"""
-    mapa.get_root().html.add_child(folium.Element(html_leyenda))
+    # 12) Leyenda se calculará más adelante después de la deduplicación del CSV
 
     _css = """
 {% macro html(this, kwargs) %}
@@ -898,6 +930,31 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     # 12) Preparar DataFrame de exportación
     df_export = pd.DataFrame()
     
+    # Obtener eventos sin coordenadas para inclusión completa en CSV
+    df_eventos_sin_coords = pd.DataFrame()
+    try:
+        df_eventos_sin_coords = eventos_sin_coordenadas_por_ruta_y_rango(co, id_ruta_real, fecha_inicio, fecha_fin)
+        if df_eventos_sin_coords is not None and not df_eventos_sin_coords.empty:
+            # Filtrar solo eventos tipo 20 para reducir ruido
+            df_eventos_sin_coords = df_eventos_sin_coords[df_eventos_sin_coords['id_evento_tipo'] == 20].copy()
+            # Asegurar flag defensivo
+            df_eventos_sin_coords['venta_fuera_ruta'] = 1
+            logger.info(f"Se obtuvieron {len(df_eventos_sin_coords)} eventos tipo 20 sin coordenadas para CSV")
+    except Exception as e:
+        logger.warning(f"Error obteniendo eventos sin coordenadas: {e}")
+        df_eventos_sin_coords = pd.DataFrame()
+    
+    # Obtener eventos tipo 20 por consultor (sin depender de mapeo de ruta)
+    df_tipo20 = pd.DataFrame()
+    if ids_evento:  # Solo si hay consultores identificados
+        try:
+            df_tipo20 = eventos_tipo20_por_consultor(fecha_inicio, fecha_fin, ids_evento)
+            if df_tipo20 is not None and not df_tipo20.empty:
+                logger.info(f"Se obtuvieron {len(df_tipo20)} eventos tipo 20 por consultor para CSV")
+        except Exception as e:
+            logger.warning(f"Error obteniendo eventos tipo 20 por consultor: {e}")
+            df_tipo20 = pd.DataFrame()
+    
     if df_eventos is not None and not df_eventos.empty:
         if padres_ruta or hijos_ruta:
             # Hay cuadrantes: separar dentro/fuera
@@ -913,10 +970,12 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                 if not df_in.empty:
                     df_in = df_in.copy()
                     df_in['dentro_cuadrante'] = True
+                    df_in['origen'] = 'con_coordenadas'
                 
                 if not df_out.empty:
                     df_out = df_out.copy()
                     df_out['dentro_cuadrante'] = False
+                    df_out['origen'] = 'con_coordenadas'
                 
                 # Concatenar
                 dfs_to_concat = []
@@ -932,27 +991,112 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
                 if not df_in.empty:
                     df_export = df_in.copy()
                     df_export['dentro_cuadrante'] = True
+                    df_export['origen'] = 'con_coordenadas'
         else:
             # No hay cuadrantes: todos los eventos son "fuera"
             df_export = df_eventos.copy()
             df_export['dentro_cuadrante'] = False
+            df_export['origen'] = 'con_coordenadas'
     
-    # Reordenar columnas en df_export para asegurar tipo_evento después de id_evento_tipo
+    # Fusionar con eventos sin coordenadas si existen
+    if not df_eventos_sin_coords.empty:
+        df_eventos_sin_coords = df_eventos_sin_coords.copy()
+        df_eventos_sin_coords['dentro_cuadrante'] = False  # Sin coordenadas = fuera de cuadrantes
+        df_eventos_sin_coords['origen'] = 'sin_coordenadas'
+        
+        # Fusionar DataFrames
+        if not df_export.empty:
+            df_export = pd.concat([df_export, df_eventos_sin_coords], ignore_index=True)
+        else:
+            df_export = df_eventos_sin_coords
+    
+    # Fusionar con eventos tipo 20 por consultor si existen
+    if not df_tipo20.empty:
+        df_tipo20 = df_tipo20.copy()
+        df_tipo20['dentro_cuadrante'] = False  # Sin coordenadas = fuera de cuadrantes
+        df_tipo20['origen'] = 'sin_coordenadas'
+        
+        # Fusionar DataFrames
+        if not df_export.empty:
+            df_export = pd.concat([df_export, df_tipo20], ignore_index=True)
+        else:
+            df_export = df_tipo20
+    
+    # Log de verificación del export
+    logger.info(f"CSV export: total={len(df_export) if df_export is not None and not df_export.empty else 0} | "
+                f"tipo20_por_consultor={0 if df_tipo20.empty else len(df_tipo20)}")
+    
+    # Reordenar columnas en df_export para asegurar tipo_evento después de id_evento_tipo y origen al final
     if df_export is not None and not df_export.empty:
         cols = list(df_export.columns)
         if 'id_evento_tipo' in cols and 'tipo_evento' in cols:
             cols.remove('tipo_evento')
             insert_at = cols.index('id_evento_tipo') + 1
             cols.insert(insert_at, 'tipo_evento')
-            df_export = df_export[cols]
+        
+        # Mover origen y dentro_cuadrante al final
+        for col in ['dentro_cuadrante', 'origen']:
+            if col in cols:
+                cols.remove(col)
+                cols.append(col)
+        
+        df_export = df_export[cols]
+    
+    # Deduplicar df_export para evitar doble conteo (especialmente eventos tipo 20 que pueden venir por ruta y consultor)
+    df_export_clean = df_export.copy() if df_export is not None and not df_export.empty else pd.DataFrame()
+    if not df_export_clean.empty:
+        if 'id_evento' in df_export_clean.columns:
+            # Usar id_evento como clave principal de deduplicación
+            df_export_clean = df_export_clean.drop_duplicates(subset=['id_evento'])
+        else:
+            # Respaldo si no hay id_evento: usar combinación de campos
+            df_export_clean = df_export_clean.drop_duplicates(subset=['id_evento','id_consultor','id_evento_tipo','fecha_evento'])
+        
+        logger.info(f"Deduplicación CSV: {len(df_export)} → {len(df_export_clean)} filas")
+    
+    # 12.5) Leyenda basada en df_export_clean (mismo dataset que el CSV)
+    total_csv = len(df_export_clean)
+    dentro_csv = int(df_export_clean.get('dentro_cuadrante', pd.Series([False] * len(df_export_clean))).sum()) if not df_export_clean.empty else 0
+    pct_csv = (100 * dentro_csv / total_csv) if total_csv > 0 else 0.0
+    
+    # Preparar texto de fechas
+    texto_fecha = _formatear_rango_leyenda(fecha_inicio, fecha_fin)
+    
+    lineas_leyenda = [
+        f"<b>Consultores — {nombre_ruta_resuelto} ({ciudadN})</b>",
+        texto_fecha,
+        f"Total: {total_csv}",
+        f"Dentro: {dentro_csv} ({pct_csv:.1f}%)"
+    ]
+    
+    # Añadir métricas de recorrido si se calcularon
+    try:
+        if 'rec_stats' in locals() and rec_stats["tracks"] > 0:
+            km_tot = rec_stats["km_total"]
+            h_ini  = rec_stats["hora_ini"].strftime("%H:%M") if rec_stats["hora_ini"] is not None else "—"
+            h_fin  = rec_stats["hora_fin"].strftime("%H:%M") if rec_stats["hora_fin"] is not None else "—"
+
+            lineas_leyenda.append(f"<hr style='border:none;border-top:1px solid #e5e7eb;margin:6px 0;'>")
+            lineas_leyenda.append(f"<b>Recorridos (1 día):</b>")
+            lineas_leyenda.append(f"{rec_stats['tracks']} consultor(es) · {rec_stats['points']} puntos")
+            lineas_leyenda.append(f"Distancia total: {km_tot:.1f} km")
+            lineas_leyenda.append(f"Horario: {h_ini} – {h_fin}")
+    except Exception as _:
+        pass
+    
+    html_leyenda = f"""
+    <div class="legend-consultores">
+      {'<br>'.join(lineas_leyenda)}
+    </div>"""
+    mapa.get_root().html.add_child(folium.Element(html_leyenda))
     
     # 13) Guardar y retornar
     folium.LayerControl(collapsed=False, position='topright').add_to(mapa)
     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_consultores", permitir_multiples=False)
     mapa.save(f"static/maps/{filename}")
     
-    # Retornar tupla: (filename, df_export)
-    return filename, df_export
+    # Retornar tupla: (filename, df_export_clean) - mismo data que se usa en leyenda
+    return filename, df_export_clean
 
 def analizar_consultores_por_cuadrantes(fecha_inicio: str, fecha_fin: str, ciudad: str, 
                                        ruta_id: int, geojson_path: str = None) -> tuple:
