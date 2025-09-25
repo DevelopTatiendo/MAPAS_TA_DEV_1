@@ -3314,43 +3314,10 @@ function deepCopy(obj) {
 }
 
 function exportMergedFull() {
-  // 1) Base: todo lo importado originalmente
-  if (!state.masterFC || !Array.isArray(state.masterFC.features)) {
-    showToast("No hay datos 'master' para exportar", "warning");
-    return;
-  }
-  const byCode = new Map();
-  (state.masterFC.features || []).forEach(f => {
-    const code = f?.properties?.codigo;
-    if (code) byCode.set(code, deepCopy(f));
-  });
-
-  // 2) Suma: todo lo que esté en el ProjectRegistry (incluye capas que se crearon y no están en master)
-  ProjectRegistry.getAllFeatures().forEach(f => {
-    const code = f?.properties?.codigo;
-    if (!code) return;
-    if (!byCode.has(code)) byCode.set(code, deepCopy(f));
-  });
-
-  // 3) Suma/Override: estado visual actual (capas en el mapa) — por si hay ediciones sin volcar aún
-  [DRAWN_EDITABLE, DRAWN_LOCKED].forEach(group => {
-    group?.eachLayer?.(l => {
-      const f = layerToFeature(l);
-      const code = f?.properties?.codigo;
-      if (code) byCode.set(code, deepCopy(f)); // lo visible manda sobre master
-    });
-  });
-
-  // 4) Override final: todo lo registrado en changeLog (última palabra sobre lo anterior)
-  for (const [codigo, feat] of state.changeLog.entries()) {
-    byCode.set(codigo, deepCopy(feat));
-  }
-
-  // 5) Armar FC y descargar
-  const merged = { type: "FeatureCollection", features: Array.from(byCode.values()) };
+  const fc = buildFullFeatureCollection(); // usa Registry + capas visibles (+ normaliza rutas)
   const ts = new Date().toISOString().slice(0,16).replace(/[-:]/g,'').replace('T','_');
-  downloadGeoJSON(merged, `cuadrantes_merged_${merged.features.length}f_${ts}.geojson`);
-  showToast(`✅ Exportado: ${merged.features.length} features`, "success");
+  downloadGeoJSON(fc, `cuadrantes_${fc.features.length}f_${ts}.geojson`);
+  showToast(`✅ Exportado: ${fc.features.length} features`, "success");
 }
 
 // Nueva función para recolectar todo el dataset exportable
