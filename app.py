@@ -5,10 +5,10 @@ import json
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
-from mapa_pruebas import generar_mapa_pruebas
-from mapa_pedidos import generar_mapa_pedidos
-from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
-from mapa_visitas import generar_mapa_visitas_individuales
+# from mapa_pruebas import generar_mapa_pruebas
+# from mapa_pedidos import generar_mapa_pedidos
+# from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
+# from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
@@ -72,7 +72,8 @@ st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
-tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
+tipos_mapa = ["Muestras", "Consultores"]  # Solo módulos activos
+# tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
@@ -140,17 +141,17 @@ with promotor_container:
             st.session_state["promotores_sel"] = None
 
 with st.form(key="filtros_form"):
-    if tipo_mapa == "Pedidos":
-        rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
-        ruta = st.selectbox("Seleccione una ruta logística (opcional):", options=[""] + list(rutas_disponibles))
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
-    elif tipo_mapa == "Facturas Vencidas":
-        edad_min = st.number_input("Edad mínima (días):", min_value=0, value=91)
-        edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
-        rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
-        ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-    elif tipo_mapa == "Muestras":
+    # if tipo_mapa == "Pedidos":
+    #     rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
+    #     ruta = st.selectbox("Seleccione una ruta logística (opcional):", options=[""] + list(rutas_disponibles))
+    #     fecha_inicio = st.date_input("Fecha de Inicio")
+    #     fecha_fin = st.date_input("Fecha de Fin")
+    # if tipo_mapa == "Facturas Vencidas":
+    #     edad_min = st.number_input("Edad mínima (días):", min_value=0, value=91)
+    #     edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
+    #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
+    #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
+    if tipo_mapa == "Muestras":
         barrios_disponibles = datos_ciudad["barrios"]["barrio"].sort_values().unique()
         barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
         fecha_inicio = st.date_input("Fecha de Inicio")
@@ -186,39 +187,39 @@ with st.form(key="filtros_form"):
                 # Limpiar session state si no hay archivo
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
-    elif tipo_mapa == "Visitas":
-        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
-        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
-        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
-        if df_rutas is None or df_rutas.empty:
-            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-            id_ruta_visitas = None
-            nombre_ruta_ui_visitas = None
-        else:
-            import re
-            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
-            rutas_list = []
-            for _, r in df_rutas.iterrows():
-                ruta_nombre = str(r.ruta)
-                # Extraer número inicial si existe
-                match = re.match(r'^(\d+)', ruta_nombre)
-                num = int(match.group()) if match else None
-                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
-            
-            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
-            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
-            
-            # Crear diccionario para mapear texto → id_ruta
-            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
-            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
-            
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
-            id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
-        
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
+    # elif tipo_mapa == "Visitas":
+    #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+    #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+    #     df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+    #     if df_rutas is None or df_rutas.empty:
+    #         st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+    #         id_ruta_visitas = None
+    #         nombre_ruta_ui_visitas = None
+    #     else:
+    #         import re
+    #         # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+    #         rutas_list = []
+    #         for _, r in df_rutas.iterrows():
+    #             ruta_nombre = str(r.ruta)
+    #             # Extraer número inicial si existe
+    #             match = re.match(r'^(\d+)', ruta_nombre)
+    #             num = int(match.group()) if match else None
+    #             rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+    #         
+    #         # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+    #         rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+    #         
+    #         # Crear diccionario para mapear texto → id_ruta
+    #         options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+    #         options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+    #         
+    #         # Selector que muestra solo el nombre de la ruta
+    #         ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+    #         id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+    #         nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
+    #     
+    #     fecha_inicio = st.date_input("Fecha de Inicio")
+    #     fecha_fin = st.date_input("Fecha de Fin")
     elif tipo_mapa == "Consultores":
         # Lista de rutas desde BD (id_ruta, ruta)
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -258,56 +259,56 @@ with st.form(key="filtros_form"):
         
         # Checkbox para mostrar puntos fuera de cuadrantes
         mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
-    elif tipo_mapa == "Pruebas":
-        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
-        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
-        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
-        if df_rutas is None or df_rutas.empty:
-            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-            id_ruta_pruebas = None
-            nombre_ruta_ui_pruebas = None
-        else:
-            import re
-            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
-            rutas_list = []
-            for _, r in df_rutas.iterrows():
-                ruta_nombre = str(r.ruta)
-                # Extraer número inicial si existe
-                match = re.match(r'^(\d+)', ruta_nombre)
-                num = int(match.group()) if match else None
-                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
-            
-            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
-            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
-            
-            # Crear diccionario para mapear texto → id_ruta
-            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
-            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
-            
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
-            id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
-        
-        # Campo fecha objetivo con default = mañana (America/Bogota)
-        from datetime import datetime, timedelta
-        import pytz
-        
-        # Obtener fecha de mañana en zona horaria Colombia
-        try:
-            tz_colombia = pytz.timezone('America/Bogota')
-            hoy_colombia = datetime.now(tz_colombia).date()
-            manana_colombia = hoy_colombia + timedelta(days=1)
-        except:
-            # Fallback si hay problemas con timezone
-            from datetime import date
-            manana_colombia = date.today() + timedelta(days=1)
-        
-        fecha_objetivo = st.date_input(
-            "Fecha objetivo (proyección visitas):", 
-            value=manana_colombia,
-            help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
-        )
+    # elif tipo_mapa == "Pruebas":
+    #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+    #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+    #     df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+    #     if df_rutas is None or df_rutas.empty:
+    #         st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+    #         id_ruta_pruebas = None
+    #         nombre_ruta_ui_pruebas = None
+    #     else:
+    #         import re
+    #         # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+    #         rutas_list = []
+    #         for _, r in df_rutas.iterrows():
+    #             ruta_nombre = str(r.ruta)
+    #             # Extraer número inicial si existe
+    #             match = re.match(r'^(\d+)', ruta_nombre)
+    #             num = int(match.group()) if match else None
+    #             rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+    #         
+    #         # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+    #         rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+    #         
+    #         # Crear diccionario para mapear texto → id_ruta
+    #         options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+    #         options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+    #         
+    #         # Selector que muestra solo el nombre de la ruta
+    #         ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+    #         id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+    #         nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
+    #     
+    #     # Campo fecha objetivo con default = mañana (America/Bogota)
+    #     from datetime import datetime, timedelta
+    #     import pytz
+    #     
+    #     # Obtener fecha de mañana en zona horaria Colombia
+    #     try:
+    #         tz_colombia = pytz.timezone('America/Bogota')
+    #         hoy_colombia = datetime.now(tz_colombia).date()
+    #         manana_colombia = hoy_colombia + timedelta(days=1)
+    #     except:
+    #         # Fallback si hay problemas con timezone
+    #         from datetime import date
+    #         manana_colombia = date.today() + timedelta(days=1)
+    #     
+    #     fecha_objetivo = st.date_input(
+    #         "Fecha objetivo (proyección visitas):", 
+    #         value=manana_colombia,
+    #         help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
+    #     )
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -468,27 +469,27 @@ st.markdown(
 # Procesamiento
 if submit_button:
     try:
-        if tipo_mapa == "Pedidos":
-            filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
-            map_type = "pedidos"
-        elif tipo_mapa == "Visitas":
-            if not id_ruta_visitas:
-                st.error("Seleccione una ruta válida.")
-                filename = None
-            else:
-                filename = manejar_error(
-                    generar_mapa_visitas_individuales,
-                    ciudad,
-                    id_ruta_visitas,  # Pasar ID entero directamente
-                    nombre_ruta_ui_visitas,  # Pasar nombre para mostrar en el mapa
-                    str(fecha_inicio),
-                    str(fecha_fin)
-                )
-            map_type = "visitas"
-        elif tipo_mapa == "Facturas Vencidas":
-            filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
-            map_type = "facturas"
-        elif tipo_mapa == "Muestras":
+        # if tipo_mapa == "Pedidos":
+        #     filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
+        #     map_type = "pedidos"
+        # elif tipo_mapa == "Visitas":
+        #     if not id_ruta_visitas:
+        #         st.error("Seleccione una ruta válida.")
+        #         filename = None
+        #     else:
+        #         filename = manejar_error(
+        #             generar_mapa_visitas_individuales,
+        #             ciudad,
+        #             id_ruta_visitas,  # Pasar ID entero directamente
+        #             nombre_ruta_ui_visitas,  # Pasar nombre para mostrar en el mapa
+        #             str(fecha_inicio),
+        #             str(fecha_fin)
+        #         )
+        #     map_type = "visitas"
+        # elif tipo_mapa == "Facturas Vencidas":
+        #     filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
+        #     map_type = "facturas"
+        if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
             resultado = manejar_error(
@@ -532,20 +533,20 @@ if submit_button:
                     st.session_state["consultores_export_meta"] = None
                     
                 map_type = "consultores"
-        elif tipo_mapa == "Pruebas":
-            if not id_ruta_pruebas:
-                st.error("Seleccione una ruta válida.")
-                filename = None
-            else:
-                from mapa_pruebas import generar_mapa_pruebas_proyeccion
-                filename = manejar_error(
-                    generar_mapa_pruebas_proyeccion,
-                    ciudad,
-                    id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
-                    nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
-                    str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
-                )
-            map_type = "pruebas"
+        # elif tipo_mapa == "Pruebas":
+        #     if not id_ruta_pruebas:
+        #         st.error("Seleccione una ruta válida.")
+        #         filename = None
+        #     else:
+        #         from mapa_pruebas import generar_mapa_pruebas_proyeccion
+        #         filename = manejar_error(
+        #             generar_mapa_pruebas_proyeccion,
+        #             ciudad,
+        #             id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
+        #             nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
+        #             str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
+        #         )
+        #     map_type = "pruebas"
 
         if filename:
             # Agregar cache-busting al URL del mapa
