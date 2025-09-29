@@ -755,10 +755,26 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             fecha_fin=fecha_fin,
             ids_promotores=promotores_ordenados
         )
+        
+        # Log métricas calculadas
+        total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
+        total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
+        logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
+                    f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
+                    f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
 
-        # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA)
-        metrics_map = {int(r["id_vendedor"]): (int(r["cant_pedidos"]), float(r.get("valor_conIVA", 0.0)))
-                       for _, r in df_metrics.iterrows()}
+        # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
+        metrics_map = {
+            int(r["id_vendedor"]): (
+                int(r["cant_pedidos"]), 
+                float(r.get("valor_conIVA", 0.0)),
+                int(r.get("venta_adq_recu", 0)),
+                int(r.get("venta_fieles", 0)),
+                float(r.get("pct_nrecu", 0.0)),
+                float(r.get("pct_fieles", 0.0))
+            )
+            for _, r in df_metrics.iterrows()
+        }
 
         def fmt_cop(valor):
             try:
@@ -781,9 +797,9 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
             # Obtener datos de muestras, pedidos y valor
             muestras = _count_muestras
-            cant_ped, valor_ped = (0, 0.0)
+            cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
             if pid_match is not None and pid_match in metrics_map:
-                cant_ped, valor_ped = metrics_map[pid_match]
+                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
             
             # Calcular efectividad
             efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
@@ -795,7 +811,11 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 'muestras': muestras,
                 'pedidos': cant_ped,
                 'valor': valor_ped,
-                'efectividad': efectividad
+                'efectividad': efectividad,
+                'venta_adq_recu': venta_adq_recu,
+                'venta_fieles': venta_fieles,
+                'pct_nrecu': pct_nrecu,
+                'pct_fieles': pct_fieles
             })
         
         # Ordenar por pedidos descendente
@@ -812,6 +832,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     </td>
                     <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
                     <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
+                    <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
+                    <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
                     <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
                     <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
                 </tr>
@@ -831,6 +853,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
                     <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                     <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
+                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
                     <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
                     <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
                   </tr>
