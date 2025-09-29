@@ -8,6 +8,9 @@ from .db_utils import sql_read
 # Silenciar warnings de pandas sobre MySQL
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
+# Constante para categorías de Adquisición y Recuperación
+CATEGORIAS_ADQ_RECU = (10, 22, 38)  # Nuevos + Recuperación + Perdidos reactivados
+
 # Cargar variables de entorno
 load_dotenv()
 
@@ -221,6 +224,11 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
       - id_vendedor (INT)
       - cant_pedidos (INT)
       - valor_conIVA (FLOAT)  # SUM(p.total_conIVA)
+      - venta_adq_recu (INT)  # Pedidos a categorías {10,22,38}
+      - venta_fieles (INT)    # cant_pedidos - venta_adq_recu
+      - pct_nrecu (FLOAT)     # % N/Recu = 100 × venta_adq_recu / cant_pedidos
+      - pct_fieles (FLOAT)    # % Fieles = 100 - pct_nrecu
+    
     Filtra por:
       - p.estado_pedido = 1
       - p.anulada = 0
@@ -230,6 +238,10 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
       - p.id_centroope = centroope
       - p.fecha_hora_pedido BETWEEN fecha_inicio 00:00:00 y fecha_fin 23:59:59
       - p.id_vendedor IN (lista de ids_promotores)
+      
+    Definiciones:
+      - N/Recu: Nuevos + Recuperación + Perdidos reactivados (categorías 10, 22, 38)
+      - Fieles: Resto de categorías (100% - % N/Recu)
     """
     if not ids_promotores:
         # Retorna DF vacío con las columnas esperadas
@@ -237,27 +249,6 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
 
     # Normalizar parámetros
     ids = [int(x) for x in ids_promotores if str(x).strip()]
-
-    placeholders = ",".join(["%s"] * len(ids))
-    query = f"""
-        SELECT
-            p.id_vendedor AS id_vendedor,
-            COUNT(*) AS cant_pedidos,
-            SUM(p.total_conIVA) AS valor_conIVA
-        FROM fullclean_telemercadeo.pedidos p
-        WHERE
-            p.estado_pedido = 1
-            AND p.anulada = 0
-            AND p.autorizar IN (1,2)
-            AND p.autorizacion_descuento = 0
-            AND p.tipo_documento < 2
-            AND p.id_centroope = %s
-            AND p.fecha_hora_pedido BETWEEN %s AND %s
-            AND p.id_vendedor IN ({placeholders})
-        GROUP BY p.id_vendedor
-    """
-
-    params = [centroope, f"{fecha_inicio} 00:00:00", f"{fecha_fin} 23:59:59", *ids]
     
     try:
         # Convertir parámetros a formato dict para SQLAlchemy 2.x
@@ -267,39 +258,61 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
             'fecha_fin': f"{fecha_fin} 23:59:59"
         }
         
+        # Agregar parámetros de categorías ADQ/RECU
+        for i, cat_id in enumerate(CATEGORIAS_ADQ_RECU):
+            param_dict[f'cat_{i}'] = cat_id
+        cat_placeholders = ",".join([f":cat_{i}" for i in range(len(CATEGORIAS_ADQ_RECU))])
+        
         # Agregar parámetros de IDs de vendedores
         for i, vid in enumerate(ids):
             param_dict[f'vendedor_{i}'] = vid
         
-        # Reescribir query con nombres de parámetros
+        # Reescribir query con nombres de parámetros incluyendo JOIN y nuevas métricas
         placeholders_named = ",".join([f":vendedor_{i}" for i in range(len(ids))])
         query = f"""
             SELECT
-                p.id_vendedor AS id_vendedor,
+                pe.id_vendedor AS id_vendedor,
                 COUNT(*) AS cant_pedidos,
-                SUM(p.total_conIVA) AS valor_conIVA
-            FROM fullclean_telemercadeo.pedidos p
+                SUM(pe.total_conIVA) AS valor_conIVA,
+                SUM(CASE WHEN c.id_categoria IN ({cat_placeholders}) THEN 1 ELSE 0 END) AS venta_adq_recu
+            FROM fullclean_telemercadeo.pedidos pe
+            JOIN fullclean_contactos.vwContactos c ON c.id = pe.id_contacto
             WHERE
-                p.estado_pedido = 1
-                AND p.anulada = 0
-                AND p.autorizar IN (1,2)
-                AND p.autorizacion_descuento = 0
-                AND p.tipo_documento < 2
-                AND p.id_centroope = :centroope
-                AND p.fecha_hora_pedido BETWEEN :fecha_inicio AND :fecha_fin
-                AND p.id_vendedor IN ({placeholders_named})
-            GROUP BY p.id_vendedor
+                pe.estado_pedido = 1
+                AND pe.anulada = 0
+                AND pe.autorizar IN (1,2)
+                AND pe.autorizacion_descuento = 0
+                AND pe.tipo_documento < 2
+                AND pe.id_centroope = :centroope
+                AND pe.fecha_hora_pedido BETWEEN :fecha_inicio AND :fecha_fin
+                AND pe.id_vendedor IN ({placeholders_named})
+            GROUP BY pe.id_vendedor
         """
         
-        df = sql_read(query, params=param_dict)
+        df = sql_read(query, params=param_dict, schema="fullclean_telemercadeo")
         
-        # Asegurar tipos
+        # Post-proceso para calcular métricas derivadas
         if not df.empty:
+            # Asegurar tipos base
             df["id_vendedor"] = df["id_vendedor"].astype("int64")
-            df["cant_pedidos"] = df["cant_pedidos"].astype("int64")
+            df["cant_pedidos"] = df["cant_pedidos"].astype("int64") 
             df["valor_conIVA"] = df["valor_conIVA"].astype("float64")
+            df["venta_adq_recu"] = df["venta_adq_recu"].fillna(0).astype("int64")
+            
+            # Calcular métricas derivadas
+            df["venta_fieles"] = (df["cant_pedidos"] - df["venta_adq_recu"]).clip(lower=0).astype("int64")
+            
+            # Calcular porcentajes
+            mask = df["cant_pedidos"] > 0
+            df["pct_nrecu"] = 0.0
+            df.loc[mask, "pct_nrecu"] = (df.loc[mask, "venta_adq_recu"] / df.loc[mask, "cant_pedidos"]) * 100.0
+            df["pct_fieles"] = 100.0 - df["pct_nrecu"]
+            
+            # Asegurar tipos finales
+            df["pct_nrecu"] = df["pct_nrecu"].astype("float64")
+            df["pct_fieles"] = df["pct_fieles"].astype("float64")
 
         return df
     except Exception as e:
         print(f"Error en obtener_metricas_pedidos_por_promotores: {e}")
-        return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA"])
+        return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA", "venta_adq_recu", "venta_fieles", "pct_nrecu", "pct_fieles"])
