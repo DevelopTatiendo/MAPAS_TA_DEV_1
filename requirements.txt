@@ -14,6 +14,7 @@ flask-cors==5.0.0
 werkzeug==2.2.3  # Actualizado por seguridad
 numpy==1.25.0  # Actualizado para corregir vulnerabilidades
 python-dotenv>=1.0.0
+cryptography>=42.0.0
 validators==0.34.0
 SQLAlchemy>=2.0.0
 h3>=3.7.7

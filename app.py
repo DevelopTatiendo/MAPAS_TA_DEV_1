@@ -1,3 +1,11 @@
+from config.secrets_manager import load_env_secure
+load_env_secure(
+    prefer_plain=True,
+    enc_path="config/.env.enc",
+    pass_env_var="MAPAS_SECRET_PASSPHRASE",
+    cache=False
+)
+
 import os
 import time
 import logging
@@ -17,7 +25,8 @@ import validators
 # Configuración de entorno
 # FAVOR NO BORRAR ESTOS COMANDOS :
 # Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-# .venv\Scripts\activate  python flask_server.py
+# .venv\Scripts\activate  python flask_server.py 
+# $env:MAPAS_SECRET_PASSPHRASE=
 
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Por defecto, "development"
