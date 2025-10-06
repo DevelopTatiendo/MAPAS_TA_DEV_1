@@ -162,45 +162,20 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias
 
 def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, rango_dias: int, df_for_conteo: pd.DataFrame) -> dict:
     """
-    Calcula métricas para un cuadrante padre sumando las de sus hijos.
+    Calcula métricas para un cuadrante padre directamente sobre su geometría.
     """
     props_padre = feature_padre.get('properties', {})
     codigo_padre = props_padre.get('codigo', '')
-    
-    # Encontrar hijos de este padre
-    hijos_del_padre = []
-    for feature_hijo in features_hijos:
-        props_hijo = feature_hijo.get('properties', {})
-        codigo_hijo = props_hijo.get('codigo', '')
-        codigo_padre_hijo = props_hijo.get('codigo_padre', '')
-        
-        # Verificar si este hijo pertenece al padre
-        if codigo_padre_hijo == codigo_padre:
-            hijos_del_padre.append(codigo_hijo)
-        elif codigo_hijo.startswith(codigo_padre.replace('_00', '_')) and codigo_hijo != codigo_padre:
-            # Fallback por patrón de código
-            hijos_del_padre.append(codigo_hijo)
-    
-    # Si hijos_del_padre NO está vacía: suma de métricas de hijos tal como está
-    if hijos_del_padre:
-        area_total = 0.0
-        muestras_total = 0
-        
-        for codigo_hijo in hijos_del_padre:
-            if codigo_hijo in metricas_hijos:
-                metricas = metricas_hijos[codigo_hijo]
-                area_total += metricas['area_m2']
-                muestras_total += metricas['total_muestras']
-    else:
-        # Si hijos_del_padre está vacía (caso GeoJSON con solo PADRES):
-        # Calcular área y muestras directamente del padre
-        try:
-            area_total = area_m2_geodesic(feature_padre.get('geometry', {}))
-        except Exception:
-            area_total = _calcular_area_m2_fallback(feature_padre.get('geometry', {}))
-        
-        muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
-    
+
+    # 1) Área del PADRE por geodesia (fallback si falla)
+    try:
+        area_total = area_m2_geodesic(feature_padre.get('geometry', {}))
+    except Exception:
+        area_total = _calcular_area_m2_fallback(feature_padre.get('geometry', {}))
+
+    # 2) Conteo de muestras DIRECTO dentro de la geometría del PADRE
+    muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
+
     return {
         'codigo': codigo_padre,
         'area_m2': area_total,
