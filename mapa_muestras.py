@@ -131,7 +131,30 @@ def _contar_muestras_en_geom(feature_geom: dict, df_pts: pd.DataFrame) -> int:
     except Exception:
         return 0
 
-def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias: int) -> dict:
+def _dias_activos_global(df_pts: pd.DataFrame) -> int:
+    """Días con al menos 1 muestra en todo el df."""
+    if df_pts.empty or 'fecha_dia' not in df_pts.columns:
+        return 0
+    return int(df_pts['fecha_dia'].nunique())
+
+def _dias_activos_en_geom(feature_geom: dict, df_pts: pd.DataFrame) -> int:
+    """Días con al menos 1 muestra dentro de la geometría dada."""
+    if df_pts.empty or 'fecha_dia' not in df_pts.columns:
+        return 0
+    try:
+        geom = shape(feature_geom)
+        prep_geom = prep(geom)
+        # filtrar puntos que caen dentro y tomar días únicos
+        dias = set()
+        for _, r in df_pts.iterrows():
+            p = Point(float(r['lon']), float(r['lat']))
+            if prep_geom.contains(p):
+                dias.add(r['fecha_dia'])
+        return len(dias)
+    except Exception:
+        return 0
+
+def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame) -> dict:
     """
     Calcula métricas para un cuadrante hijo (subcuadrante).
     """
@@ -153,14 +176,17 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias
     # 2. Contar muestras dentro del polígono
     total_muestras = _contar_muestras_en_geom(feature.get('geometry', {}), df_filtrado)
     
+    # 3. Contar días activos dentro del polígono
+    dias_activos = _dias_activos_en_geom(feature.get('geometry', {}), df_filtrado)
+    
     return {
         'codigo': codigo,
         'area_m2': area_m2,
         'total_muestras': total_muestras,
-        'rango_dias': rango_dias
+        'dias_activos': dias_activos
     }
 
-def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, rango_dias: int, df_for_conteo: pd.DataFrame) -> dict:
+def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, df_for_conteo: pd.DataFrame) -> dict:
     """
     Calcula métricas para un cuadrante padre directamente sobre su geometría.
     """
@@ -176,14 +202,17 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
     # 2) Conteo de muestras DIRECTO dentro de la geometría del PADRE
     muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
 
+    # 3) Contar días activos dentro del polígono del padre
+    dias_activos = _dias_activos_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
+
     return {
         'codigo': codigo_padre,
         'area_m2': area_total,
         'total_muestras': muestras_total,
-        'rango_dias': rango_dias
+        'dias_activos': dias_activos
     }
 
-def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_rango: int) -> str:
+def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int) -> str:
     """
     Genera popup HTML para cuadrantes con 4 métricas: área, índice de cobertura, cantidad y muestras/día.
     """
@@ -199,8 +228,7 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     dens_1000 = densidad_m2 * DENSIDAD_BASE_M2
     cobertura = min(1.0, dens_1000 / OBJETIVO_X_1000M2) if area_m2 > 0 else 0.0
     
-    dias = max(1, int(dias_rango))
-    mxdia = total_local / dias
+    mxdia = (total_local / dias_activos) if dias_activos > 0 else 0.0
 
     # Formateo ES-CO con punto como separador de miles y coma como decimal
     area_m2_fmt = fmt_int_miles(area_m2)  # "501.331"
@@ -462,6 +490,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
         # Filtrar por fechas
         df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+        # Día (sin hora) para conteos por día
+        df['fecha_dia'] = df['fecha_evento'].dt.date
         df_filtrado = df #[(df['fecha_evento'] >= fecha_inicio) & (df['fecha_evento'] <= fecha_fin)]
 
         if df_filtrado.empty:
@@ -488,10 +518,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
             # Calcular estadísticas
         #print(df_filtrado.head(4))
-        rango_dias = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days + 1
+        dias_activos_global = _dias_activos_global(df_filtrado)
         cantidad_barrios = df_filtrado['barrio'].nunique()
         total_cantidad = df_filtrado.shape[0]
-        promedio_muestras = total_cantidad / rango_dias if rango_dias > 0 else 0
+        promedio_muestras = (total_cantidad / dias_activos_global) if dias_activos_global > 0 else 0.0
         promedio_muestras_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
 
         # Preparar datos para las estadísticas
@@ -677,6 +707,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         df_for_conteo['lon'] = df_for_conteo.apply(
             lambda row: row.get('coordenada_longitud', row.get('longitud', None)), axis=1
         )
+        # Asegurar que fecha_dia está presente
+        df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
         # Filtrar puntos válidos
         df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
         
@@ -726,12 +758,12 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         
         # 1. Calcular métricas para hijos
         for feature_hijo in features_hijos:
-            metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo, rango_dias)
+            metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
             metricas_cache[metricas['codigo']] = metricas
         
-        # 2. Calcular métricas para padres (suma de hijos)
+        # 2. Calcular métricas para padres (cálculo directo)
         for feature_padre in features_padres:
-            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, rango_dias, df_for_conteo)
+            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
             metricas_cache[metricas['codigo']] = metricas
         
         logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
@@ -744,7 +776,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             codigo = props.get('codigo', '')
             if codigo in metricas_cache:
                 m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['rango_dias'])
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'])
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -759,7 +791,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             codigo = props.get('codigo', '')
             if codigo in metricas_cache:
                 m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['rango_dias'])
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'])
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
