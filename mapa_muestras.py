@@ -25,7 +25,7 @@ from mapa_consultores import _es_cuadrante_padre, _es_cuadrante_hijo, _style_cua
 DENSIDAD_BASE_M2 = 1000.0      # base de lectura: 1.000 m²
 OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 
-# Importar controles de capas disponibles
+# Importar control de capas disponibles
 from folium.plugins import GroupedLayerControl
 try:
     from folium.plugins import TreeLayerControl
@@ -117,6 +117,20 @@ def _calcular_area_m2_fallback(geom_geojson: dict) -> float:
     except Exception:
         return 0.0
 
+def _contar_muestras_en_geom(feature_geom: dict, df_pts: pd.DataFrame) -> int:
+    """Cuenta muestras dentro de una geometría GeoJSON usando df_pts con columnas 'lat' y 'lon'."""
+    try:
+        geom = shape(feature_geom)
+        prep_geom = prep(geom)
+        count = 0
+        for _, r in df_pts.iterrows():
+            p = Point(float(r['lon']), float(r['lat']))
+            if prep_geom.contains(p):
+                count += 1
+        return count
+    except Exception:
+        return 0
+
 def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias: int) -> dict:
     """
     Calcula métricas para un cuadrante hijo (subcuadrante).
@@ -137,21 +151,7 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias
             area_m2 = float(area_m2)
     
     # 2. Contar muestras dentro del polígono
-    total_muestras = 0
-    if not df_filtrado.empty:
-        try:
-            geom = shape(feature.get('geometry', {}))
-            prep_geom = prep(geom)
-            
-            for _, row in df_filtrado.iterrows():
-                lat = row.get('lat')
-                lon = row.get('lon')
-                if lat is not None and lon is not None:
-                    punto = Point(float(lon), float(lat))
-                    if prep_geom.contains(punto):
-                        total_muestras += 1
-        except Exception:
-            total_muestras = 0
+    total_muestras = _contar_muestras_en_geom(feature.get('geometry', {}), df_filtrado)
     
     return {
         'codigo': codigo,
@@ -160,7 +160,7 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias
         'rango_dias': rango_dias
     }
 
-def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, rango_dias: int) -> dict:
+def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, rango_dias: int, df_for_conteo: pd.DataFrame) -> dict:
     """
     Calcula métricas para un cuadrante padre sumando las de sus hijos.
     """
@@ -181,15 +181,25 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
             # Fallback por patrón de código
             hijos_del_padre.append(codigo_hijo)
     
-    # Sumar métricas de los hijos
-    area_total = 0.0
-    muestras_total = 0
-    
-    for codigo_hijo in hijos_del_padre:
-        if codigo_hijo in metricas_hijos:
-            metricas = metricas_hijos[codigo_hijo]
-            area_total += metricas['area_m2']
-            muestras_total += metricas['total_muestras']
+    # Si hijos_del_padre NO está vacía: suma de métricas de hijos tal como está
+    if hijos_del_padre:
+        area_total = 0.0
+        muestras_total = 0
+        
+        for codigo_hijo in hijos_del_padre:
+            if codigo_hijo in metricas_hijos:
+                metricas = metricas_hijos[codigo_hijo]
+                area_total += metricas['area_m2']
+                muestras_total += metricas['total_muestras']
+    else:
+        # Si hijos_del_padre está vacía (caso GeoJSON con solo PADRES):
+        # Calcular área y muestras directamente del padre
+        try:
+            area_total = area_m2_geodesic(feature_padre.get('geometry', {}))
+        except Exception:
+            area_total = _calcular_area_m2_fallback(feature_padre.get('geometry', {}))
+        
+        muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
     
     return {
         'codigo': codigo_padre,
@@ -520,9 +530,9 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             'total_cantidad': total_cantidad
         }
 
-        # Agregar el cuadro fijo de estadísticas en la parte superior izquierda
+        # Agregar el cuadro fijo de estadísticas en la parte superior izquierda (colapsable)
         html_content = f"""
-            <div style="
+            <div id="legend-resumen" class="legend-box" style="
                 position: fixed;
                 top: 20px;
                 left: 20px;
@@ -534,34 +544,104 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 font-family: Arial, sans-serif;
                 min-width: 250px;
             ">
-                <h4 style="margin: 0 0 10px 0;">Resumen de Muestras</h4>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 3px 0;">Barrios:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['barrios']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Fechas:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Muestras/día:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras']:.1f}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Total barrios:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['cantidad_barrios']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Muestras/barrio:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras_barrios']:.1f}</b></td>
-                    </tr>
-                    <tr style="border-top: 1px solid #eee;">
-                        <td style="padding: 5px 0;"><b>Total muestras:</b></td>
-                        <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
-                    </tr>
-                </table>
+                <div class="legend-header" onclick="toggleLegend('legend-resumen')" style="
+                    cursor: pointer; display: flex; justify-content: space-between; align-items: center; 
+                    margin: 0 0 10px 0;">
+                    <h4 style="margin: 0; color: #111;">Resumen de Muestras</h4>
+                    <span id="legend-resumen-toggle" class="toggle-icon" style="
+                        margin-left: 10px; transition: transform 0.3s ease; font-size: 12px; color: #6b7280;">▼</span>
+                </div>
+                <div id="legend-resumen-body" class="legend-body">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 3px 0;">Fechas:</td>
+                            <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 3px 0;">Muestras/día:</td>
+                            <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras']:.1f}</b></td>
+                        </tr>
+                        <tr style="border-top: 1px solid #eee;">
+                            <td style="padding: 5px 0;"><b>Total muestras:</b></td>
+                            <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
+                        </tr>
+                    </table>
+                </div>
             </div>
+            
+            <style>
+              .legend-box.collapsed .legend-body {{
+                display: none;
+              }}
+              .legend-box.collapsed .toggle-icon {{
+                transform: rotate(-90deg);
+              }}
+              .legend-header:hover {{
+                background-color: #f9fafb;
+                border-radius: 4px;
+                padding: 2px;
+              }}
+              .toggle-icon {{
+                font-size: 12px;
+                color: #6b7280;
+              }}
+            </style>
+            
+            <script>
+              function toggleLegend(legendId) {{
+                const legend = document.getElementById(legendId);
+                const toggle = document.getElementById(legendId + '-toggle');
+                const body = document.getElementById(legendId + '-body');
+                
+                if (legend.classList.contains('collapsed')) {{
+                  legend.classList.remove('collapsed');
+                  toggle.style.transform = 'rotate(0deg)';
+                  body.style.display = 'block';
+                }} else {{
+                  legend.classList.add('collapsed');
+                  toggle.style.transform = 'rotate(-90deg)';
+                  body.style.display = 'none';
+                }}
+                
+                // Reposition zoom controls based on legend state
+                setTimeout(repositionZoomControls, 100);
+              }}
+              
+              function repositionZoomControls() {{
+                const resumenLegend = document.getElementById('legend-resumen');
+                const promotoresLegend = document.getElementById('legend-promotores');
+                const zoomControl = document.querySelector('.leaflet-control-zoom');
+                
+                if (zoomControl && resumenLegend) {{
+                  const resumenCollapsed = resumenLegend.classList.contains('collapsed');
+                  const resumenRect = resumenLegend.getBoundingClientRect();
+                  
+                  if (resumenCollapsed) {{
+                    // Position zoom control closer to collapsed legend
+                    const topPosition = resumenRect.bottom + 10;
+                    zoomControl.style.top = topPosition + 'px';
+                    zoomControl.style.left = '20px';
+                    zoomControl.style.position = 'fixed';
+                  }} else {{
+                    // Position zoom control below expanded legend
+                    const topPosition = resumenRect.bottom + 10;
+                    zoomControl.style.top = topPosition + 'px';
+                    zoomControl.style.left = '20px';
+                    zoomControl.style.position = 'fixed';
+                  }}
+                }}
+              }}
+              
+              // Initialize zoom control positioning after page load
+              document.addEventListener('DOMContentLoaded', function() {{
+                setTimeout(repositionZoomControls, 500);
+              }});
+              
+              // Also try with window load event as backup
+              window.addEventListener('load', function() {{
+                setTimeout(repositionZoomControls, 1000);
+              }});
+            </script>
             """
 
         mapa.get_root().html.add_child(folium.Element(html_content))
@@ -676,7 +756,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         
         # 2. Calcular métricas para padres (suma de hijos)
         for feature_padre in features_padres:
-            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, rango_dias)
+            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, rango_dias, df_for_conteo)
             metricas_cache[metricas['codigo']] = metricas
         
         logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
@@ -840,7 +920,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             """)
 
         legend_html = f"""
-        <div style="
+        <div id="legend-promotores" style="
             position: fixed; bottom: 20px; left: 20px; z-index: 1000;
             background: white; border: 1px solid #e5e7eb; border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
