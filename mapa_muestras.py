@@ -462,7 +462,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         coordenadas_ciudades = {
             'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
             'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-            'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
+            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),
             'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
             'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
             'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),

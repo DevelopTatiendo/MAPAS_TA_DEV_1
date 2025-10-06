@@ -570,6 +570,35 @@ if submit_button:
                 unsafe_allow_html=True
             )
             
+            # Botón de descarga HTML para mapas de Muestras
+            if tipo_mapa == "Muestras":
+                html_path = os.path.join("static", "maps", filename)
+                if os.path.exists(html_path):
+                    with open(html_path, "rb") as f:
+                        html_bytes = f.read()
+
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        st.download_button(
+                            label="📥 Descargar HTML del mapa",
+                            data=html_bytes,
+                            file_name=filename,       # usar el mismo nombre que guardamos
+                            mime="text/html",
+                            type="secondary",
+                            use_container_width=True,
+                            help="Descarga el archivo HTML del mapa generado"
+                        )
+                else:
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col2:
+                        st.button(
+                            "📥 Descargar HTML del mapa",
+                            disabled=True,
+                            type="secondary",
+                            use_container_width=True,
+                            help="No hay archivo HTML disponible."
+                        )
+            
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
