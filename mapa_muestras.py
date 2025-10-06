@@ -25,6 +25,13 @@ from mapa_consultores import _es_cuadrante_padre, _es_cuadrante_hijo, _style_cua
 DENSIDAD_BASE_M2 = 1000.0      # base de lectura: 1.000 m²
 OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 
+# === PALETA DE COLORES POR MES ===
+PALETA_MESES = {
+    1:"#1f78b4", 2:"#a6cee3", 3:"#33a02c", 4:"#b2df8a",
+    5:"#e31a1c", 6:"#fb9a99", 7:"#ff7f00", 8:"#fdbf6f",
+    9:"#6a3d9a",10:"#cab2d6",11:"#b15928",12:"#ffff99"
+}
+
 # Importar control de capas disponibles
 from folium.plugins import GroupedLayerControl
 try:
@@ -412,7 +419,7 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None):
+def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores"):
     try:
         ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
         logging.info(f"Generando mapa para la ciudad: {ciudad}")
@@ -420,6 +427,25 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         # Convertir fechas a cadenas si es necesario
         fecha_inicio = str(fecha_inicio)
         fecha_fin = str(fecha_fin)
+        
+        # Validación de año único para modo Temporalidad
+        if color_mode == "Temporalidad (mes)":
+            try:
+                from datetime import datetime
+                dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
+                dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d")
+                if dt_inicio.year != dt_fin.year:
+                    st.error("❌ Error: El modo 'Temporalidad (mes)' requiere que ambas fechas estén en el mismo año.")
+                    # Retornar mapa vacío
+                    mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
+                    filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
+                    return filename, 0
+            except ValueError:
+                st.error("❌ Error: Formato de fecha inválido para el modo 'Temporalidad (mes)'.")
+                # Retornar mapa vacío
+                mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
+                filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
+                return filename, 0
 
         # Ruta de coordenadas para cada ciudad
         rutas_coordenadas = {
@@ -805,155 +831,298 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     f"<script>{layer_hijo.get_name()}.bringToFront();</script>"
                 ))
 
-        # 3) Crear carpetas (padres) y subgrupos ordenados
-        # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
-        fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
+        # 3) Crear carpetas (padres) y subgrupos ordenados según color_mode
+        if color_mode == "Promotores":
+            # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
+            fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
 
-        # Definir colores por promotor en el orden de conteo
-        promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
-        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
-        palette = generate_hsv_colors(len(promotores_ordenados))
-        colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
+            # Definir colores por promotor en el orden de conteo
+            promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
+            promotores_ordenados = [int(pid) for pid in promotor_counts.index]
+            palette = generate_hsv_colors(len(promotores_ordenados))
+            colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
 
-        # Construir subgrupos SOLO para promotores
-        grupos_promotores = build_promotores_groups(
-            df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
-            legend_name_map=legend_name_map, mapa=mapa
-        )
-
-        # NO crear grupos de barrios para el control
-
-        # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
-        if HAS_TREE_CONTROL:
-            # TreeLayerControl automático detecta FeatureGroup + FeatureGroupSubGroup
-            TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
-        else:
-            # Fallback simple
-            folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
-
-        # 5) Obtener métricas de ventas y construir leyenda tabular
-        
-        # ids en el orden del control/leyenda
-        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
-
-        df_metrics = obtener_metricas_pedidos_por_promotores(
-            centroope=centroope,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            ids_promotores=promotores_ordenados
-        )
-        
-        # Log métricas calculadas
-        total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
-        total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
-        logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
-                    f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
-                    f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
-
-        # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
-        metrics_map = {
-            int(r["id_vendedor"]): (
-                int(r["cant_pedidos"]), 
-                float(r.get("valor_conIVA", 0.0)),
-                int(r.get("venta_adq_recu", 0)),
-                int(r.get("venta_fieles", 0)),
-                float(r.get("pct_nrecu", 0.0)),
-                float(r.get("pct_fieles", 0.0))
+            # Construir subgrupos SOLO para promotores
+            grupos_promotores = build_promotores_groups(
+                df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
+                legend_name_map=legend_name_map, mapa=mapa
             )
-            for _, r in df_metrics.iterrows()
-        }
 
-        def fmt_cop(valor):
-            try:
-                # miles con punto y sin decimales (ej: $1.234.567)
-                return "$" + f"{valor:,.0f}".replace(",", ".")
-            except Exception:
-                return "$0"
+            # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
+            if HAS_TREE_CONTROL:
+                TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
+            else:
+                folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
 
-        # Construir lista de datos por promotor fusionando todas las fuentes
-        promotor_data = []
-        
-        for (nombre, _sg, _count_muestras, color) in grupos_promotores:
-            # recuperar el id real del promotor a partir del nombre:
-            # usamos el reverse de legend_name_map
-            pid_match = None
-            for pid_str, disp_name in legend_name_map.items():
-                if disp_name == nombre:
-                    pid_match = int(pid_str)
-                    break
-
-            # Obtener datos de muestras, pedidos y valor
-            muestras = _count_muestras
-            cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
-            if pid_match is not None and pid_match in metrics_map:
-                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
+            # 5) Obtener métricas de ventas y construir leyenda tabular
+            df_metrics = obtener_metricas_pedidos_por_promotores(
+                centroope=centroope,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                ids_promotores=promotores_ordenados
+            )
             
-            # Calcular efectividad
-            efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
-            
-            promotor_data.append({
-                'id': pid_match,
-                'nombre': nombre,
-                'color': color,
-                'muestras': muestras,
-                'pedidos': cant_ped,
-                'valor': valor_ped,
-                'efectividad': efectividad,
-                'venta_adq_recu': venta_adq_recu,
-                'venta_fieles': venta_fieles,
-                'pct_nrecu': pct_nrecu,
-                'pct_fieles': pct_fieles
-            })
-        
-        # Ordenar por pedidos descendente
-        promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
-        
-        # Construir filas HTML con el nuevo orden
-        rows_html = []
-        for data in promotor_data:
-            rows_html.append(f"""
-                <tr>
-                    <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
-                        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
-                        <span>{data['nombre']}</span>
-                    </td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
-                </tr>
-            """)
+            # Log métricas calculadas
+            total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
+            total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
+            logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
+                        f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
+                        f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
 
-        legend_html = f"""
-        <div id="legend-promotores" style="
-            position: fixed; bottom: 20px; left: 20px; z-index: 1000;
-            background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
-          <details open>
-            <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
-            <div style="margin-top:8px;">
-              <table style="border-collapse:collapse; width:100%; font-size:12px;">
-                <thead>
-                  <tr>
-                    <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {''.join(rows_html)}
-                </tbody>
-              </table>
+            # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
+            metrics_map = {
+                int(r["id_vendedor"]): (
+                    int(r["cant_pedidos"]), 
+                    float(r.get("valor_conIVA", 0.0)),
+                    int(r.get("venta_adq_recu", 0)),
+                    int(r.get("venta_fieles", 0)),
+                    float(r.get("pct_nrecu", 0.0)),
+                    float(r.get("pct_fieles", 0.0))
+                )
+                for _, r in df_metrics.iterrows()
+            }
+
+            def fmt_cop(valor):
+                try:
+                    return "$" + f"{valor:,.0f}".replace(",", ".")
+                except Exception:
+                    return "$0"
+
+            # Construir lista de datos por promotor fusionando todas las fuentes
+            promotor_data = []
+            
+            for (nombre, _sg, _count_muestras, color) in grupos_promotores:
+                pid_match = None
+                for pid_str, disp_name in legend_name_map.items():
+                    if disp_name == nombre:
+                        pid_match = int(pid_str)
+                        break
+
+                muestras = _count_muestras
+                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
+                if pid_match is not None and pid_match in metrics_map:
+                    cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
+                
+                efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
+                
+                promotor_data.append({
+                    'id': pid_match,
+                    'nombre': nombre,
+                    'color': color,
+                    'muestras': muestras,
+                    'pedidos': cant_ped,
+                    'valor': valor_ped,
+                    'efectividad': efectividad,
+                    'venta_adq_recu': venta_adq_recu,
+                    'venta_fieles': venta_fieles,
+                    'pct_nrecu': pct_nrecu,
+                    'pct_fieles': pct_fieles
+                })
+            
+            # Ordenar por pedidos descendente
+            promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
+            
+            # Construir filas HTML con el nuevo orden
+            rows_html = []
+            for data in promotor_data:
+                rows_html.append(f"""
+                    <tr>
+                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
+                            <span>{data['nombre']}</span>
+                        </td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
+                    </tr>
+                """)
+
+            legend_html = f"""
+            <div id="legend-promotores" style="
+                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
+                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+              <details open>
+                <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
+                <div style="margin-top:8px;">
+                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {''.join(rows_html)}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
-          </details>
-        </div>
-        """
+            """
+            
+        elif color_mode == "Temporalidad (mes)":
+            # Carpeta TEMPORALIDAD (ON por defecto)
+            fg_mes = FeatureGroup(name="TEMPORALIDAD", show=True).add_to(mapa)
+            
+            # Añadir columnas de mes y año
+            df_filtrado["mes"] = df_filtrado["fecha_evento"].dt.month
+            df_filtrado["anyo"] = df_filtrado["fecha_evento"].dt.year
+            df_filtrado["mes_label"] = df_filtrado["fecha_evento"].dt.strftime("%b").str.title()
+            
+            # Obtener meses presentes ordenados cronológicamente
+            meses_presentes = df_filtrado.groupby(['anyo', 'mes', 'mes_label']).size().reset_index()
+            meses_presentes = meses_presentes.sort_values(['anyo', 'mes'])
+            
+            # Crear subgrupos por mes
+            for _, row in meses_presentes.iterrows():
+                mes = row['mes']
+                anyo = row['anyo']
+                mes_label = row['mes_label']
+                
+                # Color del mes
+                color_mes = PALETA_MESES[mes]
+                
+                # Crear subgrupo
+                sg_mes = FeatureGroupSubGroup(fg_mes, name=f"{mes_label} {anyo}", show=True)
+                sg_mes.add_to(mapa)
+                
+                # Filtrar datos del mes
+                datos_mes = df_filtrado[(df_filtrado['mes'] == mes) & (df_filtrado['anyo'] == anyo)]
+                
+                # Pintar puntos del mes
+                for _, punto in datos_mes.iterrows():
+                    try:
+                        lat = punto.get('coordenada_latitud', punto.get('latitud'))
+                        lon = punto.get('coordenada_longitud', punto.get('longitud'))
+                        
+                        if pd.notna(lat) and pd.notna(lon):
+                            popup_content = f"""
+                            <div style="font-family: Arial, sans-serif; font-size: 12px;">
+                                <b>Muestra #{punto.get('id', 'N/A')}</b><br>
+                                Fecha: {punto.get('fecha_evento', 'N/A')}<br>
+                                Barrio: {punto.get('barrio', 'N/A')}<br>
+                                Promotor: {punto.get('id_autor', 'N/A')}
+                            </div>
+                            """
+                            
+                            folium.CircleMarker(
+                                location=[float(lat), float(lon)],
+                                radius=4,
+                                popup=folium.Popup(popup_content, max_width=300),
+                                color="white",
+                                weight=1,
+                                fillColor=color_mes,
+                                fillOpacity=0.8
+                            ).add_to(sg_mes)
+                    except Exception:
+                        continue
+            
+            # --- CONTROL DE CAPAS (ÁRBOL) - TEMPORALIDAD, COMUNAS, CUADRANTES ---
+            if HAS_TREE_CONTROL:
+                TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
+            else:
+                folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
+            
+            # Construir leyenda mensual
+            def fmt_cop(valor):
+                try:
+                    return "$" + f"{valor:,.0f}".replace(",", ".")
+                except Exception:
+                    return "$0"
+            
+            rows_html = []
+            for _, row in meses_presentes.iterrows():
+                mes = row['mes']
+                anyo = row['anyo']
+                mes_label = row['mes_label']
+                color_mes = PALETA_MESES[mes]
+                
+                # Calcular métricas del mes
+                muestras_mes = len(df_filtrado[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)])
+                ids_mes = df_filtrado.loc[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo), "id_autor"].dropna().unique().tolist()
+                
+                # Fechas del mes para la consulta
+                from datetime import datetime
+                primer_dia_mes = f"{anyo}-{mes:02d}-01"
+                if mes == 12:
+                    ultimo_dia_mes = f"{anyo}-12-31"
+                else:
+                    next_month = datetime(anyo, mes + 1, 1)
+                    ultimo_dia_mes = f"{anyo}-{mes:02d}-{(next_month - pd.Timedelta(days=1)).day}"
+                
+                # Obtener métricas de pedidos
+                try:
+                    df_metrics_mes = obtener_metricas_pedidos_por_promotores(
+                        centroope=centroope,
+                        fecha_inicio=primer_dia_mes,
+                        fecha_fin=ultimo_dia_mes,
+                        ids_promotores=ids_mes
+                    )
+                    
+                    cant_ped_mes = df_metrics_mes['cant_pedidos'].sum() if not df_metrics_mes.empty else 0
+                    valor_mes = df_metrics_mes['valor_conIVA'].sum() if not df_metrics_mes.empty else 0.0
+                    adq_recu_mes = df_metrics_mes['venta_adq_recu'].sum() if not df_metrics_mes.empty else 0
+                    
+                    pct_nrecu = (100 * adq_recu_mes / cant_ped_mes) if cant_ped_mes > 0 else 0.0
+                    pct_fieles = 100 - pct_nrecu
+                    efectividad = (100 * cant_ped_mes / muestras_mes) if muestras_mes > 0 else 0.0
+                    
+                except Exception:
+                    cant_ped_mes = valor_mes = adq_recu_mes = pct_nrecu = pct_fieles = efectividad = 0
+                
+                rows_html.append(f"""
+                    <tr>
+                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};"></span>
+                            <span>{mes_label} {anyo}</span>
+                        </td>
+                        <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{efectividad:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(valor_mes)}</td>
+                    </tr>
+                """)
+            
+            legend_html = f"""
+            <div id="legend-promotores" style="
+                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
+                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+              <details open>
+                <summary style="cursor:pointer;font-weight:600;color:#111;">Indicadores por mes (mismo rango)</summary>
+                <div style="margin-top:8px;">
+                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {''.join(rows_html)}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+            """
+        
         mapa.get_root().html.add_child(folium.Element(legend_html))
 
 

@@ -166,6 +166,8 @@ with st.form(key="filtros_form"):
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
         
+        color_mode = st.radio("Seleccione la funcionalidad de los colores", ["Promotores", "Temporalidad (mes)"], index=0)
+        
         # Expander para cuadrantes personalizados
         with st.expander("🗺️ Cuadrantes (opcional)"):
             st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
@@ -502,7 +504,7 @@ if submit_button:
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode
             )
             if resultado:
                 filename, n_puntos = resultado
