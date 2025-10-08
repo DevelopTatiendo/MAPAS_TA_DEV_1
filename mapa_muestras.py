@@ -25,6 +25,9 @@ from mapa_consultores import _es_cuadrante_padre, _es_cuadrante_hijo, _style_cua
 DENSIDAD_BASE_M2 = 1000.0      # base de lectura: 1.000 m²
 OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 
+# === CONSTANTES PARA CÁLCULO DE ÁREAS ===
+DEBUG_AREAS = False  # Si True, el popup mostrará el método: "geodésico" o "fallback"
+
 # === PALETA DE COLORES POR MES ===
 PALETA_MESES = {
     1:"#1f78b4", 2:"#a6cee3", 3:"#33a02c", 4:"#b2df8a",
@@ -89,38 +92,21 @@ def _conteo_muestras_por_poligono(df_pts, features):
     return res
 
 def _calcular_area_m2_fallback(geom_geojson: dict) -> float:
-    """
-    Fallback para calcular área usando shapely si no viene en properties.
-    Usa aproximación WebMercator para convertir a metros.
-    """
+    """Fallback aproximado cuando la geometría es inválida y falla Geod."""
     try:
         geom = shape(geom_geojson)
-        # Aproximación simple: usar bounds para calcular factor de conversión a metros
         bounds = geom.bounds
         lat_center = (bounds[1] + bounds[3]) / 2
-        
-        # Factor de conversión aproximado de grados a metros en esta latitud
         lat_rad = math.radians(lat_center)
-        meters_per_degree_lat = 111000  # aprox constante
+        meters_per_degree_lat = 111000
         meters_per_degree_lon = 111000 * math.cos(lat_rad)
-        
-        # Calcular área aproximada en m²
-        width_degrees = bounds[2] - bounds[0]
-        height_degrees = bounds[3] - bounds[1]
-        width_meters = width_degrees * meters_per_degree_lon
-        height_meters = height_degrees * meters_per_degree_lat
-        
-        # Para polígonos más complejos, usar el área de shapely pero escalada
-        area_degrees_sq = geom.area
-        bbox_area_degrees = width_degrees * height_degrees
-        
-        if bbox_area_degrees > 0:
-            area_ratio = area_degrees_sq / bbox_area_degrees
-            area_m2 = (width_meters * height_meters) * area_ratio
-        else:
-            area_m2 = 0.0
-            
-        return abs(area_m2)
+        width_m = (bounds[2] - bounds[0]) * meters_per_degree_lon
+        height_m = (bounds[3] - bounds[1]) * meters_per_degree_lat
+        # Escalar el área shapely (grados²) a m² usando el área del bbox como referencia
+        area_deg2 = geom.area
+        bbox_deg2 = (bounds[2]-bounds[0]) * (bounds[3]-bounds[1])
+        escala = (width_m * height_m / bbox_deg2) if bbox_deg2 > 0 else 0.0
+        return max(0.0, area_deg2 * escala)
     except Exception:
         return 0.0
 
@@ -168,17 +154,14 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame) -> dict:
     props = feature.get('properties', {})
     codigo = props.get('codigo', '')
     
-    # 1. Área (priorizar geodésica exacta)
+    # 1. Área geodésica SIEMPRE del polígono
     try:
         area_m2 = area_m2_geodesic(feature.get('geometry', {}))
+        metodo_area = "geodésico"
     except Exception:
-        # Fallback: usar properties si existe
-        area_m2 = props.get('area_m2')
-        if area_m2 is None:
-            # Último fallback: aproximación con shapely
-            area_m2 = _calcular_area_m2_fallback(feature.get('geometry', {}))
-        else:
-            area_m2 = float(area_m2)
+        area_m2 = _calcular_area_m2_fallback(feature.get('geometry', {}))
+        metodo_area = "fallback"
+        logging.warning(f"[AREAS] Fallback en hijo {codigo}")
     
     # 2. Contar muestras dentro del polígono
     total_muestras = _contar_muestras_en_geom(feature.get('geometry', {}), df_filtrado)
@@ -186,12 +169,17 @@ def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame) -> dict:
     # 3. Contar días activos dentro del polígono
     dias_activos = _dias_activos_en_geom(feature.get('geometry', {}), df_filtrado)
     
-    return {
+    result = {
         'codigo': codigo,
         'area_m2': area_m2,
         'total_muestras': total_muestras,
         'dias_activos': dias_activos
     }
+    
+    if DEBUG_AREAS:
+        result['metodo_area'] = metodo_area
+        
+    return result
 
 def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, df_for_conteo: pd.DataFrame) -> dict:
     """
@@ -200,11 +188,14 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
     props_padre = feature_padre.get('properties', {})
     codigo_padre = props_padre.get('codigo', '')
 
-    # 1) Área del PADRE por geodesia (fallback si falla)
+    # 1) Área geodésica SIEMPRE del polígono del padre
     try:
         area_total = area_m2_geodesic(feature_padre.get('geometry', {}))
+        metodo_area = "geodésico"
     except Exception:
         area_total = _calcular_area_m2_fallback(feature_padre.get('geometry', {}))
+        metodo_area = "fallback"
+        logging.warning(f"[AREAS] Fallback en padre {codigo_padre}")
 
     # 2) Conteo de muestras DIRECTO dentro de la geometría del PADRE
     muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
@@ -212,14 +203,19 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
     # 3) Contar días activos dentro del polígono del padre
     dias_activos = _dias_activos_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
 
-    return {
+    result = {
         'codigo': codigo_padre,
         'area_m2': area_total,
         'total_muestras': muestras_total,
         'dias_activos': dias_activos
     }
+    
+    if DEBUG_AREAS:
+        result['metodo_area'] = metodo_area
+        
+    return result
 
-def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int) -> str:
+def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None) -> str:
     """
     Genera popup HTML para cuadrantes con 4 métricas: área, índice de cobertura, cantidad y muestras/día.
     """
@@ -231,7 +227,7 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
         st.warning(f"Área muy grande detectada en {codigo}: {area_km2:.2f} km²")
     
     # Cálculo del índice de cobertura (0-1) contra meta
-    densidad_m2 = (total_local / area_m2) if area_m2 > 0 else 0.0
+    densidad_m2 = (total_local / area_m2) if area_m2 > 0 else 0.0  # Protección división por cero
     dens_1000 = densidad_m2 * DENSIDAD_BASE_M2
     cobertura = min(1.0, dens_1000 / OBJETIVO_X_1000M2) if area_m2 > 0 else 0.0
     
@@ -244,9 +240,15 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     cantidad_fmt = str(int(total_local))  # cantidad como entero
     mxdia_fmt = fmt_dec_es(mxdia, nd=1)  # "59,0"
 
+    # Línea debug opcional
+    debug_line = ""
+    if DEBUG_AREAS and metodo_area:
+        debug_line = f'<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Método de área: {metodo_area}</div>'
+
     return f"""
     <div style="font-family: Inter, system-ui; font-size: 12px; line-height: 1.2;">
       <div style="font-weight:600; margin-bottom:6px;">{codigo}</div>
+      {debug_line}
       <table style="border-collapse: collapse; width: 100%;">
         <tbody>
           <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Área</td>
@@ -802,7 +804,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             codigo = props.get('codigo', '')
             if codigo in metricas_cache:
                 m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'])
+                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area)
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -817,7 +820,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             codigo = props.get('codigo', '')
             if codigo in metricas_cache:
                 m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'])
+                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area)
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
