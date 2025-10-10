@@ -92,6 +92,7 @@ if "last_selection" not in st.session_state:
     st.session_state["last_selection"] = current_selection
 elif st.session_state["last_selection"] != current_selection:
     st.session_state["map_url"] = None
+    st.session_state["muestras_last_filename"] = None
     st.session_state["last_selection"] = current_selection
 
 # Cargar datos según la ciudad seleccionada
@@ -167,6 +168,9 @@ with st.form(key="filtros_form"):
         fecha_fin = st.date_input("Fecha de Fin")
         
         color_mode = st.radio("Seleccione la funcionalidad de los colores", ["Promotores", "Temporalidad (mes)"], index=0)
+        
+        # Checkbox para verificación de áreas
+        verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
         
         # Expander para cuadrantes personalizados
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -391,6 +395,62 @@ if tipo_mapa == "Consultores":
                 help="No hay datos para descargar. Genere primero un mapa exitoso."
             )
 
+# Botón de descarga HTML para Muestras (fuera del form para mantener estado)
+if tipo_mapa == "Muestras":
+    # Verificar si hay un mapa generado y disponible
+    map_filename = st.session_state.get("muestras_last_filename")
+    
+    if map_filename:
+        html_path = os.path.join("static", "maps", map_filename)
+        if os.path.exists(html_path):
+            # Generar nombre del archivo HTML para el usuario
+            from datetime import datetime
+            import re
+            
+            # Normalizar ciudad (sin acentos/espacios)
+            ciudad_html = re.sub(r'[^A-Za-z0-9]', '', ciudad.upper())
+            ciudad_html = ciudad_html.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+            
+            # Usar fecha actual para el nombre
+            fecha_actual = datetime.now().strftime("%Y%m%d")
+            filename_html = f"Mapa_Muestras_{ciudad_html}_{fecha_actual}.html"
+            
+            # Leer archivo HTML
+            with open(html_path, "rb") as f:
+                html_bytes = f.read()
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                st.download_button(
+                    label="📥 Descargar HTML del mapa",
+                    data=html_bytes,
+                    file_name=filename_html,
+                    mime="text/html",
+                    type="secondary",
+                    use_container_width=True,
+                    help="Descarga el archivo HTML del mapa de muestras generado"
+                )
+        else:
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                st.button(
+                    "📥 Descargar HTML del mapa",
+                    disabled=True,
+                    type="secondary",
+                    use_container_width=True,
+                    help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
+                )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Descargar HTML del mapa",
+                disabled=True,
+                type="secondary",
+                use_container_width=True,
+                help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
+            )
+
 # Separador sutil entre secciones
 st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
 
@@ -504,12 +564,15 @@ if submit_button:
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas
             )
             if resultado:
                 filename, n_puntos = resultado
+                # Guardar filename para el botón de descarga HTML
+                st.session_state["muestras_last_filename"] = filename
             else:
                 filename, n_puntos = None, 0
+                st.session_state["muestras_last_filename"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
             if not id_ruta:

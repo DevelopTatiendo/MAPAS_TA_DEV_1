@@ -215,7 +215,7 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
         
     return result
 
-def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None) -> str:
+def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None) -> str:
     """
     Genera popup HTML para cuadrantes con 4 métricas: área, índice de cobertura, cantidad y muestras/día.
     """
@@ -240,15 +240,34 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     cantidad_fmt = str(int(total_local))  # cantidad como entero
     mxdia_fmt = fmt_dec_es(mxdia, nd=1)  # "59,0"
 
-    # Línea debug opcional
-    debug_line = ""
-    if DEBUG_AREAS and metodo_area:
-        debug_line = f'<div style="font-size:11px;color:#6b7280;margin-bottom:4px;">Método de área: {metodo_area}</div>'
+    # Líneas debug opcionales
+    debug_lines = ""
+    if DEBUG_AREAS:
+        # Información básica del método
+        if metodo_area:
+            debug_lines += f'<div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Método de área: {metodo_area}</div>'
+        
+        # Información de la capa
+        if tipo_capa:
+            debug_lines += f'<div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Código: {codigo} · Capa: {tipo_capa}</div>'
+        
+        # Información de verificación si está disponible
+        if verificacion_info:
+            if verificacion_info['verificado']:
+                debug_lines += f'<div style="font-size:11px;color:#16a34a;margin-bottom:2px;">✓ Área verificada (geodésica)</div>'
+            else:
+                diff_pct = verificacion_info['diff_pct']
+                debug_lines += f'<div style="font-size:11px;color:#dc2626;margin-bottom:2px;">⚠ Mismatch área cache vs draw: {diff_pct:.1f}%</div>'
+            
+            # Información de geometría
+            tipo_geom = verificacion_info['tipo_geom']
+            num_anillos = verificacion_info['num_anillos']
+            debug_lines += f'<div style="font-size:10px;color:#9ca3af;margin-bottom:4px;">{tipo_geom} ({num_anillos} anillo{"s" if num_anillos != 1 else ""})</div>'
 
     return f"""
     <div style="font-family: Inter, system-ui; font-size: 12px; line-height: 1.2;">
       <div style="font-weight:600; margin-bottom:6px;">{codigo}</div>
-      {debug_line}
+      {debug_lines}
       <table style="border-collapse: collapse; width: 100%;">
         <tbody>
           <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Área</td>
@@ -279,6 +298,50 @@ def _style_cuadrante_padre(feat):
     base = _style_cuadrante(feat)
     base.update({'fillOpacity': 0.15, 'weight': 1.5})  # más tenue que los hijos
     return base
+
+def _verificar_area_draw_vs_cache(feature: dict, area_cache: float, tipo_capa: str) -> dict:
+    """
+    Verifica que el área calculada en draw-time coincida con la del cache.
+    Retorna información sobre la verificación para mostrar en popup.
+    """
+    try:
+        # Recalcular área del polígono en tiempo de dibujo
+        area_draw = area_m2_geodesic(feature.get('geometry', {}))
+        
+        # Calcular diferencia porcentual
+        if area_cache > 0:
+            diff_pct = abs(area_draw - area_cache) / area_cache * 100
+        else:
+            diff_pct = 0.0
+        
+        # Información de la geometría
+        geom = shape(feature.get('geometry', {}))
+        tipo_geom = geom.geom_type
+        num_anillos = 0
+        if hasattr(geom, 'exterior'):
+            num_anillos = 1 + len(list(geom.interiors))
+        elif hasattr(geom, 'geoms'):
+            num_anillos = sum(1 + len(list(g.interiors)) if hasattr(g, 'interiors') else 1 for g in geom.geoms)
+        
+        return {
+            'area_draw': area_draw,
+            'area_cache': area_cache,
+            'diff_pct': diff_pct,
+            'tipo_geom': tipo_geom,
+            'num_anillos': num_anillos,
+            'verificado': diff_pct <= 0.5  # Consideramos OK si diferencia <= 0.5%
+        }
+        
+    except Exception as e:
+        logging.warning(f"Error en verificación de área para {tipo_capa}: {e}")
+        return {
+            'area_draw': 0,
+            'area_cache': area_cache,
+            'diff_pct': 100.0,
+            'tipo_geom': 'Error',
+            'num_anillos': 0,
+            'verificado': False
+        }
 
 def compactar_dos_palabras(nombre_completo, pid=""):
     """
@@ -421,8 +484,14 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores"):
+def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False):
     try:
+        # Activar DEBUG_AREAS si está en modo verificación
+        global DEBUG_AREAS
+        DEBUG_AREAS_ORIGINAL = DEBUG_AREAS
+        if verificar_areas:
+            DEBUG_AREAS = True
+            
         ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
         logging.info(f"Generando mapa para la ciudad: {ciudad}")
 
@@ -465,7 +534,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
             'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
             'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),
-            'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
+            'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
             'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
             'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
             'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
@@ -781,18 +850,18 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
         features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
         
-        # Cache de métricas para evitar recálculos
+        # Cache de métricas para evitar recálculos - clave: (tipo, codigo)
         metricas_cache = {}
         
         # 1. Calcular métricas para hijos
         for feature_hijo in features_hijos:
             metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
-            metricas_cache[metricas['codigo']] = metricas
+            metricas_cache[('HIJO', metricas['codigo'])] = metricas
         
         # 2. Calcular métricas para padres (cálculo directo)
         for feature_padre in features_padres:
             metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
-            metricas_cache[metricas['codigo']] = metricas
+            metricas_cache[('PADRE', metricas['codigo'])] = metricas
         
         logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
         
@@ -802,10 +871,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_padre in features_padres:
             props  = feature_padre.get('properties', {})
             codigo = props.get('codigo', '')
-            if codigo in metricas_cache:
-                m = metricas_cache[codigo]
+            cache_key = ('PADRE', codigo)
+            if cache_key in metricas_cache:
+                m = metricas_cache[cache_key]
                 metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area)
+                
+                # Verificación de área si está en modo debug
+                verificacion_info = None
+                if verificar_areas:
+                    verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE')
+                
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info)
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -818,10 +894,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_hijo in features_hijos:
             props  = feature_hijo.get('properties', {})
             codigo = props.get('codigo', '')
-            if codigo in metricas_cache:
-                m = metricas_cache[codigo]
+            cache_key = ('HIJO', codigo)
+            if cache_key in metricas_cache:
+                m = metricas_cache[cache_key]
                 metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area)
+                
+                # Verificación de área si está en modo debug
+                verificacion_info = None
+                if verificar_areas:
+                    verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO')
+                
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info)
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
@@ -935,8 +1018,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                             <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
                             <span>{data['nombre']}</span>
                         </td>
-                        <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
                         <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
                         <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
@@ -956,8 +1039,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     <thead>
                       <tr>
                         <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
@@ -1089,8 +1172,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                             <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};"></span>
                             <span>{mes_label} {anyo}</span>
                         </td>
-                        <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{efectividad:.1f}%</td>
@@ -1110,8 +1193,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     <thead>
                       <tr>
                         <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
@@ -1143,3 +1226,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
         return None, 0
+    finally:
+        # Restaurar DEBUG_AREAS al valor original
+        if verificar_areas:
+            DEBUG_AREAS = DEBUG_AREAS_ORIGINAL
