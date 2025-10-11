@@ -358,8 +358,8 @@ function ensureComunaStyleProps(props) {
 function isQuadrantFeature(f) {
   const p = f?.properties || {};
   if (p.nivel === 'cuadrante' || p.nivel === 'subcuadrante') return true;
-  // Fallback para archivos antiguos
-  return typeof p.codigo === 'string' && /^CL_/i.test(p.codigo);
+  // Fallback para archivos antiguos - acepta todos los prefijos válidos
+  return typeof p.codigo === 'string' && /^(CL|MZ|BG|MD|PR|BC|BR)_/i.test(p.codigo);
 }
 
 // Convierte layer a feature preservando propiedades de estilo
@@ -521,14 +521,15 @@ function calculateCentroid(geojson) {
 // Generar próximo código de cuadrante disponible
 function generateNextCuadranteCode(ciudad, ruta) {
   const existingCodes = getAllExistingCodes();
-  const prefix = `CL_${ruta}_`;
+  const cityPrefixCode = getCityPrefix(ciudad);
+  const prefix = `${cityPrefixCode}_`;
   
   let nextNum = 1;
-  while (existingCodes.includes(`${prefix}${String(nextNum).padStart(2, '0')}`)) {
+  while (existingCodes.includes(`${prefix}${String(nextNum).padStart(3, '0')}`)) {
     nextNum++;
   }
   
-  return `${prefix}${String(nextNum).padStart(2, '0')}`;
+  return `${prefix}${String(nextNum).padStart(3, '0')}`;
 }
 
 // Generar próximo código de subcuadrante
@@ -882,6 +883,18 @@ console.debug("[EDITOR] init city:", CITY, "center:", cfg.center, "zoom:", cfg.z
 // Actualizar título del documento
 document.title = `Editor de cuadrantes – ${CITY}`;
 
+// Actualizar texto de ayuda dinámicamente
+function updateHelpText() {
+  const helpElement = document.getElementById('formato-help');
+  if (helpElement) {
+    const currentPrefix = cityPrefix();
+    helpElement.textContent = `Formato: ${currentPrefix}_<consecutivo>`;
+  }
+}
+
+// Actualizar help text cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', updateHelpText);
+
 // Inicializar mapa Leaflet con configuración de ciudad
 const map = L.map('map', {
     center: cfg.center,
@@ -1103,10 +1116,14 @@ map.on(L.Draw.Event.CREATED, (e) => {
     // Crear subcuadrante hijo
     onChildCreated(e);
   } else {
-    // Comportamiento original para otros casos
+    // Comportamiento original para otros casos - siempre crear como PADRE
     layer.feature.properties.fillColor = CURRENT_FILL;
     const codigo = generateUniqueCode();
     layer.feature.properties.codigo = codigo;
+    // Siempre marcar como PADRE por defecto
+    layer.feature.properties.nivel = 'PADRE'; 
+    layer.feature.properties.es_hijo = false;
+    layer.feature.properties.codigo_padre = null;
     
     if (typeof enforceStrokePolicy === 'function') enforceStrokePolicy(layer);
     if (typeof applyStyleFromProperties === 'function') applyStyleFromProperties(layer);
@@ -1142,10 +1159,10 @@ function onChildCreated(e) {
   const parentCode = parentProps.codigo || 'PADRE';
   let idRuta = parentProps.id_ruta;
   
-  // Si no tiene id_ruta, intentar extraer del código (ej: CL_3 -> ruta 3)
+  // Si no tiene id_ruta, intentar extraer del código (ej: PR_3 -> ruta 3)
   if (!idRuta) {
-    const match = parentCode.match(/CL_(\d+)/);
-    idRuta = match ? match[1] : '1';
+    const match = parentCode.match(/^(CL|MZ|BG|MD|PR|BC|BR)_(\d+)/);
+    idRuta = match ? match[2] : '1';
   }
 
   // 4) Crear sugerencia
@@ -1407,16 +1424,31 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
 
 // === FUNCIONES PARA CÓDIGOS DE SUBCUADRANTES ===
 
-// Mapeo de ciudades a prefijos
+// Mapeo de ciudades a prefijos (diccionario oficial canónico)
 const CITY_PREFIX = {
-  'CALI': 'CL', 'BOGOTA': 'BO', 'BOGOTÁ': 'BO', 'MEDELLIN': 'ME', 'MEDELLÍN': 'ME',
-  'BARRANQUILLA': 'BA', 'MANIZALES': 'MZ', 'PEREIRA': 'PE', 'BUCARAMANGA': 'BU'
+  'CALI': 'CL',
+  'MANIZALES': 'MZ', 
+  'BOGOTA': 'BG',
+  'BOGOTÁ': 'BG',
+  'MEDELLIN': 'MD',
+  'MEDELLÍN': 'MD',
+  'PEREIRA': 'PR',
+  'BUCARAMANGA': 'BC',
+  'BARRANQUILLA': 'BR'
 };
 
 // Obtener prefijo de ciudad desde URL
 function cityPrefix() {
   const p = new URLSearchParams(location.search).get('city') || '';
   return CITY_PREFIX[p.toUpperCase()] || p.slice(0, 2).toUpperCase();
+}
+
+// Obtener prefijo de ciudad basado en el parámetro de ciudad
+function getCityPrefix(ciudadSeleccionada) {
+  if (!ciudadSeleccionada) {
+    return cityPrefix(); // Fallback to URL-based detection
+  }
+  return CITY_PREFIX[ciudadSeleccionada.toUpperCase()] || ciudadSeleccionada.slice(0, 2).toUpperCase();
 }
 
 // Contador por padre para códigos únicos
@@ -1464,10 +1496,11 @@ function validateChildCode(code) {
     return { valid: false, message: 'El código no puede estar vacío' };
   }
   
-  // Formato esperado: ^[A-Z]{2}_\d+_\d{2}_S\d{2}$
-  const pattern = /^[A-Z]{2}_\d+_\d{2}_S\d{2}$/;
+  // Formato esperado: ^(CL|MZ|BG|MD|PR|BC|BR)_\d+_\d{2}_S\d{2}$
+  const pattern = /^(CL|MZ|BG|MD|PR|BC|BR)_\d+_\d{2}_S\d{2}$/;
   if (!pattern.test(code.trim())) {
-    return { valid: false, message: 'Formato inválido. Use: CL_1_01_S01' };
+    const currentPrefix = cityPrefix();
+    return { valid: false, message: `Formato inválido. Use: ${currentPrefix}_1_01_S01` };
   }
   
   return { valid: true };
