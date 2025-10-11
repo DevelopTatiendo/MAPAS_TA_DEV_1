@@ -25,7 +25,17 @@ from mapa_consultores import _es_cuadrante_padre, _es_cuadrante_hijo, _style_cua
 DENSIDAD_BASE_M2 = 1000.0      # base de lectura: 1.000 m²
 OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 
-# Importar controles de capas disponibles
+# === CONSTANTES PARA CÁLCULO DE ÁREAS ===
+DEBUG_AREAS = False  # Si True, el popup mostrará el método: "geodésico" o "fallback"
+
+# === PALETA DE COLORES POR MES ===
+PALETA_MESES = {
+    1:"#1f78b4", 2:"#a6cee3", 3:"#33a02c", 4:"#b2df8a",
+    5:"#e31a1c", 6:"#fb9a99", 7:"#ff7f00", 8:"#fdbf6f",
+    9:"#6a3d9a",10:"#cab2d6",11:"#b15928",12:"#ffff99"
+}
+
+# Importar control de capas disponibles
 from folium.plugins import GroupedLayerControl
 try:
     from folium.plugins import TreeLayerControl
@@ -82,123 +92,130 @@ def _conteo_muestras_por_poligono(df_pts, features):
     return res
 
 def _calcular_area_m2_fallback(geom_geojson: dict) -> float:
-    """
-    Fallback para calcular área usando shapely si no viene en properties.
-    Usa aproximación WebMercator para convertir a metros.
-    """
+    """Fallback aproximado cuando la geometría es inválida y falla Geod."""
     try:
         geom = shape(geom_geojson)
-        # Aproximación simple: usar bounds para calcular factor de conversión a metros
         bounds = geom.bounds
         lat_center = (bounds[1] + bounds[3]) / 2
-        
-        # Factor de conversión aproximado de grados a metros en esta latitud
         lat_rad = math.radians(lat_center)
-        meters_per_degree_lat = 111000  # aprox constante
+        meters_per_degree_lat = 111000
         meters_per_degree_lon = 111000 * math.cos(lat_rad)
-        
-        # Calcular área aproximada en m²
-        width_degrees = bounds[2] - bounds[0]
-        height_degrees = bounds[3] - bounds[1]
-        width_meters = width_degrees * meters_per_degree_lon
-        height_meters = height_degrees * meters_per_degree_lat
-        
-        # Para polígonos más complejos, usar el área de shapely pero escalada
-        area_degrees_sq = geom.area
-        bbox_area_degrees = width_degrees * height_degrees
-        
-        if bbox_area_degrees > 0:
-            area_ratio = area_degrees_sq / bbox_area_degrees
-            area_m2 = (width_meters * height_meters) * area_ratio
-        else:
-            area_m2 = 0.0
-            
-        return abs(area_m2)
+        width_m = (bounds[2] - bounds[0]) * meters_per_degree_lon
+        height_m = (bounds[3] - bounds[1]) * meters_per_degree_lat
+        # Escalar el área shapely (grados²) a m² usando el área del bbox como referencia
+        area_deg2 = geom.area
+        bbox_deg2 = (bounds[2]-bounds[0]) * (bounds[3]-bounds[1])
+        escala = (width_m * height_m / bbox_deg2) if bbox_deg2 > 0 else 0.0
+        return max(0.0, area_deg2 * escala)
     except Exception:
         return 0.0
 
-def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame, rango_dias: int) -> dict:
+def _contar_muestras_en_geom(feature_geom: dict, df_pts: pd.DataFrame) -> int:
+    """Cuenta muestras dentro de una geometría GeoJSON usando df_pts con columnas 'lat' y 'lon'."""
+    try:
+        geom = shape(feature_geom)
+        prep_geom = prep(geom)
+        count = 0
+        for _, r in df_pts.iterrows():
+            p = Point(float(r['lon']), float(r['lat']))
+            if prep_geom.contains(p):
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+def _dias_activos_global(df_pts: pd.DataFrame) -> int:
+    """Días con al menos 1 muestra en todo el df."""
+    if df_pts.empty or 'fecha_dia' not in df_pts.columns:
+        return 0
+    return int(df_pts['fecha_dia'].nunique())
+
+def _dias_activos_en_geom(feature_geom: dict, df_pts: pd.DataFrame) -> int:
+    """Días con al menos 1 muestra dentro de la geometría dada."""
+    if df_pts.empty or 'fecha_dia' not in df_pts.columns:
+        return 0
+    try:
+        geom = shape(feature_geom)
+        prep_geom = prep(geom)
+        # filtrar puntos que caen dentro y tomar días únicos
+        dias = set()
+        for _, r in df_pts.iterrows():
+            p = Point(float(r['lon']), float(r['lat']))
+            if prep_geom.contains(p):
+                dias.add(r['fecha_dia'])
+        return len(dias)
+    except Exception:
+        return 0
+
+def _calcular_metricas_hijo(feature: dict, df_filtrado: pd.DataFrame) -> dict:
     """
     Calcula métricas para un cuadrante hijo (subcuadrante).
     """
     props = feature.get('properties', {})
     codigo = props.get('codigo', '')
     
-    # 1. Área (priorizar geodésica exacta)
+    # 1. Área geodésica SIEMPRE del polígono
     try:
         area_m2 = area_m2_geodesic(feature.get('geometry', {}))
+        metodo_area = "geodésico"
     except Exception:
-        # Fallback: usar properties si existe
-        area_m2 = props.get('area_m2')
-        if area_m2 is None:
-            # Último fallback: aproximación con shapely
-            area_m2 = _calcular_area_m2_fallback(feature.get('geometry', {}))
-        else:
-            area_m2 = float(area_m2)
+        area_m2 = _calcular_area_m2_fallback(feature.get('geometry', {}))
+        metodo_area = "fallback"
+        logging.warning(f"[AREAS] Fallback en hijo {codigo}")
     
     # 2. Contar muestras dentro del polígono
-    total_muestras = 0
-    if not df_filtrado.empty:
-        try:
-            geom = shape(feature.get('geometry', {}))
-            prep_geom = prep(geom)
-            
-            for _, row in df_filtrado.iterrows():
-                lat = row.get('lat')
-                lon = row.get('lon')
-                if lat is not None and lon is not None:
-                    punto = Point(float(lon), float(lat))
-                    if prep_geom.contains(punto):
-                        total_muestras += 1
-        except Exception:
-            total_muestras = 0
+    total_muestras = _contar_muestras_en_geom(feature.get('geometry', {}), df_filtrado)
     
-    return {
+    # 3. Contar días activos dentro del polígono
+    dias_activos = _dias_activos_en_geom(feature.get('geometry', {}), df_filtrado)
+    
+    result = {
         'codigo': codigo,
         'area_m2': area_m2,
         'total_muestras': total_muestras,
-        'rango_dias': rango_dias
+        'dias_activos': dias_activos
     }
+    
+    if DEBUG_AREAS:
+        result['metodo_area'] = metodo_area
+        
+    return result
 
-def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, rango_dias: int) -> dict:
+def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas_hijos: dict, df_for_conteo: pd.DataFrame) -> dict:
     """
-    Calcula métricas para un cuadrante padre sumando las de sus hijos.
+    Calcula métricas para un cuadrante padre directamente sobre su geometría.
     """
     props_padre = feature_padre.get('properties', {})
     codigo_padre = props_padre.get('codigo', '')
-    
-    # Encontrar hijos de este padre
-    hijos_del_padre = []
-    for feature_hijo in features_hijos:
-        props_hijo = feature_hijo.get('properties', {})
-        codigo_hijo = props_hijo.get('codigo', '')
-        codigo_padre_hijo = props_hijo.get('codigo_padre', '')
-        
-        # Verificar si este hijo pertenece al padre
-        if codigo_padre_hijo == codigo_padre:
-            hijos_del_padre.append(codigo_hijo)
-        elif codigo_hijo.startswith(codigo_padre.replace('_00', '_')) and codigo_hijo != codigo_padre:
-            # Fallback por patrón de código
-            hijos_del_padre.append(codigo_hijo)
-    
-    # Sumar métricas de los hijos
-    area_total = 0.0
-    muestras_total = 0
-    
-    for codigo_hijo in hijos_del_padre:
-        if codigo_hijo in metricas_hijos:
-            metricas = metricas_hijos[codigo_hijo]
-            area_total += metricas['area_m2']
-            muestras_total += metricas['total_muestras']
-    
-    return {
+
+    # 1) Área geodésica SIEMPRE del polígono del padre
+    try:
+        area_total = area_m2_geodesic(feature_padre.get('geometry', {}))
+        metodo_area = "geodésico"
+    except Exception:
+        area_total = _calcular_area_m2_fallback(feature_padre.get('geometry', {}))
+        metodo_area = "fallback"
+        logging.warning(f"[AREAS] Fallback en padre {codigo_padre}")
+
+    # 2) Conteo de muestras DIRECTO dentro de la geometría del PADRE
+    muestras_total = _contar_muestras_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
+
+    # 3) Contar días activos dentro del polígono del padre
+    dias_activos = _dias_activos_en_geom(feature_padre.get('geometry', {}), df_for_conteo)
+
+    result = {
         'codigo': codigo_padre,
         'area_m2': area_total,
         'total_muestras': muestras_total,
-        'rango_dias': rango_dias
+        'dias_activos': dias_activos
     }
+    
+    if DEBUG_AREAS:
+        result['metodo_area'] = metodo_area
+        
+    return result
 
-def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_rango: int) -> str:
+def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None) -> str:
     """
     Genera popup HTML para cuadrantes con 4 métricas: área, índice de cobertura, cantidad y muestras/día.
     """
@@ -210,12 +227,11 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
         st.warning(f"Área muy grande detectada en {codigo}: {area_km2:.2f} km²")
     
     # Cálculo del índice de cobertura (0-1) contra meta
-    densidad_m2 = (total_local / area_m2) if area_m2 > 0 else 0.0
+    densidad_m2 = (total_local / area_m2) if area_m2 > 0 else 0.0  # Protección división por cero
     dens_1000 = densidad_m2 * DENSIDAD_BASE_M2
     cobertura = min(1.0, dens_1000 / OBJETIVO_X_1000M2) if area_m2 > 0 else 0.0
     
-    dias = max(1, int(dias_rango))
-    mxdia = total_local / dias
+    mxdia = (total_local / dias_activos) if dias_activos > 0 else 0.0
 
     # Formateo ES-CO con punto como separador de miles y coma como decimal
     area_m2_fmt = fmt_int_miles(area_m2)  # "501.331"
@@ -224,9 +240,34 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     cantidad_fmt = str(int(total_local))  # cantidad como entero
     mxdia_fmt = fmt_dec_es(mxdia, nd=1)  # "59,0"
 
+    # Líneas debug opcionales
+    debug_lines = ""
+    if DEBUG_AREAS:
+        # Información básica del método
+        if metodo_area:
+            debug_lines += f'<div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Método de área: {metodo_area}</div>'
+        
+        # Información de la capa
+        if tipo_capa:
+            debug_lines += f'<div style="font-size:11px;color:#6b7280;margin-bottom:2px;">Código: {codigo} · Capa: {tipo_capa}</div>'
+        
+        # Información de verificación si está disponible
+        if verificacion_info:
+            if verificacion_info['verificado']:
+                debug_lines += f'<div style="font-size:11px;color:#16a34a;margin-bottom:2px;">✓ Área verificada (geodésica)</div>'
+            else:
+                diff_pct = verificacion_info['diff_pct']
+                debug_lines += f'<div style="font-size:11px;color:#dc2626;margin-bottom:2px;">⚠ Mismatch área cache vs draw: {diff_pct:.1f}%</div>'
+            
+            # Información de geometría
+            tipo_geom = verificacion_info['tipo_geom']
+            num_anillos = verificacion_info['num_anillos']
+            debug_lines += f'<div style="font-size:10px;color:#9ca3af;margin-bottom:4px;">{tipo_geom} ({num_anillos} anillo{"s" if num_anillos != 1 else ""})</div>'
+
     return f"""
     <div style="font-family: Inter, system-ui; font-size: 12px; line-height: 1.2;">
       <div style="font-weight:600; margin-bottom:6px;">{codigo}</div>
+      {debug_lines}
       <table style="border-collapse: collapse; width: 100%;">
         <tbody>
           <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Área</td>
@@ -257,6 +298,50 @@ def _style_cuadrante_padre(feat):
     base = _style_cuadrante(feat)
     base.update({'fillOpacity': 0.15, 'weight': 1.5})  # más tenue que los hijos
     return base
+
+def _verificar_area_draw_vs_cache(feature: dict, area_cache: float, tipo_capa: str) -> dict:
+    """
+    Verifica que el área calculada en draw-time coincida con la del cache.
+    Retorna información sobre la verificación para mostrar en popup.
+    """
+    try:
+        # Recalcular área del polígono en tiempo de dibujo
+        area_draw = area_m2_geodesic(feature.get('geometry', {}))
+        
+        # Calcular diferencia porcentual
+        if area_cache > 0:
+            diff_pct = abs(area_draw - area_cache) / area_cache * 100
+        else:
+            diff_pct = 0.0
+        
+        # Información de la geometría
+        geom = shape(feature.get('geometry', {}))
+        tipo_geom = geom.geom_type
+        num_anillos = 0
+        if hasattr(geom, 'exterior'):
+            num_anillos = 1 + len(list(geom.interiors))
+        elif hasattr(geom, 'geoms'):
+            num_anillos = sum(1 + len(list(g.interiors)) if hasattr(g, 'interiors') else 1 for g in geom.geoms)
+        
+        return {
+            'area_draw': area_draw,
+            'area_cache': area_cache,
+            'diff_pct': diff_pct,
+            'tipo_geom': tipo_geom,
+            'num_anillos': num_anillos,
+            'verificado': diff_pct <= 0.5  # Consideramos OK si diferencia <= 0.5%
+        }
+        
+    except Exception as e:
+        logging.warning(f"Error en verificación de área para {tipo_capa}: {e}")
+        return {
+            'area_draw': 0,
+            'area_cache': area_cache,
+            'diff_pct': 100.0,
+            'tipo_geom': 'Error',
+            'num_anillos': 0,
+            'verificado': False
+        }
 
 def compactar_dos_palabras(nombre_completo, pid=""):
     """
@@ -399,14 +484,39 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None):
+def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False):
     try:
+        # Activar DEBUG_AREAS si está en modo verificación
+        global DEBUG_AREAS
+        DEBUG_AREAS_ORIGINAL = DEBUG_AREAS
+        if verificar_areas:
+            DEBUG_AREAS = True
+            
         ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
         logging.info(f"Generando mapa para la ciudad: {ciudad}")
 
         # Convertir fechas a cadenas si es necesario
         fecha_inicio = str(fecha_inicio)
         fecha_fin = str(fecha_fin)
+        
+        # Validación de año único para modo Temporalidad
+        if color_mode == "Temporalidad (mes)":
+            try:
+                from datetime import datetime
+                dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
+                dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d")
+                if dt_inicio.year != dt_fin.year:
+                    st.error("❌ Error: El modo 'Temporalidad (mes)' requiere que ambas fechas estén en el mismo año.")
+                    # Retornar mapa vacío
+                    mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
+                    filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
+                    return filename, 0
+            except ValueError:
+                st.error("❌ Error: Formato de fecha inválido para el modo 'Temporalidad (mes)'.")
+                # Retornar mapa vacío
+                mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
+                filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
+                return filename, 0
 
         # Ruta de coordenadas para cada ciudad
         rutas_coordenadas = {
@@ -423,8 +533,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         coordenadas_ciudades = {
             'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
             'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-            'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
-            'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
+            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),
+            'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
             'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
             'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
             'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
@@ -477,6 +587,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
         # Filtrar por fechas
         df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+        # Día (sin hora) para conteos por día
+        df['fecha_dia'] = df['fecha_evento'].dt.date
         df_filtrado = df #[(df['fecha_evento'] >= fecha_inicio) & (df['fecha_evento'] <= fecha_fin)]
 
         if df_filtrado.empty:
@@ -503,10 +615,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
             # Calcular estadísticas
         #print(df_filtrado.head(4))
-        rango_dias = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days + 1
+        dias_activos_global = _dias_activos_global(df_filtrado)
         cantidad_barrios = df_filtrado['barrio'].nunique()
         total_cantidad = df_filtrado.shape[0]
-        promedio_muestras = total_cantidad / rango_dias if rango_dias > 0 else 0
+        promedio_muestras = (total_cantidad / dias_activos_global) if dias_activos_global > 0 else 0.0
         promedio_muestras_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
 
         # Preparar datos para las estadísticas
@@ -520,9 +632,9 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             'total_cantidad': total_cantidad
         }
 
-        # Agregar el cuadro fijo de estadísticas en la parte superior izquierda
+        # Agregar el cuadro fijo de estadísticas en la parte superior izquierda (colapsable)
         html_content = f"""
-            <div style="
+            <div id="legend-resumen" class="legend-box" style="
                 position: fixed;
                 top: 20px;
                 left: 20px;
@@ -534,34 +646,104 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 font-family: Arial, sans-serif;
                 min-width: 250px;
             ">
-                <h4 style="margin: 0 0 10px 0;">Resumen de Muestras</h4>
-                <table style="width: 100%; border-collapse: collapse;">
-                    <tr>
-                        <td style="padding: 3px 0;">Barrios:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['barrios']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Fechas:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Muestras/día:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras']:.1f}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Total barrios:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['cantidad_barrios']}</b></td>
-                    </tr>
-                    <tr>
-                        <td style="padding: 3px 0;">Muestras/barrio:</td>
-                        <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras_barrios']:.1f}</b></td>
-                    </tr>
-                    <tr style="border-top: 1px solid #eee;">
-                        <td style="padding: 5px 0;"><b>Total muestras:</b></td>
-                        <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
-                    </tr>
-                </table>
+                <div class="legend-header" onclick="toggleLegend('legend-resumen')" style="
+                    cursor: pointer; display: flex; justify-content: space-between; align-items: center; 
+                    margin: 0 0 10px 0;">
+                    <h4 style="margin: 0; color: #111;">Resumen de Muestras</h4>
+                    <span id="legend-resumen-toggle" class="toggle-icon" style="
+                        margin-left: 10px; transition: transform 0.3s ease; font-size: 12px; color: #6b7280;">▼</span>
+                </div>
+                <div id="legend-resumen-body" class="legend-body">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr>
+                            <td style="padding: 3px 0;">Fechas:</td>
+                            <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 3px 0;">Muestras/día:</td>
+                            <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras']:.1f}</b></td>
+                        </tr>
+                        <tr style="border-top: 1px solid #eee;">
+                            <td style="padding: 5px 0;"><b>Total muestras:</b></td>
+                            <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
+                        </tr>
+                    </table>
+                </div>
             </div>
+            
+            <style>
+              .legend-box.collapsed .legend-body {{
+                display: none;
+              }}
+              .legend-box.collapsed .toggle-icon {{
+                transform: rotate(-90deg);
+              }}
+              .legend-header:hover {{
+                background-color: #f9fafb;
+                border-radius: 4px;
+                padding: 2px;
+              }}
+              .toggle-icon {{
+                font-size: 12px;
+                color: #6b7280;
+              }}
+            </style>
+            
+            <script>
+              function toggleLegend(legendId) {{
+                const legend = document.getElementById(legendId);
+                const toggle = document.getElementById(legendId + '-toggle');
+                const body = document.getElementById(legendId + '-body');
+                
+                if (legend.classList.contains('collapsed')) {{
+                  legend.classList.remove('collapsed');
+                  toggle.style.transform = 'rotate(0deg)';
+                  body.style.display = 'block';
+                }} else {{
+                  legend.classList.add('collapsed');
+                  toggle.style.transform = 'rotate(-90deg)';
+                  body.style.display = 'none';
+                }}
+                
+                // Reposition zoom controls based on legend state
+                setTimeout(repositionZoomControls, 100);
+              }}
+              
+              function repositionZoomControls() {{
+                const resumenLegend = document.getElementById('legend-resumen');
+                const promotoresLegend = document.getElementById('legend-promotores');
+                const zoomControl = document.querySelector('.leaflet-control-zoom');
+                
+                if (zoomControl && resumenLegend) {{
+                  const resumenCollapsed = resumenLegend.classList.contains('collapsed');
+                  const resumenRect = resumenLegend.getBoundingClientRect();
+                  
+                  if (resumenCollapsed) {{
+                    // Position zoom control closer to collapsed legend
+                    const topPosition = resumenRect.bottom + 10;
+                    zoomControl.style.top = topPosition + 'px';
+                    zoomControl.style.left = '20px';
+                    zoomControl.style.position = 'fixed';
+                  }} else {{
+                    // Position zoom control below expanded legend
+                    const topPosition = resumenRect.bottom + 10;
+                    zoomControl.style.top = topPosition + 'px';
+                    zoomControl.style.left = '20px';
+                    zoomControl.style.position = 'fixed';
+                  }}
+                }}
+              }}
+              
+              // Initialize zoom control positioning after page load
+              document.addEventListener('DOMContentLoaded', function() {{
+                setTimeout(repositionZoomControls, 500);
+              }});
+              
+              // Also try with window load event as backup
+              window.addEventListener('load', function() {{
+                setTimeout(repositionZoomControls, 1000);
+              }});
+            </script>
             """
 
         mapa.get_root().html.add_child(folium.Element(html_content))
@@ -622,6 +804,8 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         df_for_conteo['lon'] = df_for_conteo.apply(
             lambda row: row.get('coordenada_longitud', row.get('longitud', None)), axis=1
         )
+        # Asegurar que fecha_dia está presente
+        df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
         # Filtrar puntos válidos
         df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
         
@@ -666,18 +850,18 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
         features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
         
-        # Cache de métricas para evitar recálculos
+        # Cache de métricas para evitar recálculos - clave: (tipo, codigo)
         metricas_cache = {}
         
         # 1. Calcular métricas para hijos
         for feature_hijo in features_hijos:
-            metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo, rango_dias)
-            metricas_cache[metricas['codigo']] = metricas
+            metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
+            metricas_cache[('HIJO', metricas['codigo'])] = metricas
         
-        # 2. Calcular métricas para padres (suma de hijos)
+        # 2. Calcular métricas para padres (cálculo directo)
         for feature_padre in features_padres:
-            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, rango_dias)
-            metricas_cache[metricas['codigo']] = metricas
+            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
+            metricas_cache[('PADRE', metricas['codigo'])] = metricas
         
         logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
         
@@ -687,9 +871,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_padre in features_padres:
             props  = feature_padre.get('properties', {})
             codigo = props.get('codigo', '')
-            if codigo in metricas_cache:
-                m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['rango_dias'])
+            cache_key = ('PADRE', codigo)
+            if cache_key in metricas_cache:
+                m = metricas_cache[cache_key]
+                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+                
+                # Verificación de área si está en modo debug
+                verificacion_info = None
+                if verificar_areas:
+                    verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE')
+                
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info)
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -702,9 +894,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_hijo in features_hijos:
             props  = feature_hijo.get('properties', {})
             codigo = props.get('codigo', '')
-            if codigo in metricas_cache:
-                m = metricas_cache[codigo]
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['rango_dias'])
+            cache_key = ('HIJO', codigo)
+            if cache_key in metricas_cache:
+                m = metricas_cache[cache_key]
+                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+                
+                # Verificación de área si está en modo debug
+                verificacion_info = None
+                if verificar_areas:
+                    verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO')
+                
+                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info)
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
@@ -718,155 +918,298 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     f"<script>{layer_hijo.get_name()}.bringToFront();</script>"
                 ))
 
-        # 3) Crear carpetas (padres) y subgrupos ordenados
-        # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
-        fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
+        # 3) Crear carpetas (padres) y subgrupos ordenados según color_mode
+        if color_mode == "Promotores":
+            # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
+            fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
 
-        # Definir colores por promotor en el orden de conteo
-        promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
-        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
-        palette = generate_hsv_colors(len(promotores_ordenados))
-        colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
+            # Definir colores por promotor en el orden de conteo
+            promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
+            promotores_ordenados = [int(pid) for pid in promotor_counts.index]
+            palette = generate_hsv_colors(len(promotores_ordenados))
+            colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
 
-        # Construir subgrupos SOLO para promotores
-        grupos_promotores = build_promotores_groups(
-            df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
-            legend_name_map=legend_name_map, mapa=mapa
-        )
-
-        # NO crear grupos de barrios para el control
-
-        # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
-        if HAS_TREE_CONTROL:
-            # TreeLayerControl automático detecta FeatureGroup + FeatureGroupSubGroup
-            TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
-        else:
-            # Fallback simple
-            folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
-
-        # 5) Obtener métricas de ventas y construir leyenda tabular
-        
-        # ids en el orden del control/leyenda
-        promotores_ordenados = [int(pid) for pid in promotor_counts.index]
-
-        df_metrics = obtener_metricas_pedidos_por_promotores(
-            centroope=centroope,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            ids_promotores=promotores_ordenados
-        )
-        
-        # Log métricas calculadas
-        total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
-        total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
-        logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
-                    f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
-                    f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
-
-        # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
-        metrics_map = {
-            int(r["id_vendedor"]): (
-                int(r["cant_pedidos"]), 
-                float(r.get("valor_conIVA", 0.0)),
-                int(r.get("venta_adq_recu", 0)),
-                int(r.get("venta_fieles", 0)),
-                float(r.get("pct_nrecu", 0.0)),
-                float(r.get("pct_fieles", 0.0))
+            # Construir subgrupos SOLO para promotores
+            grupos_promotores = build_promotores_groups(
+                df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
+                legend_name_map=legend_name_map, mapa=mapa
             )
-            for _, r in df_metrics.iterrows()
-        }
 
-        def fmt_cop(valor):
-            try:
-                # miles con punto y sin decimales (ej: $1.234.567)
-                return "$" + f"{valor:,.0f}".replace(",", ".")
-            except Exception:
-                return "$0"
+            # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
+            if HAS_TREE_CONTROL:
+                TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
+            else:
+                folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
 
-        # Construir lista de datos por promotor fusionando todas las fuentes
-        promotor_data = []
-        
-        for (nombre, _sg, _count_muestras, color) in grupos_promotores:
-            # recuperar el id real del promotor a partir del nombre:
-            # usamos el reverse de legend_name_map
-            pid_match = None
-            for pid_str, disp_name in legend_name_map.items():
-                if disp_name == nombre:
-                    pid_match = int(pid_str)
-                    break
-
-            # Obtener datos de muestras, pedidos y valor
-            muestras = _count_muestras
-            cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
-            if pid_match is not None and pid_match in metrics_map:
-                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
+            # 5) Obtener métricas de ventas y construir leyenda tabular
+            df_metrics = obtener_metricas_pedidos_por_promotores(
+                centroope=centroope,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                ids_promotores=promotores_ordenados
+            )
             
-            # Calcular efectividad
-            efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
-            
-            promotor_data.append({
-                'id': pid_match,
-                'nombre': nombre,
-                'color': color,
-                'muestras': muestras,
-                'pedidos': cant_ped,
-                'valor': valor_ped,
-                'efectividad': efectividad,
-                'venta_adq_recu': venta_adq_recu,
-                'venta_fieles': venta_fieles,
-                'pct_nrecu': pct_nrecu,
-                'pct_fieles': pct_fieles
-            })
-        
-        # Ordenar por pedidos descendente
-        promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
-        
-        # Construir filas HTML con el nuevo orden
-        rows_html = []
-        for data in promotor_data:
-            rows_html.append(f"""
-                <tr>
-                    <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
-                        <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
-                        <span>{data['nombre']}</span>
-                    </td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
-                    <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
-                </tr>
-            """)
+            # Log métricas calculadas
+            total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
+            total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
+            logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
+                        f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
+                        f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
 
-        legend_html = f"""
-        <div style="
-            position: fixed; bottom: 20px; left: 20px; z-index: 1000;
-            background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
-          <details open>
-            <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
-            <div style="margin-top:8px;">
-              <table style="border-collapse:collapse; width:100%; font-size:12px;">
-                <thead>
-                  <tr>
-                    <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
-                    <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {''.join(rows_html)}
-                </tbody>
-              </table>
+            # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
+            metrics_map = {
+                int(r["id_vendedor"]): (
+                    int(r["cant_pedidos"]), 
+                    float(r.get("valor_conIVA", 0.0)),
+                    int(r.get("venta_adq_recu", 0)),
+                    int(r.get("venta_fieles", 0)),
+                    float(r.get("pct_nrecu", 0.0)),
+                    float(r.get("pct_fieles", 0.0))
+                )
+                for _, r in df_metrics.iterrows()
+            }
+
+            def fmt_cop(valor):
+                try:
+                    return "$" + f"{valor:,.0f}".replace(",", ".")
+                except Exception:
+                    return "$0"
+
+            # Construir lista de datos por promotor fusionando todas las fuentes
+            promotor_data = []
+            
+            for (nombre, _sg, _count_muestras, color) in grupos_promotores:
+                pid_match = None
+                for pid_str, disp_name in legend_name_map.items():
+                    if disp_name == nombre:
+                        pid_match = int(pid_str)
+                        break
+
+                muestras = _count_muestras
+                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
+                if pid_match is not None and pid_match in metrics_map:
+                    cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
+                
+                efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
+                
+                promotor_data.append({
+                    'id': pid_match,
+                    'nombre': nombre,
+                    'color': color,
+                    'muestras': muestras,
+                    'pedidos': cant_ped,
+                    'valor': valor_ped,
+                    'efectividad': efectividad,
+                    'venta_adq_recu': venta_adq_recu,
+                    'venta_fieles': venta_fieles,
+                    'pct_nrecu': pct_nrecu,
+                    'pct_fieles': pct_fieles
+                })
+            
+            # Ordenar por pedidos descendente
+            promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
+            
+            # Construir filas HTML con el nuevo orden
+            rows_html = []
+            for data in promotor_data:
+                rows_html.append(f"""
+                    <tr>
+                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
+                            <span>{data['nombre']}</span>
+                        </td>
+                        <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
+                    </tr>
+                """)
+
+            legend_html = f"""
+            <div id="legend-promotores" style="
+                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
+                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+              <details open>
+                <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
+                <div style="margin-top:8px;">
+                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {''.join(rows_html)}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
-          </details>
-        </div>
-        """
+            """
+            
+        elif color_mode == "Temporalidad (mes)":
+            # Carpeta TEMPORALIDAD (ON por defecto)
+            fg_mes = FeatureGroup(name="TEMPORALIDAD", show=True).add_to(mapa)
+            
+            # Añadir columnas de mes y año
+            df_filtrado["mes"] = df_filtrado["fecha_evento"].dt.month
+            df_filtrado["anyo"] = df_filtrado["fecha_evento"].dt.year
+            df_filtrado["mes_label"] = df_filtrado["fecha_evento"].dt.strftime("%b").str.title()
+            
+            # Obtener meses presentes ordenados cronológicamente
+            meses_presentes = df_filtrado.groupby(['anyo', 'mes', 'mes_label']).size().reset_index()
+            meses_presentes = meses_presentes.sort_values(['anyo', 'mes'])
+            
+            # Crear subgrupos por mes
+            for _, row in meses_presentes.iterrows():
+                mes = row['mes']
+                anyo = row['anyo']
+                mes_label = row['mes_label']
+                
+                # Color del mes
+                color_mes = PALETA_MESES[mes]
+                
+                # Crear subgrupo
+                sg_mes = FeatureGroupSubGroup(fg_mes, name=f"{mes_label} {anyo}", show=True)
+                sg_mes.add_to(mapa)
+                
+                # Filtrar datos del mes
+                datos_mes = df_filtrado[(df_filtrado['mes'] == mes) & (df_filtrado['anyo'] == anyo)]
+                
+                # Pintar puntos del mes
+                for _, punto in datos_mes.iterrows():
+                    try:
+                        lat = punto.get('coordenada_latitud', punto.get('latitud'))
+                        lon = punto.get('coordenada_longitud', punto.get('longitud'))
+                        
+                        if pd.notna(lat) and pd.notna(lon):
+                            popup_content = f"""
+                            <div style="font-family: Arial, sans-serif; font-size: 12px;">
+                                <b>Muestra #{punto.get('id', 'N/A')}</b><br>
+                                Fecha: {punto.get('fecha_evento', 'N/A')}<br>
+                                Barrio: {punto.get('barrio', 'N/A')}<br>
+                                Promotor: {punto.get('id_autor', 'N/A')}
+                            </div>
+                            """
+                            
+                            folium.CircleMarker(
+                                location=[float(lat), float(lon)],
+                                radius=4,
+                                popup=folium.Popup(popup_content, max_width=300),
+                                color="white",
+                                weight=1,
+                                fillColor=color_mes,
+                                fillOpacity=0.8
+                            ).add_to(sg_mes)
+                    except Exception:
+                        continue
+            
+            # --- CONTROL DE CAPAS (ÁRBOL) - TEMPORALIDAD, COMUNAS, CUADRANTES ---
+            if HAS_TREE_CONTROL:
+                TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
+            else:
+                folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
+            
+            # Construir leyenda mensual
+            def fmt_cop(valor):
+                try:
+                    return "$" + f"{valor:,.0f}".replace(",", ".")
+                except Exception:
+                    return "$0"
+            
+            rows_html = []
+            for _, row in meses_presentes.iterrows():
+                mes = row['mes']
+                anyo = row['anyo']
+                mes_label = row['mes_label']
+                color_mes = PALETA_MESES[mes]
+                
+                # Calcular métricas del mes
+                muestras_mes = len(df_filtrado[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)])
+                ids_mes = df_filtrado.loc[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo), "id_autor"].dropna().unique().tolist()
+                
+                # Fechas del mes para la consulta
+                from datetime import datetime
+                primer_dia_mes = f"{anyo}-{mes:02d}-01"
+                if mes == 12:
+                    ultimo_dia_mes = f"{anyo}-12-31"
+                else:
+                    next_month = datetime(anyo, mes + 1, 1)
+                    ultimo_dia_mes = f"{anyo}-{mes:02d}-{(next_month - pd.Timedelta(days=1)).day}"
+                
+                # Obtener métricas de pedidos
+                try:
+                    df_metrics_mes = obtener_metricas_pedidos_por_promotores(
+                        centroope=centroope,
+                        fecha_inicio=primer_dia_mes,
+                        fecha_fin=ultimo_dia_mes,
+                        ids_promotores=ids_mes
+                    )
+                    
+                    cant_ped_mes = df_metrics_mes['cant_pedidos'].sum() if not df_metrics_mes.empty else 0
+                    valor_mes = df_metrics_mes['valor_conIVA'].sum() if not df_metrics_mes.empty else 0.0
+                    adq_recu_mes = df_metrics_mes['venta_adq_recu'].sum() if not df_metrics_mes.empty else 0
+                    
+                    pct_nrecu = (100 * adq_recu_mes / cant_ped_mes) if cant_ped_mes > 0 else 0.0
+                    pct_fieles = 100 - pct_nrecu
+                    efectividad = (100 * cant_ped_mes / muestras_mes) if muestras_mes > 0 else 0.0
+                    
+                except Exception:
+                    cant_ped_mes = valor_mes = adq_recu_mes = pct_nrecu = pct_fieles = efectividad = 0
+                
+                rows_html.append(f"""
+                    <tr>
+                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
+                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};"></span>
+                            <span>{mes_label} {anyo}</span>
+                        </td>
+                        <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{efectividad:.1f}%</td>
+                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(valor_mes)}</td>
+                    </tr>
+                """)
+            
+            legend_html = f"""
+            <div id="legend-promotores" style="
+                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
+                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+              <details open>
+                <summary style="cursor:pointer;font-weight:600;color:#111;">Indicadores por mes (mismo rango)</summary>
+                <div style="margin-top:8px;">
+                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {''.join(rows_html)}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+            """
+        
         mapa.get_root().html.add_child(folium.Element(legend_html))
 
 
@@ -883,3 +1226,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
         return None, 0
+    finally:
+        # Restaurar DEBUG_AREAS al valor original
+        if verificar_areas:
+            DEBUG_AREAS = DEBUG_AREAS_ORIGINAL

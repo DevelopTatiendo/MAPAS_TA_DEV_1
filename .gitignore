@@ -40,7 +40,10 @@ logs/
 
 # Variables de entorno (mantén un ejemplo)
 .env
-.env.*
+**/.env
+**/.env.local
+**/.env.cache
+
 !.env.example
 
 # =========================
