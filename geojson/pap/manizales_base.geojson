@@ -1,30 +1,8 @@
 {
   "type": "FeatureCollection",
-  "properties": {
-    "type": "full_dataset_export",
-    "city": "MANIZALES",
-    "total_features": 30,
-    "registry_features": 30,
-    "export_timestamp": "2025-10-08T20:15:43.337Z",
-    "editor_version": "3.1",
-    "export_source": "ProjectRegistry + Visual Layers"
-  },
   "features": [
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_01",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -147,23 +125,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_02",
+        "nivel": "PADRE",
+        "codigo": "MZ_001",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FECB52",
+        "fillColor": "#FF97FF",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -658,23 +638,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_002",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FECB52",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_03",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "RUTA",
-        "fillColor": "#2E91E5",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1157,23 +1139,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_04",
+        "nivel": "PADRE",
+        "codigo": "MZ_003",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#F46036",
+        "fillColor": "#2E91E5",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1308,23 +1292,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_004",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "RUTA",
+        "fillColor": "#F46036",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_05",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#1CA71C",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1567,23 +1553,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_005",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#1CA71C",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_06",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "RUTA",
-        "fillColor": "#BC5090",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1826,23 +1814,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_07",
+        "nivel": "PADRE",
+        "codigo": "MZ_006",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#FFA600",
+        "fillColor": "#BC5090",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2085,23 +2075,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_08",
+        "nivel": "PADRE",
+        "codigo": "MZ_007",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#00F7F7",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2356,23 +2348,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_008",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "RUTA",
+        "fillColor": "#00F7F7",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_09",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#FF009D",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2807,23 +2801,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_10",
+        "nivel": "PADRE",
+        "codigo": "MZ_009",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA600",
+        "fillColor": "#FF009D",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -3098,23 +3094,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_11",
+        "nivel": "PADRE",
+        "codigo": "MZ_010",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#00F7F7",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -3505,23 +3503,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_12",
+        "nivel": "PADRE",
+        "codigo": "MZ_011",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF009D",
+        "fillColor": "#00F7F7",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -3824,23 +3824,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_13",
+        "nivel": "PADRE",
+        "codigo": "MZ_012",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#9A9A00",
+        "fillColor": "#FF009D",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -4031,23 +4033,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_14",
+        "nivel": "PADRE",
+        "codigo": "MZ_013",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#8E44AD",
+        "fillColor": "#9A9A00",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -4186,23 +4190,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_014",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#8E44AD",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_15",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "RUTA",
-        "fillColor": "#E74C3C",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -4433,23 +4439,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_16",
+        "nivel": "PADRE",
+        "codigo": "MZ_015",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#3498DB",
+        "fillColor": "#E74C3C",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -4692,23 +4700,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_17",
+        "nivel": "PADRE",
+        "codigo": "MZ_016",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#F39C12",
+        "fillColor": "#3498DB",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -5351,23 +5361,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_18",
+        "nivel": "PADRE",
+        "codigo": "MZ_017",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#2E91E5",
+        "fillColor": "#F39C12",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -5994,23 +6006,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_19",
+        "nivel": "PADRE",
+        "codigo": "MZ_018",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#E67E22",
+        "fillColor": "#2E91E5",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -6297,23 +6311,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_20",
+        "nivel": "PADRE",
+        "codigo": "MZ_019",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#F39C12",
+        "fillColor": "#E67E22",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -6652,23 +6668,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_21",
+        "nivel": "PADRE",
+        "codigo": "MZ_020",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#27AE60",
+        "fillColor": "#F39C12",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -6975,23 +6993,25 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_021",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "RUTA",
+        "fillColor": "#27AE60",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_22",
-        "ciudad": "MANIZALES",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#E67E22",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -7178,23 +7198,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_23",
+        "nivel": "PADRE",
+        "codigo": "MZ_022",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#636EFA",
+        "fillColor": "#E67E22",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -7533,23 +7555,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_24",
+        "nivel": "PADRE",
+        "codigo": "MZ_023",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#EF553B",
+        "fillColor": "#636EFA",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -7736,23 +7760,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_25",
+        "nivel": "PADRE",
+        "codigo": "MZ_024",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#00CC96",
+        "fillColor": "#EF553B",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -7999,23 +8025,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_26",
+        "nivel": "PADRE",
+        "codigo": "MZ_025",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#AB63FA",
+        "fillColor": "#00CC96",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -8278,23 +8306,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_27",
+        "nivel": "PADRE",
+        "codigo": "MZ_026",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA15A",
+        "fillColor": "#AB63FA",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -8565,23 +8595,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_28",
+        "nivel": "PADRE",
+        "codigo": "MZ_027",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#19D3F3",
+        "fillColor": "#FFA15A",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -9064,23 +9096,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_29",
+        "nivel": "PADRE",
+        "codigo": "MZ_028",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF6692",
+        "fillColor": "#19D3F3",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -9307,23 +9341,25 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_1_30",
+        "nivel": "PADRE",
+        "codigo": "MZ_029",
         "ciudad": "MANIZALES",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA15A",
+        "fillColor": "#FF6692",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -9402,6 +9438,21 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "PADRE",
+        "codigo": "MZ_030",
+        "ciudad": "MANIZALES",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FFA15A",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "es_hijo": false,
+        "codigo_padre": null
       }
     }
   ]

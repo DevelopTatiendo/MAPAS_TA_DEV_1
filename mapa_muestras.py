@@ -72,6 +72,54 @@ def fmt_densidad_es(densidad_m2: float, nd: int = 6) -> str:
     """Formateo densidad con coma decimal (ES-CO): 0.000471 -> '0,000471'"""
     return f"{densidad_m2:.{nd}f}".replace(".", ",")
 
+def _asignar_cuadrante_a_puntos(df_pts, features_cuadrantes):
+    """
+    Retorna una Serie (index=df_pts.index) con el 'codigo' del cuadrante que contiene cada punto.
+    - No usa geopandas ni reconsulta BD.
+    - Optimiza con: bounds pre-check + shapely.prep.
+    """
+    if df_pts.empty or not features_cuadrantes:
+        return pd.Series([None]*len(df_pts), index=df_pts.index, name="cod_cuadrante")
+
+    # Normalizar columnas de coordenadas
+    work = df_pts.copy()
+    work["lat"] = work.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
+    work["lon"] = work.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
+    work = work.dropna(subset=["lat", "lon"])
+
+    # Precomputar polígonos y cajas
+    polys = []
+    for f in features_cuadrantes:
+        codigo = f.get("properties", {}).get("codigo", "")
+        if not codigo:
+            continue
+        try:
+            geom = shape(f.get("geometry", {}))
+            polys.append((codigo, prep(geom), geom.bounds))  # (minx, miny, maxx, maxy)
+        except Exception as e:
+            logging.warning(f"Error procesando geometría del cuadrante {codigo}: {e}")
+            continue
+
+    result = pd.Series([None]*len(work), index=work.index, name="cod_cuadrante")
+    
+    # Chequeo bbox → contains
+    for idx, row in work.iterrows():
+        try:
+            x, y = float(row["lon"]), float(row["lat"])
+            p = Point(x, y)
+            for codigo, pprep, (minx, miny, maxx, maxy) in polys:
+                if (minx <= x <= maxx) and (miny <= y <= maxy) and pprep.contains(p):
+                    result.at[idx] = codigo
+                    break
+        except Exception as e:
+            logging.warning(f"Error procesando punto en índice {idx}: {e}")
+            continue
+    
+    # Reinsertar a índice original
+    full = pd.Series([None]*len(df_pts), index=df_pts.index, name="cod_cuadrante")
+    full.loc[result.index] = result
+    return full
+
 def _conteo_muestras_por_poligono(df_pts, features):
     """
     Cuenta muestras por polígono usando shapely puro (sin geopandas).
@@ -510,13 +558,13 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     # Retornar mapa vacío
                     mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                    return filename, 0
+                    return filename, 0, None
             except ValueError:
                 st.error("❌ Error: Formato de fecha inválido para el modo 'Temporalidad (mes)'.")
                 # Retornar mapa vacío
                 mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                 filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                return filename, 0
+                return filename, 0, None
 
         # Ruta de coordenadas para cada ciudad
         rutas_coordenadas = {
@@ -533,7 +581,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         coordenadas_ciudades = {
             'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
             'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),
+            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),  # Usar archivo estándar
             'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
             'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
             'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
@@ -568,7 +616,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
             filepath = f"static/maps/{filename}"
             mapa.save(filepath)
-            return filename, 0
+            return filename, 0, None
    
         # Selección de base geográfica
         if override_fc is not None:
@@ -581,9 +629,25 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 with open(geojson_file_path, 'r') as file:
                     barrios_geojson = json.load(file)
                 logging.info(f"Usando GeoJSON por defecto: {geojson_file_path}")
+                
+                # Logging específico para Manizales usando archivo estándar
+                if ciudad == 'MANIZALES' and 'pap/manizales_base.geojson' in geojson_file_path:
+                    logging.info("[MANIZALES] Usando archivo estándar del standardizer (formato PADRE)")
+                    
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 logging.error(f"Error al cargar GeoJSON: {e}")
-                return None
+                # Fallback para Manizales si el archivo estándar no existe
+                if ciudad == 'MANIZALES' and 'manizales_base.geojson' in geojson_file_path:
+                    fallback_path = 'geojson/comunas_manizales.geojson'
+                    try:
+                        with open(fallback_path, 'r') as file:
+                            barrios_geojson = json.load(file)
+                        logging.warning(f"[MANIZALES] Fallback a archivo legacy: {fallback_path}")
+                    except:
+                        logging.error(f"[MANIZALES] Error también en fallback: {fallback_path}")
+                        return None
+                else:
+                    return None
 
         # Filtrar por fechas
         df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
@@ -598,7 +662,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
             filepath = f"static/maps/{filename}"
             mapa.save(filepath)
-            return filename, 0
+            return filename, 0, None
 
         # Si se selecciona una ruta, filtrar también por ruta
         if barrios:
@@ -607,6 +671,25 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
           # Crear mapa
         mapa = folium.Map(location=location, zoom_start=12)
+
+        # === Z-INDEX CSS PARA ORDENAR CUADRANTES ===
+        # Aplicar CSS para controlar la superposición: hijos encima de padres
+        zindex_css = '''
+        <style>
+        /* Asegurar que los cuadrantes hijos aparezcan encima de los padres */
+        .leaflet-interactive[style*="stroke-width: 3"] {
+            z-index: 630 !important; /* Hijos con borde más grueso */
+        }
+        .leaflet-interactive[style*="stroke-width: 2"] {
+            z-index: 620 !important; /* Padres con borde normal */
+        }
+        /* Fallback: todos los elementos interactivos con z-index apropiado */
+        .leaflet-overlay-pane .leaflet-interactive {
+            position: relative;
+        }
+        </style>
+        '''
+        mapa.get_root().html.add_child(folium.Element(zindex_css))
 
         # === GRUPOS SEPARADOS PARA STACKING CORRECTO ===
         # Grupos separados para togglear si se desea
@@ -863,6 +946,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
             metricas_cache[('PADRE', metricas['codigo'])] = metricas
         
+        # Logging informativo para el caso PADRE-only (estándar del standardizer)
+        if len(features_hijos) == 0 and len(features_padres) > 0:
+            logging.info(f"[PADRE-ONLY] Formato estándar detectado: {len(features_padres)} cuadrantes padre sin hijos")
+        
         logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
         
         # === DIBUJAR CUADRANTES CON POPUPS Y STACKING CORRECTO ===
@@ -912,11 +999,6 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     tooltip=folium.Tooltip(f"<b>{codigo}</b>"),
                 )
                 layer_hijo.add_to(cuadrantes_hijos_group)
-
-                # Forzar que el HIJO quede al frente (bringToFront) sin panes
-                mapa.get_root().html.add_child(folium.Element(
-                    f"<script>{layer_hijo.get_name()}.bringToFront();</script>"
-                ))
 
         # 3) Crear carpetas (padres) y subgrupos ordenados según color_mode
         if color_mode == "Promotores":
@@ -1219,13 +1301,85 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         filepath = f"static/maps/{filename}"
         mapa.save(filepath)
         
-        # Retornar filename y número de puntos para el warning
+        # === CONSTRUCCIÓN DEL DF EXPORTABLE (CSV) ===
+        df_csv = None
+        try:
+            if not df_filtrado.empty:
+                df_csv = df_filtrado.copy()
+                
+                # lat / lot normalizados
+                df_csv["lat"] = df_csv.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
+                df_csv["lot"] = df_csv.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
+                
+                # --- construir columna 'id' robusta ---
+                import hashlib
+                import numpy as np
+                
+                # 1) Partimos de un candidato: si existe 'id_evento' lo usamos, si no, 'id' si ya viniera de BD
+                cand = None
+                if "id_evento" in df_csv.columns:
+                    cand = df_csv["id_evento"].astype(str).str.strip()
+                elif "id" in df_csv.columns:
+                    cand = df_csv["id"].astype(str).str.strip()
+                
+                # 2) Generar un ID determinístico para vacíos/duplicados
+                #    (hash corto de: fecha_evento | id_autor | lat | lot), estable y barato
+                def _mk_hash(row):
+                    fe = str(row.get("fecha_evento", ""))
+                    au = str(row.get("id_autor", ""))
+                    la = "" if pd.isna(row.get("lat")) else f"{float(row.get('lat')):.6f}"
+                    lo = "" if pd.isna(row.get("lot")) else f"{float(row.get('lot')):.6f}"
+                    seed = f"{fe}|{au}|{la}|{lo}"
+                    return hashlib.blake2b(seed.encode("utf-8"), digest_size=6).hexdigest()  # 12 hex
+                
+                # Crear serie base
+                if cand is None:
+                    base = pd.Series([""] * len(df_csv), index=df_csv.index, dtype=str)
+                else:
+                    base = cand.fillna("").astype(str)
+                
+                # Rellenar vacíos con hash (incluyendo None y "None")
+                needs_hash = (base == "") | base.isna() | (base == "None") | (base == "nan")
+                hash_ids = df_csv.loc[needs_hash].apply(_mk_hash, axis=1)
+                base.loc[needs_hash] = hash_ids
+                
+                # Proteger contra duplicados (poco probable pero posible):
+                # si hay duplicados en 'base', desambiguamos con un sufijo incremental
+                dup_mask = base.duplicated(keep=False)
+                if dup_mask.any():
+                    # agrupar duplicados y enumerar
+                    for val, idxs in base[dup_mask].groupby(base[dup_mask]).groups.items():
+                        for k, idx in enumerate(idxs):
+                            if k == 0:
+                                continue
+                            base.at[idx] = f"{val}_{k}"
+                
+                df_csv["id"] = base.astype(str)
+                
+                # cod_cuadrante sin reconsultas
+                cod_series = _asignar_cuadrante_a_puntos(df_csv, features_cuadrantes)
+                df_csv["cod_cuadrante"] = cod_series
+                
+                # Verificar que fecha_evento existe
+                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
+                    df_csv["fecha_evento"] = df_csv["fecha"]
+                
+                # columnas finales y limpieza
+                cols = ["id", "fecha_evento", "id_autor", "lat", "lot", "cod_cuadrante"]
+                df_csv = df_csv[cols].dropna(subset=["lat", "lot"])
+                
+                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas")
+        except Exception as e:
+            logging.error(f"Error construyendo DF CSV: {e}")
+            df_csv = None
+        
+        # Retornar filename, número de puntos y DF para CSV
         n_puntos = len(df_filtrado) if not df_filtrado.empty else 0
-        return filename, n_puntos
+        return filename, n_puntos, df_csv
 
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
-        return None, 0
+        return None, 0, None
     finally:
         # Restaurar DEBUG_AREAS al valor original
         if verificar_areas:

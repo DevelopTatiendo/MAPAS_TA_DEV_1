@@ -451,6 +451,87 @@ if tipo_mapa == "Muestras":
                 help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
             )
 
+    # Botón de descarga CSV para Muestras (debajo del HTML)
+    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
+    
+    # Verificar si hay datos CSV disponibles
+    df_csv = st.session_state.get("muestras_export_df")
+    meta_csv = st.session_state.get("muestras_export_meta", {})
+    
+    if df_csv is not None and not df_csv.empty:
+        # Generar nombre del archivo CSV
+        from datetime import datetime, date
+        import pandas as pd
+        import re
+        
+        def _fmt_yyyymmdd(x):
+            try:
+                if isinstance(x, (pd.Timestamp, datetime)):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, date):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, str) and x:
+                    # x esperado 'YYYY-MM-DD'
+                    cleaned = x.replace("-", "")
+                    if len(cleaned) >= 8 and cleaned[:8].isdigit():
+                        return cleaned[:8]
+            except Exception:
+                pass
+            return datetime.now().strftime("%Y%m%d")
+        
+        # Normalizar ciudad
+        ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', meta_csv.get("ciudad", ciudad).upper())
+        ciudad_csv = ciudad_csv.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        
+        # Formatear fechas para el nombre
+        fecha_inicio_str = _fmt_yyyymmdd(meta_csv.get("fecha_inicio"))
+        fecha_fin_str    = _fmt_yyyymmdd(meta_csv.get("fecha_fin"))
+        timestamp = datetime.now().strftime("%H%M%S")
+        
+        filename_csv = f"muestras_{ciudad_csv}_{fecha_inicio_str}-{fecha_fin_str}_{timestamp}.csv"
+        
+        # Forzar fecha_evento con hora y exportar como bytes
+        df_out = df_csv.copy()
+        if 'fecha_evento' in df_out.columns:
+            # Formateo más robusto de fecha_evento
+            def format_fecha_evento(x):
+                try:
+                    if pd.isna(x):
+                        return None
+                    dt = pd.to_datetime(x, errors='coerce')
+                    if pd.isna(dt):
+                        return str(x)  # Preservar valor original si no se puede parsear
+                    return dt.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    return str(x) if x is not None else None
+            
+            df_out['fecha_evento'] = df_out['fecha_evento'].apply(format_fecha_evento)
+        
+        # Generar los bytes (igual que Consultores)
+        csv_data = df_out.to_csv(index=False, sep=';').encode('utf-8-sig')
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.download_button(
+                label="📥 Descargar CSV (resumen de operación)",
+                data=csv_data,
+                file_name=filename_csv,
+                mime="text/csv",
+                type="secondary",
+                use_container_width=True,
+                help="Descarga el resumen CSV con datos de eventos y cuadrantes asignados"
+            )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Descargar CSV (resumen de operación)",
+                disabled=True,
+                type="secondary",
+                use_container_width=True,
+                help="Genere primero un mapa exitoso"
+            )
+
 # Separador sutil entre secciones
 st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
 
@@ -567,12 +648,26 @@ if submit_button:
                 generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas
             )
             if resultado:
-                filename, n_puntos = resultado
+                # Manejar tanto el formato anterior (filename, n_puntos) como el nuevo (filename, n_puntos, df_csv)
+                if isinstance(resultado, tuple) and len(resultado) == 3:
+                    filename, n_puntos, df_csv = resultado
+                    st.session_state["muestras_export_df"] = df_csv
+                    st.session_state["muestras_export_meta"] = {
+                        "ciudad": ciudad, 
+                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
+                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
+                    }
+                else:
+                    filename, n_puntos = resultado
+                    st.session_state["muestras_export_df"] = None
+                    st.session_state["muestras_export_meta"] = None
                 # Guardar filename para el botón de descarga HTML
                 st.session_state["muestras_last_filename"] = filename
             else:
                 filename, n_puntos = None, 0
                 st.session_state["muestras_last_filename"] = None
+                st.session_state["muestras_export_df"] = None
+                st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
             if not id_ruta:
@@ -633,34 +728,7 @@ if submit_button:
                 unsafe_allow_html=True
             )
             
-            # Botón de descarga HTML para mapas de Muestras
-            if tipo_mapa == "Muestras":
-                html_path = os.path.join("static", "maps", filename)
-                if os.path.exists(html_path):
-                    with open(html_path, "rb") as f:
-                        html_bytes = f.read()
 
-                    col1, col2, col3 = st.columns([1, 1, 1])
-                    with col2:
-                        st.download_button(
-                            label="📥 Descargar HTML del mapa",
-                            data=html_bytes,
-                            file_name=filename,       # usar el mismo nombre que guardamos
-                            mime="text/html",
-                            type="secondary",
-                            use_container_width=True,
-                            help="Descarga el archivo HTML del mapa generado"
-                        )
-                else:
-                    col1, col2, col3 = st.columns([1, 1, 1])
-                    with col2:
-                        st.button(
-                            "📥 Descargar HTML del mapa",
-                            disabled=True,
-                            type="secondary",
-                            use_container_width=True,
-                            help="No hay archivo HTML disponible."
-                        )
             
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
