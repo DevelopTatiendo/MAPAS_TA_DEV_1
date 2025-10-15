@@ -579,7 +579,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
         # Coordenadas para el centro del mapa y archivo GeoJSON
         coordenadas_ciudades = {
-            'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
+            'CALI': ([3.4516, -76.5320], 'geojson/pap/cali_base.geojson'),
             'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
             'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),  # Usar archivo estándar
             'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
@@ -630,13 +630,15 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     barrios_geojson = json.load(file)
                 logging.info(f"Usando GeoJSON por defecto: {geojson_file_path}")
                 
-                # Logging específico para Manizales usando archivo estándar
+                # Logging específico para ciudades usando archivo estándar
                 if ciudad == 'MANIZALES' and 'pap/manizales_base.geojson' in geojson_file_path:
                     logging.info("[MANIZALES] Usando archivo estándar del standardizer (formato PADRE)")
+                elif ciudad == 'CALI' and 'pap/cali_base.geojson' in geojson_file_path:
+                    logging.info("[CALI] Usando archivo estándar del standardizer (formato PADRE)")
                     
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 logging.error(f"Error al cargar GeoJSON: {e}")
-                # Fallback para Manizales si el archivo estándar no existe
+                # Fallback para ciudades si el archivo estándar no existe
                 if ciudad == 'MANIZALES' and 'manizales_base.geojson' in geojson_file_path:
                     fallback_path = 'geojson/comunas_manizales.geojson'
                     try:
@@ -645,6 +647,15 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                         logging.warning(f"[MANIZALES] Fallback a archivo legacy: {fallback_path}")
                     except:
                         logging.error(f"[MANIZALES] Error también en fallback: {fallback_path}")
+                        return None
+                elif ciudad == 'CALI' and 'cali_base.geojson' in geojson_file_path:
+                    fallback_path = 'geojson/comunas_cali.geojson'
+                    try:
+                        with open(fallback_path, 'r') as file:
+                            barrios_geojson = json.load(file)
+                        logging.warning(f"[CALI] Fallback a archivo legacy: {fallback_path}")
+                    except:
+                        logging.error(f"[CALI] Error también en fallback: {fallback_path}")
                         return None
                 else:
                     return None
