@@ -1,3 +1,11 @@
+from config.secrets_manager import load_env_secure
+load_env_secure(
+    prefer_plain=True,
+    enc_path="config/.env.enc",
+    pass_env_var="MAPAS_SECRET_PASSPHRASE",
+    cache=False
+)
+
 import os
 import time
 import logging
@@ -5,10 +13,10 @@ import json
 import streamlit as st
 from streamlit_folium import st_folium
 import pandas as pd
-from mapa_pruebas import generar_mapa_pruebas
-from mapa_pedidos import generar_mapa_pedidos
-from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
-from mapa_visitas import generar_mapa_visitas_individuales
+# from mapa_pruebas import generar_mapa_pruebas
+# from mapa_pedidos import generar_mapa_pedidos
+# from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
+# from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
@@ -17,7 +25,8 @@ import validators
 # Configuración de entorno
 # FAVOR NO BORRAR ESTOS COMANDOS :
 # Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-# .venv\Scripts\activate  python flask_server.py
+# .venv\Scripts\activate  python flask_server.py 
+# $env:MAPAS_SECRET_PASSPHRASE=
 
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")  # Por defecto, "development"
@@ -72,7 +81,8 @@ st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
-tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
+tipos_mapa = ["Muestras", "Consultores"]  # Solo módulos activos
+# tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
@@ -82,6 +92,7 @@ if "last_selection" not in st.session_state:
     st.session_state["last_selection"] = current_selection
 elif st.session_state["last_selection"] != current_selection:
     st.session_state["map_url"] = None
+    st.session_state["muestras_last_filename"] = None
     st.session_state["last_selection"] = current_selection
 
 # Cargar datos según la ciudad seleccionada
@@ -140,21 +151,26 @@ with promotor_container:
             st.session_state["promotores_sel"] = None
 
 with st.form(key="filtros_form"):
-    if tipo_mapa == "Pedidos":
-        rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
-        ruta = st.selectbox("Seleccione una ruta logística (opcional):", options=[""] + list(rutas_disponibles))
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
-    elif tipo_mapa == "Facturas Vencidas":
-        edad_min = st.number_input("Edad mínima (días):", min_value=0, value=91)
-        edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
-        rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
-        ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-    elif tipo_mapa == "Muestras":
+    # if tipo_mapa == "Pedidos":
+    #     rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
+    #     ruta = st.selectbox("Seleccione una ruta logística (opcional):", options=[""] + list(rutas_disponibles))
+    #     fecha_inicio = st.date_input("Fecha de Inicio")
+    #     fecha_fin = st.date_input("Fecha de Fin")
+    # if tipo_mapa == "Facturas Vencidas":
+    #     edad_min = st.number_input("Edad mínima (días):", min_value=0, value=91)
+    #     edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
+    #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
+    #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
+    if tipo_mapa == "Muestras":
         barrios_disponibles = datos_ciudad["barrios"]["barrio"].sort_values().unique()
         barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
         fecha_inicio = st.date_input("Fecha de Inicio")
         fecha_fin = st.date_input("Fecha de Fin")
+        
+        color_mode = st.radio("Seleccione la funcionalidad de los colores", ["Promotores", "Temporalidad (mes)"], index=0)
+        
+        # Checkbox para verificación de áreas
+        verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
         
         # Expander para cuadrantes personalizados
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -186,39 +202,39 @@ with st.form(key="filtros_form"):
                 # Limpiar session state si no hay archivo
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
-    elif tipo_mapa == "Visitas":
-        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
-        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
-        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
-        if df_rutas is None or df_rutas.empty:
-            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-            id_ruta_visitas = None
-            nombre_ruta_ui_visitas = None
-        else:
-            import re
-            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
-            rutas_list = []
-            for _, r in df_rutas.iterrows():
-                ruta_nombre = str(r.ruta)
-                # Extraer número inicial si existe
-                match = re.match(r'^(\d+)', ruta_nombre)
-                num = int(match.group()) if match else None
-                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
-            
-            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
-            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
-            
-            # Crear diccionario para mapear texto → id_ruta
-            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
-            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
-            
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
-            id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
-        
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
+    # elif tipo_mapa == "Visitas":
+    #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+    #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+    #     df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+    #     if df_rutas is None or df_rutas.empty:
+    #         st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+    #         id_ruta_visitas = None
+    #         nombre_ruta_ui_visitas = None
+    #     else:
+    #         import re
+    #         # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+    #         rutas_list = []
+    #         for _, r in df_rutas.iterrows():
+    #             ruta_nombre = str(r.ruta)
+    #             # Extraer número inicial si existe
+    #             match = re.match(r'^(\d+)', ruta_nombre)
+    #             num = int(match.group()) if match else None
+    #             rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+    #         
+    #         # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+    #         rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+    #         
+    #         # Crear diccionario para mapear texto → id_ruta
+    #         options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+    #         options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+    #         
+    #         # Selector que muestra solo el nombre de la ruta
+    #         ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+    #         id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+    #         nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
+    #     
+    #     fecha_inicio = st.date_input("Fecha de Inicio")
+    #     fecha_fin = st.date_input("Fecha de Fin")
     elif tipo_mapa == "Consultores":
         # Lista de rutas desde BD (id_ruta, ruta)
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -258,56 +274,56 @@ with st.form(key="filtros_form"):
         
         # Checkbox para mostrar puntos fuera de cuadrantes
         mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
-    elif tipo_mapa == "Pruebas":
-        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
-        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
-        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
-        if df_rutas is None or df_rutas.empty:
-            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-            id_ruta_pruebas = None
-            nombre_ruta_ui_pruebas = None
-        else:
-            import re
-            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
-            rutas_list = []
-            for _, r in df_rutas.iterrows():
-                ruta_nombre = str(r.ruta)
-                # Extraer número inicial si existe
-                match = re.match(r'^(\d+)', ruta_nombre)
-                num = int(match.group()) if match else None
-                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
-            
-            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
-            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
-            
-            # Crear diccionario para mapear texto → id_ruta
-            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
-            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
-            
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
-            id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
-        
-        # Campo fecha objetivo con default = mañana (America/Bogota)
-        from datetime import datetime, timedelta
-        import pytz
-        
-        # Obtener fecha de mañana en zona horaria Colombia
-        try:
-            tz_colombia = pytz.timezone('America/Bogota')
-            hoy_colombia = datetime.now(tz_colombia).date()
-            manana_colombia = hoy_colombia + timedelta(days=1)
-        except:
-            # Fallback si hay problemas con timezone
-            from datetime import date
-            manana_colombia = date.today() + timedelta(days=1)
-        
-        fecha_objetivo = st.date_input(
-            "Fecha objetivo (proyección visitas):", 
-            value=manana_colombia,
-            help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
-        )
+    # elif tipo_mapa == "Pruebas":
+    #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+    #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+    #     df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+    #     if df_rutas is None or df_rutas.empty:
+    #         st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+    #         id_ruta_pruebas = None
+    #         nombre_ruta_ui_pruebas = None
+    #     else:
+    #         import re
+    #         # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+    #         rutas_list = []
+    #         for _, r in df_rutas.iterrows():
+    #             ruta_nombre = str(r.ruta)
+    #             # Extraer número inicial si existe
+    #             match = re.match(r'^(\d+)', ruta_nombre)
+    #             num = int(match.group()) if match else None
+    #             rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+    #         
+    #         # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+    #         rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+    #         
+    #         # Crear diccionario para mapear texto → id_ruta
+    #         options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+    #         options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+    #         
+    #         # Selector que muestra solo el nombre de la ruta
+    #         ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+    #         id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+    #         nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
+    #     
+    #     # Campo fecha objetivo con default = mañana (America/Bogota)
+    #     from datetime import datetime, timedelta
+    #     import pytz
+    #     
+    #     # Obtener fecha de mañana en zona horaria Colombia
+    #     try:
+    #         tz_colombia = pytz.timezone('America/Bogota')
+    #         hoy_colombia = datetime.now(tz_colombia).date()
+    #         manana_colombia = hoy_colombia + timedelta(days=1)
+    #     except:
+    #         # Fallback si hay problemas con timezone
+    #         from datetime import date
+    #         manana_colombia = date.today() + timedelta(days=1)
+    #     
+    #     fecha_objetivo = st.date_input(
+    #         "Fecha objetivo (proyección visitas):", 
+    #         value=manana_colombia,
+    #         help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
+    #     )
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -377,6 +393,143 @@ if tipo_mapa == "Consultores":
                 type="secondary",
                 use_container_width=True,
                 help="No hay datos para descargar. Genere primero un mapa exitoso."
+            )
+
+# Botón de descarga HTML para Muestras (fuera del form para mantener estado)
+if tipo_mapa == "Muestras":
+    # Verificar si hay un mapa generado y disponible
+    map_filename = st.session_state.get("muestras_last_filename")
+    
+    if map_filename:
+        html_path = os.path.join("static", "maps", map_filename)
+        if os.path.exists(html_path):
+            # Generar nombre del archivo HTML para el usuario
+            from datetime import datetime
+            import re
+            
+            # Normalizar ciudad (sin acentos/espacios)
+            ciudad_html = re.sub(r'[^A-Za-z0-9]', '', ciudad.upper())
+            ciudad_html = ciudad_html.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+            
+            # Usar fecha actual para el nombre
+            fecha_actual = datetime.now().strftime("%Y%m%d")
+            filename_html = f"Mapa_Muestras_{ciudad_html}_{fecha_actual}.html"
+            
+            # Leer archivo HTML
+            with open(html_path, "rb") as f:
+                html_bytes = f.read()
+            
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                st.download_button(
+                    label="📥 Descargar HTML del mapa",
+                    data=html_bytes,
+                    file_name=filename_html,
+                    mime="text/html",
+                    type="secondary",
+                    use_container_width=True,
+                    help="Descarga el archivo HTML del mapa de muestras generado"
+                )
+        else:
+            col1, col2, col3 = st.columns([1, 1, 1])
+            with col2:
+                st.button(
+                    "📥 Descargar HTML del mapa",
+                    disabled=True,
+                    type="secondary",
+                    use_container_width=True,
+                    help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
+                )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Descargar HTML del mapa",
+                disabled=True,
+                type="secondary",
+                use_container_width=True,
+                help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
+            )
+
+    # Botón de descarga CSV para Muestras (debajo del HTML)
+    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
+    
+    # Verificar si hay datos CSV disponibles
+    df_csv = st.session_state.get("muestras_export_df")
+    meta_csv = st.session_state.get("muestras_export_meta", {})
+    
+    if df_csv is not None and not df_csv.empty:
+        # Generar nombre del archivo CSV
+        from datetime import datetime, date
+        import pandas as pd
+        import re
+        
+        def _fmt_yyyymmdd(x):
+            try:
+                if isinstance(x, (pd.Timestamp, datetime)):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, date):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, str) and x:
+                    # x esperado 'YYYY-MM-DD'
+                    cleaned = x.replace("-", "")
+                    if len(cleaned) >= 8 and cleaned[:8].isdigit():
+                        return cleaned[:8]
+            except Exception:
+                pass
+            return datetime.now().strftime("%Y%m%d")
+        
+        # Normalizar ciudad
+        ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', meta_csv.get("ciudad", ciudad).upper())
+        ciudad_csv = ciudad_csv.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        
+        # Formatear fechas para el nombre
+        fecha_inicio_str = _fmt_yyyymmdd(meta_csv.get("fecha_inicio"))
+        fecha_fin_str    = _fmt_yyyymmdd(meta_csv.get("fecha_fin"))
+        timestamp = datetime.now().strftime("%H%M%S")
+        
+        filename_csv = f"muestras_{ciudad_csv}_{fecha_inicio_str}-{fecha_fin_str}_{timestamp}.csv"
+        
+        # Forzar fecha_evento con hora y exportar como bytes
+        df_out = df_csv.copy()
+        if 'fecha_evento' in df_out.columns:
+            # Formateo más robusto de fecha_evento
+            def format_fecha_evento(x):
+                try:
+                    if pd.isna(x):
+                        return None
+                    dt = pd.to_datetime(x, errors='coerce')
+                    if pd.isna(dt):
+                        return str(x)  # Preservar valor original si no se puede parsear
+                    return dt.strftime('%Y-%m-%d %H:%M:%S')
+                except:
+                    return str(x) if x is not None else None
+            
+            df_out['fecha_evento'] = df_out['fecha_evento'].apply(format_fecha_evento)
+        
+        # Generar los bytes (igual que Consultores)
+        csv_data = df_out.to_csv(index=False, sep=';').encode('utf-8-sig')
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.download_button(
+                label="📥 Descargar CSV (resumen de operación)",
+                data=csv_data,
+                file_name=filename_csv,
+                mime="text/csv",
+                type="secondary",
+                use_container_width=True,
+                help="Descarga el resumen CSV con datos de eventos y cuadrantes asignados"
+            )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Descargar CSV (resumen de operación)",
+                disabled=True,
+                type="secondary",
+                use_container_width=True,
+                help="Genere primero un mapa exitoso"
             )
 
 # Separador sutil entre secciones
@@ -468,36 +621,53 @@ st.markdown(
 # Procesamiento
 if submit_button:
     try:
-        if tipo_mapa == "Pedidos":
-            filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
-            map_type = "pedidos"
-        elif tipo_mapa == "Visitas":
-            if not id_ruta_visitas:
-                st.error("Seleccione una ruta válida.")
-                filename = None
-            else:
-                filename = manejar_error(
-                    generar_mapa_visitas_individuales,
-                    ciudad,
-                    id_ruta_visitas,  # Pasar ID entero directamente
-                    nombre_ruta_ui_visitas,  # Pasar nombre para mostrar en el mapa
-                    str(fecha_inicio),
-                    str(fecha_fin)
-                )
-            map_type = "visitas"
-        elif tipo_mapa == "Facturas Vencidas":
-            filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
-            map_type = "facturas"
-        elif tipo_mapa == "Muestras":
+        # if tipo_mapa == "Pedidos":
+        #     filename = manejar_error(generar_mapa_pedidos, fecha_inicio, fecha_fin, ciudad, ruta)
+        #     map_type = "pedidos"
+        # elif tipo_mapa == "Visitas":
+        #     if not id_ruta_visitas:
+        #         st.error("Seleccione una ruta válida.")
+        #         filename = None
+        #     else:
+        #         filename = manejar_error(
+        #             generar_mapa_visitas_individuales,
+        #             ciudad,
+        #             id_ruta_visitas,  # Pasar ID entero directamente
+        #             nombre_ruta_ui_visitas,  # Pasar nombre para mostrar en el mapa
+        #             str(fecha_inicio),
+        #             str(fecha_fin)
+        #         )
+        #     map_type = "visitas"
+        # elif tipo_mapa == "Facturas Vencidas":
+        #     filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
+        #     map_type = "facturas"
+        if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas
             )
             if resultado:
-                filename, n_puntos = resultado
+                # Manejar tanto el formato anterior (filename, n_puntos) como el nuevo (filename, n_puntos, df_csv)
+                if isinstance(resultado, tuple) and len(resultado) == 3:
+                    filename, n_puntos, df_csv = resultado
+                    st.session_state["muestras_export_df"] = df_csv
+                    st.session_state["muestras_export_meta"] = {
+                        "ciudad": ciudad, 
+                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
+                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
+                    }
+                else:
+                    filename, n_puntos = resultado
+                    st.session_state["muestras_export_df"] = None
+                    st.session_state["muestras_export_meta"] = None
+                # Guardar filename para el botón de descarga HTML
+                st.session_state["muestras_last_filename"] = filename
             else:
                 filename, n_puntos = None, 0
+                st.session_state["muestras_last_filename"] = None
+                st.session_state["muestras_export_df"] = None
+                st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
             if not id_ruta:
@@ -532,20 +702,20 @@ if submit_button:
                     st.session_state["consultores_export_meta"] = None
                     
                 map_type = "consultores"
-        elif tipo_mapa == "Pruebas":
-            if not id_ruta_pruebas:
-                st.error("Seleccione una ruta válida.")
-                filename = None
-            else:
-                from mapa_pruebas import generar_mapa_pruebas_proyeccion
-                filename = manejar_error(
-                    generar_mapa_pruebas_proyeccion,
-                    ciudad,
-                    id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
-                    nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
-                    str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
-                )
-            map_type = "pruebas"
+        # elif tipo_mapa == "Pruebas":
+        #     if not id_ruta_pruebas:
+        #         st.error("Seleccione una ruta válida.")
+        #         filename = None
+        #     else:
+        #         from mapa_pruebas import generar_mapa_pruebas_proyeccion
+        #         filename = manejar_error(
+        #             generar_mapa_pruebas_proyeccion,
+        #             ciudad,
+        #             id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
+        #             nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
+        #             str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
+        #         )
+        #     map_type = "pruebas"
 
         if filename:
             # Agregar cache-busting al URL del mapa
@@ -557,6 +727,8 @@ if submit_button:
                 f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
                 unsafe_allow_html=True
             )
+            
+
             
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:

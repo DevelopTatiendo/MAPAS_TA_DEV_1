@@ -441,41 +441,74 @@ def filter_features_by_route(feature_collection: dict, id_ruta_real: int, mostra
     return padres_ruta, hijos_ruta, subset_fc
 
 def _es_cuadrante_padre(feature: dict) -> bool:
-    """Detecta si una feature es un cuadrante padre."""
+    """
+    Detecta si una feature es un cuadrante padre.
+    Soporta tanto el formato estándar (nivel='PADRE') como el formato legacy (nivel='cuadrante').
+    """
     props = feature.get('properties', {})
     
-    # Método 1: Por nivel explícito
-    if props.get('nivel') == 'cuadrante':
+    # Normalizar strings para robustez
+    def safe_str(value):
+        return str(value or "").strip().lower()
+    
+    # Método 1: Por nivel explícito (estándar y legacy)
+    nivel = safe_str(props.get('nivel'))
+    if nivel in {'cuadrante', 'padre'}:
         return True
-        
-    # Método 2: Por patrón de código
-    codigo = props.get('codigo', '').upper()
-    if codigo.startswith('CL_') and '_00' in codigo:
+    
+    # Método 2: Por flag es_hijo (formato estándar)
+    es_hijo = props.get('es_hijo')
+    if es_hijo is False or (isinstance(es_hijo, str) and safe_str(es_hijo) == 'false'):
         return True
-        
+    
+    # Método 3: Por patrón de código general con prefijos de ciudad
+    codigo = str(props.get('codigo', '')).strip().upper()
+    if codigo:
+        # Patrón estándar nuevo: PREFIJO_###
+        if re.match(r'^[A-Z]{2}_[0-9]{1,3}$', codigo):
+            return True
+        # Patrón legacy: CL_X_00, CL_X_00A, etc.
+        if re.match(r'^[A-Z]{2}_[0-9]+_00[A-Z]*$', codigo):
+            return True
+    
     return False
 
 def _es_cuadrante_hijo(feature: dict) -> bool:
-    """Detecta si una feature es un subcuadrante hijo."""
+    """
+    Detecta si una feature es un subcuadrante hijo.
+    Soporta tanto el formato estándar como el formato legacy.
+    """
     props = feature.get('properties', {})
     
-    # Método 1: Por nivel explícito
-    if props.get('nivel') == 'subcuadrante':
-        return True
-        
-    # Método 2: Por patrón de código o codigo_padre
-    codigo = props.get('codigo', '').upper()
-    codigo_padre = props.get('codigo_padre', '')
+    # Normalizar strings para robustez
+    def safe_str(value):
+        return str(value or "").strip().lower()
     
-    if codigo_padre and codigo_padre.startswith('CL_'):
+    # Método 1: Por nivel explícito (estándar y legacy)
+    nivel = safe_str(props.get('nivel'))
+    if nivel in {'subcuadrante', 'hijo'}:
         return True
-        
-    # Patrón CL_X_YY donde YY != 00
-    if codigo.startswith('CL_'):
-        parts = codigo.split('_')
-        if len(parts) >= 3 and parts[2] != '00' and not parts[2].startswith('00'):
-            return True
-            
+    
+    # Método 2: Por flag es_hijo (formato estándar)
+    es_hijo = props.get('es_hijo')
+    if es_hijo is True or (isinstance(es_hijo, str) and safe_str(es_hijo) == 'true'):
+        return True
+    
+    # Método 3: Por codigo_padre existente (cualquier prefijo de ciudad)
+    codigo_padre = str(props.get('codigo_padre', '')).strip()
+    if codigo_padre and re.match(r'^[A-Z]{2}_', codigo_padre.upper()):
+        return True
+    
+    # Método 4: Por patrón de código legacy
+    codigo = str(props.get('codigo', '')).strip().upper()
+    if codigo:
+        # Patrón legacy: PREFIJO_X_YY donde YY != 00
+        match = re.match(r'^([A-Z]{2})_([0-9]+)_([0-9]{2}[A-Z]*)$', codigo)
+        if match:
+            prefijo, ruta, sufijo = match.groups()
+            if not sufijo.startswith('00'):
+                return True
+    
     return False
 
 def _cargar_geojson_ciudad_unico(ciudad: str) -> dict:
