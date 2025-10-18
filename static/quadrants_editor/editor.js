@@ -239,6 +239,14 @@ const state = {
   colorRegistry: new Map()  // key: codigo (o codigo_padre para hijos) -> {fillColor,color,fillOpacity,weight}
 };
 
+// Constantes para modos de importación
+const IMPORT_MODE = { PANORAMA: 'PANORAMA', EDIT_ALL: 'EDIT_ALL' };
+
+function getSelectedImportMode() {
+  const r = document.querySelector('input[name="vizMode"]:checked');
+  return r ? r.value : IMPORT_MODE.PANORAMA;
+}
+
 // Extensión para múltiples padres
 state.parents = state.parents || [];                 // lista de layers padre
 state.childrenByParent = state.childrenByParent || {}; // { codigoPadre: Layer[] }
@@ -257,6 +265,10 @@ let EDIT_SESSION = { layers: [] };
 
 // Backup para edición de hijos
 let _childrenBackup = null;
+
+// Variables para el picker de edición (EDIT_ARM) - click to edit
+let EDIT_ARM_ACTIVE = false;
+let EDIT_ARM_TYPE = null; // 'parent' o 'children'
 
 // Configuración de tolerancias según T7 (en metros)
 const TOLERANCIAS = {
@@ -358,8 +370,8 @@ function ensureComunaStyleProps(props) {
 function isQuadrantFeature(f) {
   const p = f?.properties || {};
   if (p.nivel === 'cuadrante' || p.nivel === 'subcuadrante') return true;
-  // Fallback para archivos antiguos
-  return typeof p.codigo === 'string' && /^CL_/i.test(p.codigo);
+  // Fallback para archivos antiguos - acepta todos los prefijos válidos
+  return typeof p.codigo === 'string' && /^(CL|MZ|BG|MD|PR|BC|BR)_/i.test(p.codigo);
 }
 
 // Convierte layer a feature preservando propiedades de estilo
@@ -521,14 +533,15 @@ function calculateCentroid(geojson) {
 // Generar próximo código de cuadrante disponible
 function generateNextCuadranteCode(ciudad, ruta) {
   const existingCodes = getAllExistingCodes();
-  const prefix = `CL_${ruta}_`;
+  const cityPrefixCode = getCityPrefix(ciudad);
+  const prefix = `${cityPrefixCode}_`;
   
   let nextNum = 1;
-  while (existingCodes.includes(`${prefix}${String(nextNum).padStart(2, '0')}`)) {
+  while (existingCodes.includes(`${prefix}${String(nextNum).padStart(3, '0')}`)) {
     nextNum++;
   }
   
-  return `${prefix}${String(nextNum).padStart(2, '0')}`;
+  return `${prefix}${String(nextNum).padStart(3, '0')}`;
 }
 
 // Generar próximo código de subcuadrante
@@ -882,6 +895,18 @@ console.debug("[EDITOR] init city:", CITY, "center:", cfg.center, "zoom:", cfg.z
 // Actualizar título del documento
 document.title = `Editor de cuadrantes – ${CITY}`;
 
+// Actualizar texto de ayuda dinámicamente
+function updateHelpText() {
+  const helpElement = document.getElementById('formato-help');
+  if (helpElement) {
+    const currentPrefix = cityPrefix();
+    helpElement.textContent = `Formato: ${currentPrefix}_<consecutivo>`;
+  }
+}
+
+// Actualizar help text cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', updateHelpText);
+
 // Inicializar mapa Leaflet con configuración de ciudad
 const map = L.map('map', {
     center: cfg.center,
@@ -901,7 +926,16 @@ const DRAWN_LOCKED   = new L.FeatureGroup(); // Importados => bloqueados
 map.addLayer(DRAWN_LOCKED);
 map.addLayer(DRAWN_EDITABLE);
 
-
+// Manejar click en el mapa para cancelar picker
+map.on('click', (e) => {
+    if (EDIT_ARM_ACTIVE) {
+        // Solo cancelar si el click no es sobre un feature registrado
+        if (!e.layer) {
+            deactivateEditPicker();
+            showToast('Selección cancelada', 'warning');
+        }
+    }
+});
 
 // Track del estado de edición de Leaflet.Draw
 let isEditingActive = false;
@@ -1103,10 +1137,14 @@ map.on(L.Draw.Event.CREATED, (e) => {
     // Crear subcuadrante hijo
     onChildCreated(e);
   } else {
-    // Comportamiento original para otros casos
+    // Comportamiento original para otros casos - siempre crear como PADRE
     layer.feature.properties.fillColor = CURRENT_FILL;
     const codigo = generateUniqueCode();
     layer.feature.properties.codigo = codigo;
+    // Siempre marcar como PADRE por defecto
+    layer.feature.properties.nivel = 'PADRE'; 
+    layer.feature.properties.es_hijo = false;
+    layer.feature.properties.codigo_padre = null;
     
     if (typeof enforceStrokePolicy === 'function') enforceStrokePolicy(layer);
     if (typeof applyStyleFromProperties === 'function') applyStyleFromProperties(layer);
@@ -1142,10 +1180,10 @@ function onChildCreated(e) {
   const parentCode = parentProps.codigo || 'PADRE';
   let idRuta = parentProps.id_ruta;
   
-  // Si no tiene id_ruta, intentar extraer del código (ej: CL_3 -> ruta 3)
+  // Si no tiene id_ruta, intentar extraer del código (ej: PR_3 -> ruta 3)
   if (!idRuta) {
-    const match = parentCode.match(/CL_(\d+)/);
-    idRuta = match ? match[1] : '1';
+    const match = parentCode.match(/^(CL|MZ|BG|MD|PR|BC|BR)_(\d+)/);
+    idRuta = match ? match[2] : '1';
   }
 
   // 4) Crear sugerencia
@@ -1265,7 +1303,44 @@ function addImportedFeatureLayer(feature, layer, forceState = null) {
 
   // Use forceState if provided, otherwise default to DRAWN_EDITABLE
   const targetLayer = forceState === 'DRAWN_LOCKED' ? DRAWN_LOCKED : DRAWN_EDITABLE;
-  targetLayer.addLayer(layer);
+
+  // Asegurar interactividad en modo panorama (clicks habilitados)
+  if (layer.options) {
+    layer.options.interactive = true;
+    layer.options.bubblingMouseEvents = true;
+  }
+
+  // Determinar nivel de la feature importada (robustecido)
+  const p = layer.feature?.properties || {};
+  const nivel = (p.nivel || '').toString().toLowerCase();
+  
+  const isParent =
+    nivel === 'cuadrante' || nivel === 'padre' ||
+    (!!p.codigo && !/_S\d+$/i.test(p.codigo));  // sin sufijo de hijo
+
+  const isChild =
+    nivel === 'subcuadrante' ||
+    /_S\d+$/i.test(p.codigo) ||
+    !!p.codigo_padre;
+
+  if (layer.options) {
+    layer.options.interactive = true;           // ⬅️ asegurar click
+    layer.options.bubblingMouseEvents = true;
+  }
+
+  // Registrar correctamente para habilitar clicks y selección
+  if (isParent) {
+    registerParent(layer);                 // ← hace bind del click y popup
+  } else if (isChild) {
+    const parentCode = p.codigo_padre || (p.codigo ? p.codigo.split('_').slice(0,3).join('_') : null);
+    registerChild(layer, parentCode);      // ← añade a grupos y click de selección
+  }
+
+  // Mantener el agregado al grupo visual
+  // (si aún no se llamó)
+  if (!DRAWN_LOCKED.hasLayer(layer) && !DRAWN_EDITABLE.hasLayer(layer)) {
+    targetLayer.addLayer(layer);
+  }
 }
 
 // === GESTIÓN DE CÓDIGOS DE CUADRANTES ===
@@ -1407,16 +1482,31 @@ function validarIntegridadSubcuadrantes(geomPadre, geomsHijos, tolM = TOLERANCIA
 
 // === FUNCIONES PARA CÓDIGOS DE SUBCUADRANTES ===
 
-// Mapeo de ciudades a prefijos
+// Mapeo de ciudades a prefijos (diccionario oficial canónico)
 const CITY_PREFIX = {
-  'CALI': 'CL', 'BOGOTA': 'BO', 'BOGOTÁ': 'BO', 'MEDELLIN': 'ME', 'MEDELLÍN': 'ME',
-  'BARRANQUILLA': 'BA', 'MANIZALES': 'MZ', 'PEREIRA': 'PE', 'BUCARAMANGA': 'BU'
+  'CALI': 'CL',
+  'MANIZALES': 'MZ', 
+  'BOGOTA': 'BG',
+  'BOGOTÁ': 'BG',
+  'MEDELLIN': 'MD',
+  'MEDELLÍN': 'MD',
+  'PEREIRA': 'PR',
+  'BUCARAMANGA': 'BC',
+  'BARRANQUILLA': 'BR'
 };
 
 // Obtener prefijo de ciudad desde URL
 function cityPrefix() {
   const p = new URLSearchParams(location.search).get('city') || '';
   return CITY_PREFIX[p.toUpperCase()] || p.slice(0, 2).toUpperCase();
+}
+
+// Obtener prefijo de ciudad basado en el parámetro de ciudad
+function getCityPrefix(ciudadSeleccionada) {
+  if (!ciudadSeleccionada) {
+    return cityPrefix(); // Fallback to URL-based detection
+  }
+  return CITY_PREFIX[ciudadSeleccionada.toUpperCase()] || ciudadSeleccionada.slice(0, 2).toUpperCase();
 }
 
 // Contador por padre para códigos únicos
@@ -1464,10 +1554,11 @@ function validateChildCode(code) {
     return { valid: false, message: 'El código no puede estar vacío' };
   }
   
-  // Formato esperado: ^[A-Z]{2}_\d+_\d{2}_S\d{2}$
-  const pattern = /^[A-Z]{2}_\d+_\d{2}_S\d{2}$/;
+  // Formato esperado: ^(CL|MZ|BG|MD|PR|BC|BR)_\d+_\d{2}_S\d{2}$
+  const pattern = /^(CL|MZ|BG|MD|PR|BC|BR)_\d+_\d{2}_S\d{2}$/;
   if (!pattern.test(code.trim())) {
-    return { valid: false, message: 'Formato inválido. Use: CL_1_01_S01' };
+    const currentPrefix = cityPrefix();
+    return { valid: false, message: `Formato inválido. Use: ${currentPrefix}_1_01_S01` };
   }
   
   return { valid: true };
@@ -1622,6 +1713,32 @@ function clearChildrenHighlight(children) {
       dashArray: null
     });
   });
+}
+
+// Activar modo picker para seleccionar elemento a editar
+function activateEditPicker(editType) {
+  EDIT_ARM_ACTIVE = true;
+  EDIT_ARM_TYPE = editType;
+  
+  // Cambiar cursor para indicar modo picker
+  map.getContainer().style.cursor = 'crosshair';
+  
+  // Mostrar mensaje al usuario
+  const message = editType === 'parent' ? 
+    'Haga click en el padre (cuadrante) que desea editar' : 
+    'Haga click en el padre para editar sus hijos (subcuadrantes)';
+    
+  showToast(message, 'info');
+  
+  console.debug(`[EDIT_ARM] Activado picker para editar: ${editType}`);
+}
+
+// Desactivar modo picker
+function deactivateEditPicker() {
+  EDIT_ARM_ACTIVE = false;
+  EDIT_ARM_TYPE = null;
+  map.getContainer().style.cursor = '';
+  console.debug('[EDIT_ARM] Picker desactivado');
 }
 
 // Iniciar edición del padre
@@ -2714,6 +2831,23 @@ function registerParent(layer) {
   // Click para activar este padre (si no estamos editando)
   layer.on('click', () => {
     if (isEditingActive) return;
+    
+    // Manejar modo picker
+    if (EDIT_ARM_ACTIVE && EDIT_ARM_TYPE) {
+      deactivateEditPicker();
+      setActiveParent(layer);
+      
+      if (EDIT_ARM_TYPE === 'parent') {
+        // Iniciar edición del padre seleccionado
+        setTimeout(() => startParentEditing(), 100);
+      } else if (EDIT_ARM_TYPE === 'children') {
+        // Iniciar edición de los hijos del padre seleccionado
+        setTimeout(() => startChildrenEditing(), 100);
+      }
+      return;
+    }
+    
+    // Comportamiento normal
     setActiveParent(layer);
   });
 }
@@ -3235,6 +3369,75 @@ function showPadreConfigDialog(callback) {
   
   // Focus en ruta
   rutaInput.focus();
+}
+
+// === NUEVAS FUNCIONES DE IMPORTACIÓN ===
+
+// Ejecutar flujo de importación basado en el modo seleccionado
+async function runImportFlow(mode) {
+  try {
+    // 1) Si ya hay archivo cargado manualmente, úsalo
+    if (state.masterFC && state.masterFC.type === 'FeatureCollection') {
+      renderFCAccordingToMode(state.masterFC, mode);
+      return;
+    }
+    
+    // 2) Si no, intenta cargar base fija por ciudad
+    const city = (getCityFromQuery() || 'bogota').toUpperCase();
+    const baseFixed = `/geojson/pap/${city.toLowerCase()}_base_fixed.geojson`;
+    const base = `/geojson/pap/${city.toLowerCase()}_base.geojson`;
+
+    let resp = await fetch(baseFixed);
+    if (!resp.ok) resp = await fetch(base);
+    if (!resp.ok) throw new Error('No se pudo cargar el GeoJSON base');
+
+    const fc = await resp.json();
+    state.masterFC = fc;
+    renderFCAccordingToMode(fc, mode);
+  } catch (err) {
+    console.error('[IMPORT FLOW] Error:', err);
+    showToast('Error importando los cuadrantes', 'error');
+  }
+}
+
+// Renderizar FeatureCollection según el modo seleccionado
+function renderFCAccordingToMode(fc, mode) {
+  console.log(`[RENDER] Modo: ${mode}, Features: ${fc.features?.length || 0}`);
+  
+  // Reset limpio
+  ProjectRegistry.clear();
+  DRAWN_LOCKED.clearLayers();
+  DRAWN_EDITABLE.clearLayers();
+
+  state.activeParent = null;
+  state.children = [];
+  state.isAislado = false;      // ⬅️ evitar bloqueo por aislamiento previo
+  applyAislamiento();
+
+  // Pintar TODO el archivo y registrar
+  L.geoJSON(fc, {
+    onEachFeature: (feat, layer) => {
+      addImportedFeatureLayer(feat, layer, 'DRAWN_LOCKED');
+    }
+  }).addTo(DRAWN_LOCKED);
+
+  fitToAllIfAny();
+  setEditorState(EditorState.IDLE);
+
+  // Modo "Edición libre": el usuario clickea un padre y luego pulsa "Editar padre"
+  if (mode === IMPORT_MODE.EDIT_ALL) {
+    showToast('Edición libre: haz click en un cuadrante y luego "Editar padre".', 'success');
+  } else {
+    showToast('Panorama cargado (solo lectura).', 'success');
+  }
+  
+  console.log(`[RENDER] Completado. Padres registrados: ${state.parents?.length || 0}`);
+}
+
+// Función para obtener ciudad desde query params o configuración
+function getCityFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('city') || 'bogota'; // default
 }
 
 // Configurar controles cuando el DOM esté listo
@@ -3849,7 +4052,13 @@ function loadFeatureCollection(featureCollection, options = {}) {
     
     // Botón editar padre
     document.getElementById('btn-editar-padre').addEventListener('click', () => {
-        startParentEditing();
+        if (state.activeParent) {
+            // Si ya hay un padre activo, editar directamente
+            startParentEditing();
+        } else {
+            // Activar picker para seleccionar padre
+            activateEditPicker('parent');
+        }
     });
     
     // Botón guardar padre
@@ -3863,7 +4072,15 @@ function loadFeatureCollection(featureCollection, options = {}) {
     });
     
     // Botón editar hijos
-    document.getElementById('btn-editar-hijo').addEventListener('click', startChildrenEditing);
+    document.getElementById('btn-editar-hijo').addEventListener('click', () => {
+        if (activeHijos && activeHijos.length > 0) {
+            // Si ya hay hijos activos, editar directamente
+            startChildrenEditing();
+        } else {
+            // Activar picker para seleccionar padre cuyos hijos se van a editar
+            activateEditPicker('children');
+        }
+    });
     
     // Botón guardar hijos
     document.getElementById('btn-guardar-hijo').addEventListener('click', saveChildrenEditing);
@@ -3929,6 +4146,41 @@ function loadFeatureCollection(featureCollection, options = {}) {
         fileInput.addEventListener('change', onImportFileChanged);
         
         console.debug('Eventos de importación configurados');
+    }
+    
+    // === NUEVOS HANDLERS DE IMPORTACIÓN ===
+    
+    // Handler para el botón del modal
+    const btnImportMode = document.getElementById('btn-import-mode');
+    if (btnImportMode) {
+        btnImportMode.addEventListener('click', () => {
+            const mode = getSelectedImportMode(); // 'PANORAMA' | 'EDIT_ALL'
+            runImportFlow(mode);
+        });
+    }
+    
+    // Handlers de la barra superior
+    const btnImportGeo = document.getElementById('btn-import-geojson');
+    const fileGeo = document.getElementById('file-geojson');
+
+    if (btnImportGeo && fileGeo) {
+        btnImportGeo.addEventListener('click', () => fileGeo.click());
+        fileGeo.addEventListener('change', () => {
+            const f = fileGeo.files && fileGeo.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const fc = JSON.parse(e.target.result);
+                    state.masterFC = fc;
+                    renderFCAccordingToMode(fc, getSelectedImportMode());
+                } catch (err) {
+                    console.error('[IMPORT] GeoJSON inválido:', err);
+                    showToast('Archivo GeoJSON inválido', 'error');
+                }
+            };
+            reader.readAsText(f);
+        });
     }
     
     // Cargar GeoJSON por defecto al inicializar
@@ -4184,78 +4436,53 @@ function showImportModeSelector(data) {
     
     modal.innerHTML = `
         <div class="cuadrante-modal-content">
-            <h3>�️ Modo de Visualización</h3>
+            <h3>🧭 Modo de Visualización</h3>
             
-            <div class="import-mode-info">
-                <div class="data-summary">
-                    <strong>Archivo detectado:</strong><br>
-                    📊 ${(data.features || [data]).length} geometrías<br>
-                    ${hasHierarchy.detected ? `👔 ${hasHierarchy.padres} padres, 👶 ${hasHierarchy.hijos} hijos` : '📐 Geometrías generales'}<br>
-                    🛤️ ${availableRoutes.length} rutas: ${availableRoutes.map(id => getRouteLabel(id)).join(', ')}
+            <div class="card">
+                <div class="radio-row">
+                    <label>
+                        <input type="radio" name="vizMode" value="PANORAMA" checked>
+                        🌍 Panorama (todos)
+                    </label>
+                    <div class="hint">Muestra todos los cuadrantes. No editable.</div>
                 </div>
-            </div>
-            
-            <div class="import-modes">
-                <label class="import-mode-radio">
-                    <input type="radio" name="import-mode" value="panorama" checked>
-                    <div class="mode-content">
-                        <h4>🌍 Panorama (todos)</h4>
-                        <p>Muestra todos los cuadrantes. Todo a DRAWN_LOCKED (no editable).</p>
-                    </div>
-                </label>
-                
-                <label class="import-mode-radio">
-                    <input type="radio" name="import-mode" value="edit-route">
-                    <div class="mode-content">
-                        <h4>✏️ Editar una ruta</h4>
-                        <p>Filtrar por ruta específica para edición. Resto queda bloqueado.</p>
-                    </div>
-                </label>
-            </div>
-            
-            ${routeSelector}
-            
-            <div class="modal-buttons">
-                <button type="button" class="btn btn-secondary" id="import-cancel">Cancelar</button>
-                <button type="button" class="btn btn-primary" id="import-confirm">Importar</button>
+
+                <div class="radio-row">
+                    <label>
+                        <input type="radio" name="vizMode" value="EDIT_ALL">
+                        ✏️ Edición libre (clic-para-editar)
+                    </label>
+                    <div class="hint">Muestra todo el archivo y permite elegir con un click qué cuadrante editar.</div>
+                </div>
+
+                <div class="actions">
+                    <button id="btn-cancel" class="btn btn-secondary">Cancelar</button>
+                    <button id="btn-import-mode" class="btn btn-primary">Importar</button>
+                </div>
             </div>
         </div>
     `;
     
     document.body.appendChild(modal);
     
-    // Show/hide route selector based on radio selection
-    const radioButtons = modal.querySelectorAll('input[name="import-mode"]');
-    const routeSelectorContainer = modal.querySelector('#route-selector-container');
-    
-    radioButtons.forEach(radio => {
-        radio.addEventListener('change', () => {
-            if (routeSelectorContainer) {
-                routeSelectorContainer.style.display = radio.value === 'edit-route' ? 'block' : 'none';
-            }
-        });
-    });
-    
-    // Confirm handler
-    document.getElementById('import-confirm').addEventListener('click', async () => {
-        const selectedMode = modal.querySelector('input[name="import-mode"]:checked').value;
+    // Confirm handler - usar nueva lógica unificada
+    document.getElementById('btn-import-mode').addEventListener('click', async () => {
+        const mode = getSelectedImportMode();
         
-        if (selectedMode === 'panorama') {
-            document.body.removeChild(modal);
-            await importPanoramaMode(data, hasHierarchy);
-        } else if (selectedMode === 'edit-route') {
-            const selectedRoute = modal.querySelector('#route-selector')?.value;
-            if (!selectedRoute) {
-                showToast('Seleccione una ruta para editar.', 'warning');
-                return;
-            }
-            document.body.removeChild(modal);
-            await importEditRouteMode(data, hasHierarchy, selectedRoute);
+        // Si el modal tiene data asociada, usarla
+        if (data) {
+            state.masterFC = data;
+            renderFCAccordingToMode(data, mode);
+        } else {
+            // Si no hay data, usar el flujo automático
+            await runImportFlow(mode);
         }
+        
+        document.body.removeChild(modal);
     });
     
     // Cancel handler
-    document.getElementById('import-cancel').addEventListener('click', () => {
+    document.getElementById('btn-cancel').addEventListener('click', () => {
         document.body.removeChild(modal);
     });
 }

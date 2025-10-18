@@ -216,8 +216,8 @@
         <!-- Esta fila sube inmediatamente debajo de la primaria -->
         <div id="toolbar-secondary" class="toolbar-secondary">
             <button id="btn-export" class="btn btn-success">⬆️ Exportar GeoJSON</button>
-            <button id="btn-import" class="btn btn-outline">⬇️ Importar GeoJSON</button>
-            <input id="file-import" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden />
+            <button id="btn-import-geojson" class="btn btn-outline">⬇️ Importar GeoJSON</button>
+            <input id="file-geojson" type="file" accept=".geojson,.json,application/geo+json,application/json" hidden />
 
             <!-- Paleta + Recolor -->
             <div id="palette" class="palette scroller">
@@ -252,7 +252,7 @@
             <div class="row">
                 <label>Código completo</label>
                 <input id="hijo-codigo" type="text">
-                <small class="form-text">Formato: CL_1_01_S01</small>
+                <small id="formato-help" class="form-text">Formato: CL_1_01_S01</small>
             </div>
             <div class="actions">
                 <button id="hijo-cancelar" class="btn-secondary">Cancelar</button>
@@ -307,8 +307,8 @@
     <link rel="stylesheet" href="/static/quadrants_editor/editor.css" />
     <script defer src="/static/quadrants_editor/editor.js"></script>
     
-    <!-- Testing frameworks -->
-    <script defer src="/static/quadrants_editor/test_project_registry.js"></script>
-    <script defer src="/static/quadrants_editor/test_editing_robustness.js"></script>
+    <!-- Testing frameworks (comentado para evitar 404s) -->
+    <!-- <script defer src="/static/quadrants_editor/test_project_registry.js"></script> -->
+    <!-- <script defer src="/static/quadrants_editor/test_editing_robustness.js"></script> -->
 </body>
 </html>
