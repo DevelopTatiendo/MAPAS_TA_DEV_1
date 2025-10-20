@@ -1,30 +1,16 @@
 {
   "type": "FeatureCollection",
   "properties": {
-    "type": "full_dataset_export",
+    "type": "visible_layers_export",
     "city": "CALI",
-    "total_features": 23,
-    "registry_features": 23,
-    "export_timestamp": "2025-10-15T19:56:44.201Z",
+    "total_features": 27,
+    "export_timestamp": "2025-10-20T14:28:56.739Z",
     "editor_version": "3.1",
-    "export_source": "ProjectRegistry + Visual Layers"
+    "export_source": "Visible Layers Only"
   },
   "features": [
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_001",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#27AE60",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -107,23 +93,24 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_001",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#27AE60",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_001"
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_002",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "RUTA",
-        "fillColor": "#E67E22",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -218,23 +205,24 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_002",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "RUTA",
+        "fillColor": "#E67E22",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_002"
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_003",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#636EFA",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -325,23 +313,308 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_003",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#636EFA",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_003"
       }
     },
     {
       "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.508446,
+              3.487436
+            ],
+            [
+              -76.509245,
+              3.486087
+            ],
+            [
+              -76.510828,
+              3.48697
+            ],
+            [
+              -76.511868,
+              3.485235
+            ],
+            [
+              -76.507786,
+              3.482799
+            ],
+            [
+              -76.506718,
+              3.483174
+            ],
+            [
+              -76.505672,
+              3.483907
+            ],
+            [
+              -76.504937,
+              3.484919
+            ],
+            [
+              -76.504648,
+              3.48583
+            ],
+            [
+              -76.506364,
+              3.48681
+            ],
+            [
+              -76.506477,
+              3.486585
+            ],
+            [
+              -76.508285,
+              3.487629
+            ],
+            [
+              -76.508446,
+              3.487436
+            ]
+          ]
+        ]
+      },
       "properties": {
         "nivel": "cuadrante",
         "codigo": "CL_004",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#EF553B",
+        "tipo_cuadrante": "RUTA",
+        "fillColor": "#FF6692",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_004"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.503317,
+              3.488416
+            ],
+            [
+              -76.498661,
+              3.48681
+            ],
+            [
+              -76.499321,
+              3.484571
+            ],
+            [
+              -76.500185,
+              3.481937
+            ],
+            [
+              -76.501901,
+              3.483083
+            ],
+            [
+              -76.504744,
+              3.47987
+            ],
+            [
+              -76.506643,
+              3.481616
+            ],
+            [
+              -76.503543,
+              3.484004
+            ],
+            [
+              -76.503328,
+              3.487955
+            ],
+            [
+              -76.503317,
+              3.488416
+            ]
+          ]
+        ]
       },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_005",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FFA15A",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_005"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.521116,
+              3.471099
+            ],
+            [
+              -76.521707,
+              3.470757
+            ],
+            [
+              -76.522356,
+              3.469761
+            ],
+            [
+              -76.522742,
+              3.468636
+            ],
+            [
+              -76.524094,
+              3.471737
+            ],
+            [
+              -76.523879,
+              3.475239
+            ],
+            [
+              -76.523053,
+              3.477584
+            ],
+            [
+              -76.522002,
+              3.480432
+            ],
+            [
+              -76.520548,
+              3.484459
+            ],
+            [
+              -76.519561,
+              3.487249
+            ],
+            [
+              -76.518901,
+              3.488967
+            ],
+            [
+              -76.517673,
+              3.488373
+            ],
+            [
+              -76.517308,
+              3.488148
+            ],
+            [
+              -76.516986,
+              3.488555
+            ],
+            [
+              -76.516986,
+              3.489198
+            ],
+            [
+              -76.517383,
+              3.489208
+            ],
+            [
+              -76.517394,
+              3.49007
+            ],
+            [
+              -76.518397,
+              3.49006
+            ],
+            [
+              -76.517458,
+              3.492758
+            ],
+            [
+              -76.512437,
+              3.491168
+            ],
+            [
+              -76.510994,
+              3.490483
+            ],
+            [
+              -76.510677,
+              3.490156
+            ],
+            [
+              -76.510597,
+              3.489567
+            ],
+            [
+              -76.51359,
+              3.484416
+            ],
+            [
+              -76.513789,
+              3.483913
+            ],
+            [
+              -76.515344,
+              3.481
+            ],
+            [
+              -76.5172,
+              3.478205
+            ],
+            [
+              -76.51903,
+              3.474864
+            ],
+            [
+              -76.521009,
+              3.47164
+            ],
+            [
+              -76.521116,
+              3.471099
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_006",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#B6E880",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_006"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -492,23 +765,120 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_005",
+        "codigo": "CL_007",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#00CC96",
+        "fillColor": "#EF553B",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_007"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.512437,
+              3.485525
+            ],
+            [
+              -76.516685,
+              3.478917
+            ],
+            [
+              -76.519196,
+              3.474484
+            ],
+            [
+              -76.520934,
+              3.471678
+            ],
+            [
+              -76.521009,
+              3.471089
+            ],
+            [
+              -76.521782,
+              3.470521
+            ],
+            [
+              -76.522865,
+              3.468261
+            ],
+            [
+              -76.521449,
+              3.462918
+            ],
+            [
+              -76.520838,
+              3.46295
+            ],
+            [
+              -76.520462,
+              3.463217
+            ],
+            [
+              -76.518949,
+              3.466559
+            ],
+            [
+              -76.518263,
+              3.468925
+            ],
+            [
+              -76.517082,
+              3.470971
+            ],
+            [
+              -76.514432,
+              3.474783
+            ],
+            [
+              -76.509846,
+              3.481193
+            ],
+            [
+              -76.507786,
+              3.48281
+            ],
+            [
+              -76.512432,
+              3.485589
+            ],
+            [
+              -76.512437,
+              3.485525
+            ]
+          ]
+        ]
       },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_008",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FF97FF",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_008"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -631,23 +1001,24 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_006",
+        "codigo": "CL_009",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#AB63FA",
+        "fillColor": "#00CC96",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_009"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -718,23 +1089,132 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_007",
+        "codigo": "CL_010",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA15A",
+        "fillColor": "#AB63FA",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_010"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.509122,
+              3.480813
+            ],
+            [
+              -76.511385,
+              3.477257
+            ],
+            [
+              -76.51352,
+              3.474419
+            ],
+            [
+              -76.517377,
+              3.468427
+            ],
+            [
+              -76.519357,
+              3.464031
+            ],
+            [
+              -76.518257,
+              3.462077
+            ],
+            [
+              -76.515189,
+              3.464272
+            ],
+            [
+              -76.514824,
+              3.464947
+            ],
+            [
+              -76.515908,
+              3.466286
+            ],
+            [
+              -76.51579,
+              3.466393
+            ],
+            [
+              -76.514642,
+              3.46642
+            ],
+            [
+              -76.514352,
+              3.466703
+            ],
+            [
+              -76.513612,
+              3.465964
+            ],
+            [
+              -76.510457,
+              3.470259
+            ],
+            [
+              -76.506397,
+              3.474184
+            ],
+            [
+              -76.505334,
+              3.475442
+            ],
+            [
+              -76.506429,
+              3.476459
+            ],
+            [
+              -76.505554,
+              3.477439
+            ],
+            [
+              -76.508955,
+              3.480813
+            ],
+            [
+              -76.509068,
+              3.480941
+            ],
+            [
+              -76.509122,
+              3.480813
+            ]
+          ]
+        ]
       },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_011",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#19D3F3",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_011"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -845,23 +1325,24 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_008",
+        "codigo": "CL_012",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#19D3F3",
+        "fillColor": "#FFA15A",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_012"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -952,151 +1433,10 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_009",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "RUTA",
-        "fillColor": "#FF6692",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
       },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.508446,
-              3.487436
-            ],
-            [
-              -76.509245,
-              3.486087
-            ],
-            [
-              -76.510828,
-              3.48697
-            ],
-            [
-              -76.511868,
-              3.485235
-            ],
-            [
-              -76.507786,
-              3.482799
-            ],
-            [
-              -76.506718,
-              3.483174
-            ],
-            [
-              -76.505672,
-              3.483907
-            ],
-            [
-              -76.504937,
-              3.484919
-            ],
-            [
-              -76.504648,
-              3.48583
-            ],
-            [
-              -76.506364,
-              3.48681
-            ],
-            [
-              -76.506477,
-              3.486585
-            ],
-            [
-              -76.508285,
-              3.487629
-            ],
-            [
-              -76.508446,
-              3.487436
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_010",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA15A",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.503317,
-              3.488416
-            ],
-            [
-              -76.498661,
-              3.48681
-            ],
-            [
-              -76.499321,
-              3.484571
-            ],
-            [
-              -76.500185,
-              3.481937
-            ],
-            [
-              -76.501901,
-              3.483083
-            ],
-            [
-              -76.504744,
-              3.47987
-            ],
-            [
-              -76.506643,
-              3.481616
-            ],
-            [
-              -76.503543,
-              3.484004
-            ],
-            [
-              -76.503328,
-              3.487955
-            ],
-            [
-              -76.503317,
-              3.488416
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_011",
+        "codigo": "CL_013",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
@@ -1105,115 +1445,12 @@
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.509122,
-              3.480813
-            ],
-            [
-              -76.511385,
-              3.477257
-            ],
-            [
-              -76.51352,
-              3.474419
-            ],
-            [
-              -76.517377,
-              3.468427
-            ],
-            [
-              -76.519357,
-              3.464031
-            ],
-            [
-              -76.518257,
-              3.462077
-            ],
-            [
-              -76.515189,
-              3.464272
-            ],
-            [
-              -76.514824,
-              3.464947
-            ],
-            [
-              -76.515908,
-              3.466286
-            ],
-            [
-              -76.51579,
-              3.466393
-            ],
-            [
-              -76.514642,
-              3.46642
-            ],
-            [
-              -76.514352,
-              3.466703
-            ],
-            [
-              -76.513612,
-              3.465964
-            ],
-            [
-              -76.510457,
-              3.470259
-            ],
-            [
-              -76.506397,
-              3.474184
-            ],
-            [
-              -76.505334,
-              3.475442
-            ],
-            [
-              -76.506429,
-              3.476459
-            ],
-            [
-              -76.505554,
-              3.477439
-            ],
-            [
-              -76.508955,
-              3.480813
-            ],
-            [
-              -76.509068,
-              3.480941
-            ],
-            [
-              -76.509122,
-              3.480813
-            ]
-          ]
-        ]
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_013"
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_012",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#FF6692",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1312,153 +1549,7 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_013",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#B6E880",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
       },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.521116,
-              3.471099
-            ],
-            [
-              -76.521707,
-              3.470757
-            ],
-            [
-              -76.522356,
-              3.469761
-            ],
-            [
-              -76.522742,
-              3.468636
-            ],
-            [
-              -76.524094,
-              3.471737
-            ],
-            [
-              -76.523879,
-              3.475239
-            ],
-            [
-              -76.523053,
-              3.477584
-            ],
-            [
-              -76.522002,
-              3.480432
-            ],
-            [
-              -76.520548,
-              3.484459
-            ],
-            [
-              -76.519561,
-              3.487249
-            ],
-            [
-              -76.518901,
-              3.488967
-            ],
-            [
-              -76.517673,
-              3.488373
-            ],
-            [
-              -76.517308,
-              3.488148
-            ],
-            [
-              -76.516986,
-              3.488555
-            ],
-            [
-              -76.516986,
-              3.489198
-            ],
-            [
-              -76.517383,
-              3.489208
-            ],
-            [
-              -76.517394,
-              3.49007
-            ],
-            [
-              -76.518397,
-              3.49006
-            ],
-            [
-              -76.517458,
-              3.492758
-            ],
-            [
-              -76.512437,
-              3.491168
-            ],
-            [
-              -76.510994,
-              3.490483
-            ],
-            [
-              -76.510677,
-              3.490156
-            ],
-            [
-              -76.510597,
-              3.489567
-            ],
-            [
-              -76.51359,
-              3.484416
-            ],
-            [
-              -76.513789,
-              3.483913
-            ],
-            [
-              -76.515344,
-              3.481
-            ],
-            [
-              -76.5172,
-              3.478205
-            ],
-            [
-              -76.51903,
-              3.474864
-            ],
-            [
-              -76.521009,
-              3.47164
-            ],
-            [
-              -76.521116,
-              3.471099
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "properties": {
         "nivel": "cuadrante",
         "codigo": "CL_014",
@@ -1466,186 +1557,31 @@
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#FF6692",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.512437,
-              3.485525
-            ],
-            [
-              -76.516685,
-              3.478917
-            ],
-            [
-              -76.519196,
-              3.474484
-            ],
-            [
-              -76.520934,
-              3.471678
-            ],
-            [
-              -76.521009,
-              3.471089
-            ],
-            [
-              -76.521782,
-              3.470521
-            ],
-            [
-              -76.522865,
-              3.468261
-            ],
-            [
-              -76.521449,
-              3.462918
-            ],
-            [
-              -76.520838,
-              3.46295
-            ],
-            [
-              -76.520462,
-              3.463217
-            ],
-            [
-              -76.518949,
-              3.466559
-            ],
-            [
-              -76.518263,
-              3.468925
-            ],
-            [
-              -76.517082,
-              3.470971
-            ],
-            [
-              -76.514432,
-              3.474783
-            ],
-            [
-              -76.509846,
-              3.481193
-            ],
-            [
-              -76.507786,
-              3.48281
-            ],
-            [
-              -76.512432,
-              3.485589
-            ],
-            [
-              -76.512437,
-              3.485525
-            ]
-          ]
-        ]
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_014"
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_015",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#FECB52",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
           [
             [
-              -76.48407,
-              3.465584
+              -76.478276,
+              3.46733
             ],
             [
-              -76.475884,
-              3.468229
+              -76.479821,
+              3.456878
             ],
             [
-              -76.475669,
-              3.467672
-            ],
-            [
-              -76.475337,
-              3.467276
-            ],
-            [
-              -76.475294,
-              3.466634
-            ],
-            [
-              -76.475487,
-              3.465306
-            ],
-            [
-              -76.47598,
-              3.464385
-            ],
-            [
-              -76.477686,
-              3.462736
-            ],
-            [
-              -76.478212,
-              3.46175
-            ],
-            [
-              -76.478255,
-              3.460647
-            ],
-            [
-              -76.477965,
-              3.458987
-            ],
-            [
-              -76.477665,
-              3.457199
-            ],
-            [
-              -76.476763,
-              3.457274
-            ],
-            [
-              -76.476667,
-              3.454886
-            ],
-            [
-              -76.476023,
-              3.453708
-            ],
-            [
-              -76.476463,
-              3.450816
-            ],
-            [
-              -76.477246,
-              3.450388
-            ],
-            [
-              -76.478609,
-              3.450077
-            ],
-            [
-              -76.482439,
-              3.451148
+              -76.480594,
+              3.450752
             ],
             [
               -76.48613,
@@ -1692,28 +1628,29 @@
               3.465349
             ],
             [
-              -76.48407,
-              3.465584
+              -76.478276,
+              3.46733
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_016",
+        "codigo": "CL_015",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#2E91E5",
+        "fillColor": "#FECB52",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_015"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -1888,225 +1825,24 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_017",
+        "codigo": "CL_016",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#F46036",
+        "fillColor": "#2E91E5",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.518316,
-              3.453386
-            ],
-            [
-              -76.512051,
-              3.454318
-            ],
-            [
-              -76.505184,
-              3.453322
-            ],
-            [
-              -76.502609,
-              3.44333
-            ],
-            [
-              -76.501086,
-              3.438714
-            ],
-            [
-              -76.500142,
-              3.435919
-            ],
-            [
-              -76.495914,
-              3.433884
-            ],
-            [
-              -76.49659,
-              3.432449
-            ],
-            [
-              -76.498865,
-              3.428465
-            ],
-            [
-              -76.502706,
-              3.424535
-            ],
-            [
-              -76.522576,
-              3.405268
-            ],
-            [
-              -76.519389,
-              3.435694
-            ],
-            [
-              -76.518327,
-              3.445258
-            ],
-            [
-              -76.517962,
-              3.450066
-            ],
-            [
-              -76.51866,
-              3.453333
-            ],
-            [
-              -76.518316,
-              3.453386
-            ]
-          ]
-        ]
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_016"
       }
     },
     {
       "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_018",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#1CA71C",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -76.537741,
-              3.4388
-            ],
-            [
-              -76.536523,
-              3.440144
-            ],
-            [
-              -76.536013,
-              3.440615
-            ],
-            [
-              -76.534678,
-              3.441311
-            ],
-            [
-              -76.533122,
-              3.44204
-            ],
-            [
-              -76.531346,
-              3.442564
-            ],
-            [
-              -76.529126,
-              3.442709
-            ],
-            [
-              -76.525993,
-              3.442554
-            ],
-            [
-              -76.525762,
-              3.442356
-            ],
-            [
-              -76.52131,
-              3.443759
-            ],
-            [
-              -76.518391,
-              3.444701
-            ],
-            [
-              -76.521025,
-              3.422254
-            ],
-            [
-              -76.52132,
-              3.419309
-            ],
-            [
-              -76.522769,
-              3.405616
-            ],
-            [
-              -76.524968,
-              3.405814
-            ],
-            [
-              -76.53015,
-              3.407597
-            ],
-            [
-              -76.538669,
-              3.410409
-            ],
-            [
-              -76.534023,
-              3.424792
-            ],
-            [
-              -76.533766,
-              3.426463
-            ],
-            [
-              -76.537027,
-              3.426805
-            ],
-            [
-              -76.542424,
-              3.432749
-            ],
-            [
-              -76.538594,
-              3.437783
-            ],
-            [
-              -76.537741,
-              3.4388
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
-        "codigo": "CL_019",
-        "ciudad": "CALI",
-        "id_ruta": "1",
-        "tipo": "PADRE",
-        "tipo_cuadrante": "PAP",
-        "fillColor": "#BC5090",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2397,13 +2133,98 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_017",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#BC5090",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_017"
       }
     },
     {
       "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.518316,
+              3.453386
+            ],
+            [
+              -76.512051,
+              3.454318
+            ],
+            [
+              -76.505184,
+              3.453322
+            ],
+            [
+              -76.502609,
+              3.44333
+            ],
+            [
+              -76.501086,
+              3.438714
+            ],
+            [
+              -76.500142,
+              3.435919
+            ],
+            [
+              -76.495914,
+              3.433884
+            ],
+            [
+              -76.49659,
+              3.432449
+            ],
+            [
+              -76.498865,
+              3.428465
+            ],
+            [
+              -76.502706,
+              3.424535
+            ],
+            [
+              -76.522576,
+              3.405268
+            ],
+            [
+              -76.519389,
+              3.435694
+            ],
+            [
+              -76.518327,
+              3.445258
+            ],
+            [
+              -76.517962,
+              3.450066
+            ],
+            [
+              -76.51866,
+              3.453333
+            ],
+            [
+              -76.518316,
+              3.453386
+            ]
+          ]
+        ]
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_020",
+        "codigo": "CL_018",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
@@ -2412,8 +2233,128 @@
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_018"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.537741,
+              3.4388
+            ],
+            [
+              -76.536523,
+              3.440144
+            ],
+            [
+              -76.536013,
+              3.440615
+            ],
+            [
+              -76.534678,
+              3.441311
+            ],
+            [
+              -76.533122,
+              3.44204
+            ],
+            [
+              -76.531346,
+              3.442564
+            ],
+            [
+              -76.529126,
+              3.442709
+            ],
+            [
+              -76.525993,
+              3.442554
+            ],
+            [
+              -76.525762,
+              3.442356
+            ],
+            [
+              -76.52131,
+              3.443759
+            ],
+            [
+              -76.518391,
+              3.444701
+            ],
+            [
+              -76.521025,
+              3.422254
+            ],
+            [
+              -76.52132,
+              3.419309
+            ],
+            [
+              -76.522769,
+              3.405616
+            ],
+            [
+              -76.524968,
+              3.405814
+            ],
+            [
+              -76.53015,
+              3.407597
+            ],
+            [
+              -76.538669,
+              3.410409
+            ],
+            [
+              -76.534023,
+              3.424792
+            ],
+            [
+              -76.533766,
+              3.426463
+            ],
+            [
+              -76.537027,
+              3.426805
+            ],
+            [
+              -76.542424,
+              3.432749
+            ],
+            [
+              -76.538594,
+              3.437783
+            ],
+            [
+              -76.537741,
+              3.4388
+            ]
+          ]
+        ]
       },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_019",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#1CA71C",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_019"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2520,10 +2461,243 @@
             ]
           ]
         ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_020",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#F46036",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_020"
       }
     },
     {
       "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.519239,
+              3.435935
+            ],
+            [
+              -76.520864,
+              3.421868
+            ],
+            [
+              -76.52117,
+              3.419405
+            ],
+            [
+              -76.52132,
+              3.417183
+            ],
+            [
+              -76.521851,
+              3.411394
+            ],
+            [
+              -76.522243,
+              3.40786
+            ],
+            [
+              -76.521959,
+              3.406703
+            ],
+            [
+              -76.521621,
+              3.406339
+            ],
+            [
+              -76.521315,
+              3.406328
+            ],
+            [
+              -76.520703,
+              3.406917
+            ],
+            [
+              -76.519024,
+              3.408529
+            ],
+            [
+              -76.51742,
+              3.410087
+            ],
+            [
+              -76.515704,
+              3.411764
+            ],
+            [
+              -76.513832,
+              3.41359
+            ],
+            [
+              -76.513923,
+              3.414173
+            ],
+            [
+              -76.514502,
+              3.414794
+            ],
+            [
+              -76.514722,
+              3.415394
+            ],
+            [
+              -76.513349,
+              3.41548
+            ],
+            [
+              -76.513408,
+              3.416845
+            ],
+            [
+              -76.512952,
+              3.416877
+            ],
+            [
+              -76.512914,
+              3.41639
+            ],
+            [
+              -76.512131,
+              3.416438
+            ],
+            [
+              -76.511815,
+              3.416074
+            ],
+            [
+              -76.50917,
+              3.418537
+            ],
+            [
+              -76.507888,
+              3.419726
+            ],
+            [
+              -76.502883,
+              3.424637
+            ],
+            [
+              -76.504455,
+              3.426104
+            ],
+            [
+              -76.50593,
+              3.427362
+            ],
+            [
+              -76.506386,
+              3.428289
+            ],
+            [
+              -76.507335,
+              3.429574
+            ],
+            [
+              -76.508381,
+              3.4308
+            ],
+            [
+              -76.509304,
+              3.431759
+            ],
+            [
+              -76.510001,
+              3.431721
+            ],
+            [
+              -76.510602,
+              3.430479
+            ],
+            [
+              -76.510946,
+              3.43057
+            ],
+            [
+              -76.512625,
+              3.428776
+            ],
+            [
+              -76.513869,
+              3.428787
+            ],
+            [
+              -76.513907,
+              3.430008
+            ],
+            [
+              -76.513885,
+              3.430259
+            ],
+            [
+              -76.513896,
+              3.430532
+            ],
+            [
+              -76.51307,
+              3.430093
+            ],
+            [
+              -76.512405,
+              3.431705
+            ],
+            [
+              -76.512421,
+              3.432813
+            ],
+            [
+              -76.512335,
+              3.433156
+            ],
+            [
+              -76.514127,
+              3.434522
+            ],
+            [
+              -76.515377,
+              3.435507
+            ],
+            [
+              -76.515859,
+              3.433659
+            ],
+            [
+              -76.516927,
+              3.433922
+            ],
+            [
+              -76.516466,
+              3.435448
+            ],
+            [
+              -76.516643,
+              3.43548
+            ],
+            [
+              -76.516659,
+              3.435742
+            ],
+            [
+              -76.516734,
+              3.436246
+            ],
+            [
+              -76.519239,
+              3.435935
+            ]
+          ]
+        ]
+      },
       "properties": {
         "nivel": "cuadrante",
         "codigo": "CL_021",
@@ -2531,12 +2705,16 @@
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#BC5090",
+        "fillColor": "#9A9A00",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_026"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2639,10 +2817,7 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
         "codigo": "CL_022",
@@ -2654,8 +2829,140 @@
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_021"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.519561,
+              3.435009
+            ],
+            [
+              -76.520237,
+              3.428958
+            ],
+            [
+              -76.521084,
+              3.421536
+            ],
+            [
+              -76.522586,
+              3.405557
+            ],
+            [
+              -76.524957,
+              3.405814
+            ],
+            [
+              -76.531094,
+              3.407838
+            ],
+            [
+              -76.53869,
+              3.410302
+            ],
+            [
+              -76.537242,
+              3.414639
+            ],
+            [
+              -76.536244,
+              3.417552
+            ],
+            [
+              -76.535246,
+              3.420637
+            ],
+            [
+              -76.534195,
+              3.423721
+            ],
+            [
+              -76.533422,
+              3.426259
+            ],
+            [
+              -76.533197,
+              3.426227
+            ],
+            [
+              -76.533058,
+              3.42673
+            ],
+            [
+              -76.532929,
+              3.42718
+            ],
+            [
+              -76.532757,
+              3.42748
+            ],
+            [
+              -76.532285,
+              3.428069
+            ],
+            [
+              -76.532006,
+              3.428444
+            ],
+            [
+              -76.531599,
+              3.428701
+            ],
+            [
+              -76.531191,
+              3.428947
+            ],
+            [
+              -76.529281,
+              3.430307
+            ],
+            [
+              -76.526932,
+              3.431967
+            ],
+            [
+              -76.524346,
+              3.433649
+            ],
+            [
+              -76.522329,
+              3.434698
+            ],
+            [
+              -76.521149,
+              3.435073
+            ],
+            [
+              -76.519561,
+              3.435009
+            ]
+          ]
+        ]
       },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_023",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FF009D",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_025"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2786,23 +3093,24 @@
             ]
           ]
         ]
-      }
-    },
-    {
-      "type": "Feature",
+      },
       "properties": {
         "nivel": "cuadrante",
-        "codigo": "CL_023",
+        "codigo": "CL_024",
         "ciudad": "CALI",
         "id_ruta": "1",
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA600",
+        "fillColor": "#BC5090",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
-        "ruta_publica": "Ruta 1"
-      },
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_022"
+      }
+    },
+    {
+      "type": "Feature",
       "geometry": {
         "type": "Polygon",
         "coordinates": [
@@ -2882,6 +3190,191 @@
             [
               -76.522007,
               3.403244
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_025",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#FFA600",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_023"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.522071,
+              3.387115
+            ],
+            [
+              -76.522082,
+              3.387886
+            ],
+            [
+              -76.519785,
+              3.388506
+            ],
+            [
+              -76.518573,
+              3.388613
+            ],
+            [
+              -76.516475,
+              3.388532
+            ],
+            [
+              -76.514377,
+              3.388473
+            ],
+            [
+              -76.513293,
+              3.388019
+            ],
+            [
+              -76.513975,
+              3.386
+            ],
+            [
+              -76.514061,
+              3.383688
+            ],
+            [
+              -76.514347,
+              3.37493
+            ],
+            [
+              -76.520269,
+              3.374951
+            ],
+            [
+              -76.524475,
+              3.374994
+            ],
+            [
+              -76.524276,
+              3.386377
+            ],
+            [
+              -76.523638,
+              3.386324
+            ],
+            [
+              -76.522849,
+              3.386163
+            ],
+            [
+              -76.522039,
+              3.386142
+            ],
+            [
+              -76.522071,
+              3.387115
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_026",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#00F7F7",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1",
+        "old_codigo": "CL_024"
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nivel": "cuadrante",
+        "codigo": "CL_027",
+        "ciudad": "CALI",
+        "id_ruta": "1",
+        "tipo": "PADRE",
+        "tipo_cuadrante": "PAP",
+        "fillColor": "#8E44AD",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000",
+        "ruta_publica": "Ruta 1"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -76.538733,
+              3.410109
+            ],
+            [
+              -76.543078,
+              3.397975
+            ],
+            [
+              -76.532586,
+              3.397889
+            ],
+            [
+              -76.531942,
+              3.397867
+            ],
+            [
+              -76.527189,
+              3.397268
+            ],
+            [
+              -76.523294,
+              3.396657
+            ],
+            [
+              -76.522919,
+              3.400256
+            ],
+            [
+              -76.522726,
+              3.402023
+            ],
+            [
+              -76.522104,
+              3.403597
+            ],
+            [
+              -76.522608,
+              3.405482
+            ],
+            [
+              -76.525569,
+              3.405932
+            ],
+            [
+              -76.530493,
+              3.407592
+            ],
+            [
+              -76.536909,
+              3.409659
+            ],
+            [
+              -76.538733,
+              3.410109
             ]
           ]
         ]

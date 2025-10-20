@@ -1782,6 +1782,11 @@ function saveParentEditing() {
   // Registrar cambios en changeLog
   if (parentCode) {
     state.changeLog.set(parentCode, feat);
+    
+    // SINCRONIZACIÓN DEFENSIVA: Mantener ProjectRegistry alineado
+    const registryKey = ProjectRegistry.generateKey(feat);
+    ProjectRegistry.setFeature(registryKey, feat);
+    console.debug(`[SAVE_PARENT] Sincronizado con ProjectRegistry: ${registryKey}`);
   }
   
   // Cerrar edición
@@ -2541,6 +2546,11 @@ function saveChildrenEditing() {
     // === NUEVO: Registrar cada hijo modificado en changeLog ===
     const feat = child.toGeoJSON();
     state.changeLog.set(feat.properties.codigo, feat);
+    
+    // SINCRONIZACIÓN DEFENSIVA: Mantener ProjectRegistry alineado
+    const registryKey = ProjectRegistry.generateKey(feat);
+    ProjectRegistry.setFeature(registryKey, feat);
+    console.debug(`[SAVE_CHILDREN] Sincronizado con ProjectRegistry: ${registryKey}`);
     
     // ENHANCED: Ensure all style properties are maintained
     ensureStyleProps(child, false); // false for children
@@ -3475,7 +3485,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 const exportBtn = document.getElementById('btn-export');
 if (exportBtn) {
-  exportBtn.addEventListener('click', () => exportMergedFull());
+  exportBtn.addEventListener('click', () => exportFromVisibleLayersStrict());
 }
 
     // Nota: La configuración de importación se hace más abajo con la lógica de jerarquía
@@ -3516,7 +3526,201 @@ function deepCopy(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+// === NUEVA FUNCIÓN: EXPORT ESTRICTO DESDE CAPAS VISIBLES ===
+// Garantiza que el botón "Exportar" genere un .geojson con exactamente las geometrías 
+// que están en el editor (capas visibles incluidas las que están en modo edición)
+// Fuente única: mapa actual, cero dependencias del ProjectRegistry snapshot
+function exportFromVisibleLayersStrict() {
+  const features = [];
+  const sources = new Map(); // Para logging detallado por feature
+  const processedCodes = new Set(); // Evitar duplicados por código
+  
+  console.debug('[EXPORT_STRICT] Iniciando export desde capas visibles...');
+  
+  // Función auxiliar para procesar layers y agregar features válidas
+  const processLayerGroup = (layerGroup, sourceName) => {
+    if (!layerGroup) return;
+    
+    let count = 0;
+    layerGroup.eachLayer?.(layer => {
+      try {
+        const feature = layerToFeature(layer);
+        if (!isQuadrantFeature(feature)) return;
+        
+        const codigo = feature.properties?.codigo || `UNKNOWN_${features.length}`;
+        
+        // Evitar duplicados
+        if (processedCodes.has(codigo)) {
+          console.debug(`[EXPORT_STRICT] Duplicado omitido: ${codigo} de ${sourceName}`);
+          return;
+        }
+        
+        processedCodes.add(codigo);
+        features.push(feature);
+        sources.set(codigo, sourceName);
+        count++;
+        
+        console.debug(`[EXPORT_STRICT] ${sourceName}: ${codigo}`);
+      } catch (e) {
+        console.warn(`[EXPORT_STRICT] Error procesando layer de ${sourceName}:`, e);
+      }
+    });
+    
+    console.debug(`[EXPORT_STRICT] ${sourceName}: ${count} features procesadas`);
+    return count;
+  };
+  
+  // 1) Procesar DRAWN_EDITABLE (nuevos cuadrantes editables)
+  processLayerGroup(DRAWN_EDITABLE, 'EDITABLE');
+  
+  // 2) Procesar DRAWN_LOCKED (cuadrantes importados bloqueados)
+  processLayerGroup(DRAWN_LOCKED, 'LOCKED');
+  
+  // 3) Procesar todos los grupos de hijos por padre
+  for (const [parentCode, childGroup] of Object.entries(state.childGroupsByParent || {})) {
+    processLayerGroup(childGroup, `CHILDREN_${parentCode}`);
+  }
+  
+  // 4) Incluir capas temporales de edición (activePadre y activeHijos)
+  if (activePadre) {
+    try {
+      const feature = layerToFeature(activePadre);
+      if (isQuadrantFeature(feature)) {
+        const codigo = feature.properties?.codigo || 'TEMP_PADRE';
+        
+        if (!processedCodes.has(codigo)) {
+          processedCodes.add(codigo);
+          features.push(feature);
+          sources.set(codigo, 'TEMP_PADRE_EDITING');
+          console.debug(`[EXPORT_STRICT] TEMP_PADRE_EDITING: ${codigo}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[EXPORT_STRICT] Error procesando activePadre:', e);
+    }
+  }
+  
+  if (activeHijos && activeHijos.length > 0) {
+    activeHijos.forEach((hijo, index) => {
+      try {
+        const feature = layerToFeature(hijo);
+        if (isQuadrantFeature(feature)) {
+          const codigo = feature.properties?.codigo || `TEMP_HIJO_${index}`;
+          
+          if (!processedCodes.has(codigo)) {
+            processedCodes.add(codigo);
+            features.push(feature);
+            sources.set(codigo, 'TEMP_HIJOS_EDITING');
+            console.debug(`[EXPORT_STRICT] TEMP_HIJOS_EDITING: ${codigo}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[EXPORT_STRICT] Error procesando activeHijo ${index}:`, e);
+      }
+    });
+  }
+  
+  // 5) Incluir state.activeParent y state.children (compatibilidad con nueva estructura)
+  if (state.activeParent && state.activeParent !== activePadre) {
+    try {
+      const feature = layerToFeature(state.activeParent);
+      if (isQuadrantFeature(feature)) {
+        const codigo = feature.properties?.codigo || 'STATE_ACTIVE_PARENT';
+        
+        if (!processedCodes.has(codigo)) {
+          processedCodes.add(codigo);
+          features.push(feature);
+          sources.set(codigo, 'STATE_ACTIVE_PARENT');
+          console.debug(`[EXPORT_STRICT] STATE_ACTIVE_PARENT: ${codigo}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[EXPORT_STRICT] Error procesando state.activeParent:', e);
+    }
+  }
+  
+  if (state.children && state.children.length > 0) {
+    state.children.forEach((child, index) => {
+      try {
+        const feature = layerToFeature(child);
+        if (isQuadrantFeature(feature)) {
+          const codigo = feature.properties?.codigo || `STATE_CHILD_${index}`;
+          
+          if (!processedCodes.has(codigo)) {
+            processedCodes.add(codigo);
+            features.push(feature);
+            sources.set(codigo, 'STATE_CHILDREN');
+            console.debug(`[EXPORT_STRICT] STATE_CHILDREN: ${codigo}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[EXPORT_STRICT] Error procesando state.children[${index}]:`, e);
+      }
+    });
+  }
+  
+  // Salvaguardas antes de exportar
+  if (features.length === 0) {
+    showToast("❌ No hay features para exportar", "error");
+    console.warn('[EXPORT_STRICT] No features found to export');
+    return;
+  }
+  
+  // Normalizar propiedades de ruta
+  features.forEach(f => {
+    if (f.properties) {
+      normalizeRouteProps(f.properties);
+    }
+  });
+  
+  // Ordenar por código para determinismo
+  features.sort((a, b) => {
+    const codigoA = a.properties?.codigo || '';
+    const codigoB = b.properties?.codigo || '';
+    return codigoA.localeCompare(codigoB);
+  });
+  
+  // Crear FeatureCollection
+  const featureCollection = {
+    type: 'FeatureCollection',
+    properties: {
+      type: 'visible_layers_export',
+      city: CITY,
+      total_features: features.length,
+      export_timestamp: new Date().toISOString(),
+      editor_version: '3.1',
+      export_source: 'Visible Layers Only'
+    },
+    features: features
+  };
+  
+  // Generar nombre de archivo
+  const timestamp = new Date().toISOString().slice(0,16).replace(/[-:]/g,'').replace('T','_');
+  const fileName = `cuadrantes_visible_${timestamp}.geojson`;
+  
+  // Log detallado para QA
+  console.debug(`[EXPORT_STRICT] Resumen de exportación:`);
+  console.debug(`- Total features: ${features.length}`);
+  console.debug(`- Sources:`, Object.fromEntries(sources));
+  
+  // Mostrar toast informativo
+  showToast(`📤 Exportando ${features.length} features desde capas visibles`, "success");
+  
+  // Descargar archivo
+  downloadGeoJSON(featureCollection, fileName);
+  
+  console.debug(`[EXPORT_STRICT] Export completado: ${fileName}`);
+}
+
+// LEGACY: Mantener para comparativos internos (desarrollo)
+const DEV_EXPORT = false; // Flag para ocultar export completo
+
 function exportMergedFull() {
+  if (!DEV_EXPORT) {
+    console.debug('[EXPORT] exportMergedFull() está deshabilitado, usando exportFromVisibleLayersStrict()');
+    return exportFromVisibleLayersStrict();
+  }
+  
   const fc = buildFullFeatureCollection(); // usa Registry + capas visibles (+ normaliza rutas)
   const ts = new Date().toISOString().slice(0,16).replace(/[-:]/g,'').replace('T','_');
   downloadGeoJSON(fc, `cuadrantes_${fc.features.length}f_${ts}.geojson`);
