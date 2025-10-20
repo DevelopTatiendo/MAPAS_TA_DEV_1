@@ -1234,8 +1234,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 color_mes = PALETA_MESES[mes]
                 
                 # Calcular métricas del mes
-                muestras_mes = len(df_filtrado[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)])
-                ids_mes = df_filtrado.loc[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo), "id_autor"].dropna().unique().tolist()
+                mask_mes = (df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)
+                muestras_mes = len(df_filtrado[mask_mes])
+                dias_hab_mes = df_filtrado.loc[mask_mes, "fecha_evento"].dt.date.nunique()
+                ids_mes = df_filtrado.loc[mask_mes, "id_autor"].dropna().unique().tolist()
                 
                 # Fechas del mes para la consulta
                 from datetime import datetime
@@ -1273,6 +1275,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                             <span>{mes_label} {anyo}</span>
                         </td>
                         <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{dias_hab_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
@@ -1294,6 +1297,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                       <tr>
                         <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">#Días hábiles</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
@@ -1355,10 +1359,16 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 df_csv["cod_cuadrante"] = cod_series
                 
                 # Agregar area_m2_cuadrante usando el mapeo calculado
-                df_csv["area_m2_cuadrante"] = round(df_csv["cod_cuadrante"].map(area_map)).fillna(0).astype(int)
+                df_csv["area_m2_cuadrante"] = df_csv["cod_cuadrante"].map(area_map).fillna(0).round().astype(int)
                 
                 # columnas finales sugeridas
                 cols_finales = ["id", "fecha_evento", "id_autor", "lat", "lot", "lon", "cod_cuadrante", "area_m2_cuadrante"]
+                
+                # Incluir id_contacto si existe, justo después de id_autor
+                if "id_contacto" in df_csv.columns:
+                    insert_pos = cols_finales.index("id_autor") + 1
+                    cols_finales = cols_finales[:insert_pos] + ["id_contacto"] + cols_finales[insert_pos:]
+                
                 # Usar solo las columnas que existan
                 cols_disponibles = [col for col in cols_finales if col in df_csv.columns]
                 df_csv = df_csv[cols_disponibles]
