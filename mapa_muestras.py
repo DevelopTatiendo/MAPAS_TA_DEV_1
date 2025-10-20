@@ -947,15 +947,22 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         # Cache de métricas para evitar recálculos - clave: (tipo, codigo)
         metricas_cache = {}
         
+        # Mapeo de área para CSV - clave: codigo cuadrante, valor: area_m2
+        area_map = {}
+        
         # 1. Calcular métricas para hijos
         for feature_hijo in features_hijos:
             metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
             metricas_cache[('HIJO', metricas['codigo'])] = metricas
+            # Guardar área para CSV
+            area_map[metricas['codigo']] = metricas['area_m2']
         
         # 2. Calcular métricas para padres (cálculo directo)
         for feature_padre in features_padres:
             metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
             metricas_cache[('PADRE', metricas['codigo'])] = metricas
+            # Guardar área para CSV
+            area_map[metricas['codigo']] = metricas['area_m2']
         
         # Logging informativo para el caso PADRE-only (estándar del standardizer)
         if len(features_hijos) == 0 and len(features_padres) > 0:
@@ -1322,64 +1329,41 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 df_csv["lat"] = df_csv.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
                 df_csv["lot"] = df_csv.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
                 
-                # --- construir columna 'id' robusta ---
-                import hashlib
-                import numpy as np
+                # Verificar que fecha_evento existe
+                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
+                    df_csv["fecha_evento"] = df_csv["fecha"]
                 
-                # 1) Partimos de un candidato: si existe 'id_evento' lo usamos, si no, 'id' si ya viniera de BD
-                cand = None
-                if "id_evento" in df_csv.columns:
-                    cand = df_csv["id_evento"].astype(str).str.strip()
-                elif "id" in df_csv.columns:
-                    cand = df_csv["id"].astype(str).str.strip()
+                # Filtrar registros con coordenadas válidas
+                df_csv = df_csv.dropna(subset=["lat", "lot"])
                 
-                # 2) Generar un ID determinístico para vacíos/duplicados
-                #    (hash corto de: fecha_evento | id_autor | lat | lot), estable y barato
-                def _mk_hash(row):
-                    fe = str(row.get("fecha_evento", ""))
-                    au = str(row.get("id_autor", ""))
-                    la = "" if pd.isna(row.get("lat")) else f"{float(row.get('lat')):.6f}"
-                    lo = "" if pd.isna(row.get("lot")) else f"{float(row.get('lot')):.6f}"
-                    seed = f"{fe}|{au}|{la}|{lo}"
-                    return hashlib.blake2b(seed.encode("utf-8"), digest_size=6).hexdigest()  # 12 hex
+                # Ordenar por fecha_evento asc, luego lat, luego lot para empates
+                sort_cols = []
+                if "fecha_evento" in df_csv.columns:
+                    sort_cols.append("fecha_evento")
+                sort_cols.extend(["lat", "lot"])
+                df_csv = df_csv.sort_values(sort_cols, ascending=True)
                 
-                # Crear serie base
-                if cand is None:
-                    base = pd.Series([""] * len(df_csv), index=df_csv.index, dtype=str)
-                else:
-                    base = cand.fillna("").astype(str)
+                # Resetear índice y crear ID simple 1..N
+                df_csv = df_csv.reset_index(drop=True)
+                df_csv["id"] = df_csv.index + 1
                 
-                # Rellenar vacíos con hash (incluyendo None y "None")
-                needs_hash = (base == "") | base.isna() | (base == "None") | (base == "nan")
-                hash_ids = df_csv.loc[needs_hash].apply(_mk_hash, axis=1)
-                base.loc[needs_hash] = hash_ids
-                
-                # Proteger contra duplicados (poco probable pero posible):
-                # si hay duplicados en 'base', desambiguamos con un sufijo incremental
-                dup_mask = base.duplicated(keep=False)
-                if dup_mask.any():
-                    # agrupar duplicados y enumerar
-                    for val, idxs in base[dup_mask].groupby(base[dup_mask]).groups.items():
-                        for k, idx in enumerate(idxs):
-                            if k == 0:
-                                continue
-                            base.at[idx] = f"{val}_{k}"
-                
-                df_csv["id"] = base.astype(str)
+                # Agregar lon duplicando lot (mantener compatibilidad)
+                df_csv["lon"] = df_csv["lot"]
                 
                 # cod_cuadrante sin reconsultas
                 cod_series = _asignar_cuadrante_a_puntos(df_csv, features_cuadrantes)
                 df_csv["cod_cuadrante"] = cod_series
                 
-                # Verificar que fecha_evento existe
-                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
-                    df_csv["fecha_evento"] = df_csv["fecha"]
+                # Agregar area_m2_cuadrante usando el mapeo calculado
+                df_csv["area_m2_cuadrante"] = round(df_csv["cod_cuadrante"].map(area_map)).fillna(0).astype(int)
                 
-                # columnas finales y limpieza
-                cols = ["id", "fecha_evento", "id_autor", "lat", "lot", "cod_cuadrante"]
-                df_csv = df_csv[cols].dropna(subset=["lat", "lot"])
+                # columnas finales sugeridas
+                cols_finales = ["id", "fecha_evento", "id_autor", "lat", "lot", "lon", "cod_cuadrante", "area_m2_cuadrante"]
+                # Usar solo las columnas que existan
+                cols_disponibles = [col for col in cols_finales if col in df_csv.columns]
+                df_csv = df_csv[cols_disponibles]
                 
-                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas")
+                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas y ordenamiento fecha_evento ASC")
         except Exception as e:
             logging.error(f"Error construyendo DF CSV: {e}")
             df_csv = None

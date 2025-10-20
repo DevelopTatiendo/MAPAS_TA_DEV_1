@@ -519,7 +519,7 @@ if tipo_mapa == "Muestras":
                 mime="text/csv",
                 type="secondary",
                 use_container_width=True,
-                help="Descarga el resumen CSV con datos de eventos y cuadrantes asignados"
+                help=f"Descarga el resumen CSV con datos de eventos y cuadrantes asignados ({len(df_out)} registros)"
             )
     else:
         col1, col2, col3 = st.columns([1, 1, 1])
