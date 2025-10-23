@@ -532,6 +532,78 @@ if tipo_mapa == "Muestras":
                 help="Genere primero un mapa exitoso"
             )
 
+    # Botón de descarga ISM para Muestras (FASE 5)
+    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
+    
+    # Verificar si hay datos ISM disponibles
+    df_ism = st.session_state.get("muestras_ism_df")
+    
+    if df_ism is not None and not df_ism.empty:
+        # Generar nombre del archivo ISM CSV
+        from datetime import datetime, date
+        import pandas as pd
+        import re
+        
+        def _fmt_yyyymmdd(x):
+            try:
+                if isinstance(x, (pd.Timestamp, datetime)):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, date):
+                    return x.strftime("%Y%m%d")
+                if isinstance(x, str) and x:
+                    # x esperado 'YYYY-MM-DD'
+                    cleaned = x.replace("-", "")
+                    if len(cleaned) >= 8 and cleaned[:8].isdigit():
+                        return cleaned[:8]
+            except Exception:
+                pass
+            return datetime.now().strftime("%Y%m%d")
+        
+        # Normalizar ciudad
+        ciudad_ism = re.sub(r'[^A-Za-z0-9]', '', meta_csv.get("ciudad", ciudad).upper())
+        ciudad_ism = ciudad_ism.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        
+        # Formatear fechas para el nombre
+        fecha_inicio_str = _fmt_yyyymmdd(meta_csv.get("fecha_inicio"))
+        fecha_fin_str = _fmt_yyyymmdd(meta_csv.get("fecha_fin"))
+        
+        filename_ism = f"ISM_resumen_{ciudad_ism}_{fecha_inicio_str}-{fecha_fin_str}.csv"
+        
+        # Preparar DataFrame ISM para export
+        df_ism_export = df_ism.copy()
+        
+        # Añadir columnas de rango de fechas al final
+        df_ism_export['fecha_inicio'] = meta_csv.get("fecha_inicio", "")
+        df_ism_export['fecha_fin'] = meta_csv.get("fecha_fin", "")
+        
+        # Ordenar por ISM descendente
+        df_ism_export = df_ism_export.sort_values('ISM', ascending=False)
+        
+        # Generar CSV con encoding UTF-8-SIG para Excel
+        csv_data_ism = df_ism_export.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.download_button(
+                label="📥 Resumen por cuadrante (ISM)",
+                data=csv_data_ism,
+                file_name=filename_ism,
+                mime="text/csv",
+                type="secondary",
+                use_container_width=True,
+                help=f"Descarga métricas ISM por cuadrante ({len(df_ism_export)} cuadrantes con actividad)"
+            )
+    else:
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            st.button(
+                "📥 Resumen por cuadrante (ISM)",
+                disabled=True,
+                type="secondary", 
+                use_container_width=True,
+                help="No hay datos ISM disponibles. Configure densidad_hab_km2 en ism_config.py"
+            )
+
 # Separador sutil entre secciones
 st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
 
@@ -648,10 +720,21 @@ if submit_button:
                 generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas
             )
             if resultado:
-                # Manejar tanto el formato anterior (filename, n_puntos) como el nuevo (filename, n_puntos, df_csv)
-                if isinstance(resultado, tuple) and len(resultado) == 3:
+                # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)
+                if isinstance(resultado, tuple) and len(resultado) == 4:
+                    filename, n_puntos, df_csv, df_ism = resultado
+                    st.session_state["muestras_export_df"] = df_csv
+                    st.session_state["muestras_ism_df"] = df_ism  # Nuevo: ISM DataFrame
+                    st.session_state["muestras_export_meta"] = {
+                        "ciudad": ciudad, 
+                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
+                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
+                    }
+                elif isinstance(resultado, tuple) and len(resultado) == 3:
+                    # Compatibilidad con formato anterior (sin ISM)
                     filename, n_puntos, df_csv = resultado
                     st.session_state["muestras_export_df"] = df_csv
+                    st.session_state["muestras_ism_df"] = None
                     st.session_state["muestras_export_meta"] = {
                         "ciudad": ciudad, 
                         "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
@@ -660,6 +743,7 @@ if submit_button:
                 else:
                     filename, n_puntos = resultado
                     st.session_state["muestras_export_df"] = None
+                    st.session_state["muestras_ism_df"] = None
                     st.session_state["muestras_export_meta"] = None
                 # Guardar filename para el botón de descarga HTML
                 st.session_state["muestras_last_filename"] = filename
@@ -667,6 +751,7 @@ if submit_button:
                 filename, n_puntos = None, 0
                 st.session_state["muestras_last_filename"] = None
                 st.session_state["muestras_export_df"] = None
+                st.session_state["muestras_ism_df"] = None  # Nuevo: limpiar ISM
                 st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":

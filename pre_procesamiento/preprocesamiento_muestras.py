@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 import os
 import mysql.connector
 import warnings
+from typing import List, Dict
 from .db_utils import sql_read
+from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
+from ism_config import get_city_key, compute_hogares_por_m2
 
 # Silenciar warnings de pandas sobre MySQL
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
@@ -18,6 +21,83 @@ load_dotenv()
 DB_HOST = os.getenv("DB_HOST")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+
+def _normalize_eventos_columns(df: pd.DataFrame, tz: str = 'America/Bogota') -> pd.DataFrame:
+    """
+    Normaliza un DataFrame de eventos asegurando columnas mínimas y tipos correctos.
+    
+    Args:
+        df: DataFrame de eventos desde la base de datos
+        tz: Zona horaria para normalización de fechas (default: 'America/Bogota')
+        
+    Returns:
+        pd.DataFrame: Copia del DataFrame con columnas garantizadas y normalizadas:
+                     - 'lat' (float): latitud de coordenadas
+                     - 'lon' (float): longitud de coordenadas  
+                     - 'fecha_evento' (datetime): timestamp del evento
+                     - 'fecha_dia' (date): fecha sin hora en zona horaria local
+                     - 'id_autor' (conserva tipo original)
+                     - 'id_contacto' (conserva tipo original)
+                     
+    Notes:
+        - Si fecha_evento es naive (sin timezone), asume que está en tz local
+        - Si fecha_evento tiene timezone, convierte a tz especificado
+        - No modifica ni deduplica otros campos
+        - Garantiza que lat/lon sean float para operaciones geoespaciales
+        
+    Raises:
+        ValueError: Si faltan columnas críticas en el DataFrame original
+    """
+    if df.empty:
+        return df.copy()
+    
+    # Verificar columnas mínimas requeridas
+    required_base = ['fecha_evento', 'id_autor', 'id_contacto']
+    missing = [col for col in required_base if col not in df.columns]
+    if missing:
+        raise ValueError(f"Faltan columnas requeridas: {missing}")
+    
+    # Verificar columnas de coordenadas (pueden tener nombres alternativos)
+    lat_cols = ['coordenada_latitud', 'latitud', 'lat']
+    lon_cols = ['coordenada_longitud', 'longitud', 'lon']
+    
+    lat_col = next((col for col in lat_cols if col in df.columns), None)
+    lon_col = next((col for col in lon_cols if col in df.columns), None)
+    
+    if not lat_col or not lon_col:
+        raise ValueError(f"No se encontraron columnas de coordenadas. Disponibles: {list(df.columns)}")
+    
+    # Crear copia para no modificar original
+    result = df.copy()
+    
+    # Normalizar coordenadas a 'lat' y 'lon'
+    if lat_col != 'lat':
+        result['lat'] = pd.to_numeric(result[lat_col], errors='coerce')
+    else:
+        result['lat'] = pd.to_numeric(result['lat'], errors='coerce')
+        
+    if lon_col != 'lon':
+        result['lon'] = pd.to_numeric(result[lon_col], errors='coerce')
+    else:
+        result['lon'] = pd.to_numeric(result['lon'], errors='coerce')
+    
+    # Normalizar fecha_evento con manejo de timezone
+    if not pd.api.types.is_datetime64_any_dtype(result['fecha_evento']):
+        result['fecha_evento'] = pd.to_datetime(result['fecha_evento'], errors='coerce')
+    
+    # Manejar timezone: si es naive, asumir local; si tiene tz, convertir
+    if result['fecha_evento'].dt.tz is None:
+        # Naive datetime: asumir que está en tz local
+        result['fecha_evento'] = result['fecha_evento'].dt.tz_localize(tz, ambiguous='infer')
+    else:
+        # Ya tiene timezone: convertir a tz especificado
+        result['fecha_evento'] = result['fecha_evento'].dt.tz_convert(tz)
+    
+    # Crear fecha_dia (fecha sin hora en timezone local)
+    result['fecha_dia'] = result['fecha_evento'].dt.date
+    
+    return result
 
 def listar_promotores():
     """
@@ -316,3 +396,175 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
     except Exception as e:
         print(f"Error en obtener_metricas_pedidos_por_promotores: {e}")
         return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA", "venta_adq_recu", "venta_fieles", "pct_nrecu", "pct_fieles"])
+
+
+def compute_ism_metrics_por_cuadrante(
+    df_eventos,               # pd.DataFrame con columnas mínimas: lat, lon, fecha_evento, id_autor, id_contacto
+    features_cuadrantes,      # list[feature GeoJSON] con geometry y properties[codigo_key]
+    ciudad,                   # str (ej. 'CALI')
+    codigo_key: str = 'codigo',
+    tz: str = 'America/Bogota'
+) -> 'pd.DataFrame':
+    """
+    Calcula métricas ISM (Índice de Saturación del Mercado) por cuadrante.
+    
+    Agrega eventos por cuadrante y calcula:
+    - C (Cobertura): muestras / hogares_estimados
+    - E (Esfuerzo): muestras / (promotores * dias * lambda_promedio)  
+    - ISM: media armónica de C y E escalada a 0-100
+    
+    Args:
+        df_eventos: DataFrame con columnas lat, lon, fecha_evento, id_autor, id_contacto
+        features_cuadrantes: Lista de features GeoJSON con geometry y properties[codigo_key]
+        ciudad: Nombre de ciudad (ej. 'CALI') para obtener densidad demográfica
+        codigo_key: Clave en properties para identificar cuadrantes (default: 'codigo')
+        tz: Zona horaria para normalización de fechas (default: 'America/Bogota')
+        
+    Returns:
+        pd.DataFrame con métricas ISM por cuadrante:
+        - ciudad, codigo_cuadrante, area_m2, area_km2, hogares_por_m2, hogares_estimados
+        - muestras_local, dias_operacion, n_promotores, lambda_q
+        - C_raw, C, E_raw, E, ISM, over_flag
+        
+    Raises:
+        ValueError: Si ciudad no tiene densidad_hab_km2 configurada en ism_config
+        
+    Notes:
+        - Retorna DataFrame vacío con esquema completo si no hay eventos o cuadrantes
+        - C y E se capan en 1.0, ISM usa media armónica: 2*C*E/(C+E) * 100
+        - over_flag=True cuando cobertura raw > 100%
+        - Maneja casos edge: divisiones por cero, cuadrantes sin eventos, etc.
+    """
+    
+    # Esquema final de columnas esperado
+    schema_final = [
+        'ciudad', 'codigo_cuadrante',
+        'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+        'muestras_local', 'dias_operacion', 'n_promotores',
+        'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag'
+    ]
+    
+    # Paso A — Normalización y guardas
+    df = _normalize_eventos_columns(df_eventos, tz)
+    
+    if df.empty:
+        return pd.DataFrame(columns=schema_final)
+    
+    if not features_cuadrantes:
+        return pd.DataFrame(columns=schema_final)
+    
+    # Paso B — Asignar punto→cuadrante
+    df['codigo_cuadrante'] = assign_quadrant_to_points(df[['lat','lon']], features_cuadrantes, codigo_key)
+    
+    df = df[df['codigo_cuadrante'].notna()]
+    
+    if df.empty:
+        return pd.DataFrame(columns=schema_final)
+    
+    # Paso C — Constantes ciudad y áreas por código
+    city_key = get_city_key(str(ciudad))
+    
+    # Esto puede lanzar ValueError si densidad no está definida - propagar error
+    hogares_por_m2 = compute_hogares_por_m2(city_key)
+    
+    # Construir cache de áreas una sola vez
+    area_por_codigo = {}
+    codigos_vistos = set()
+    
+    for feature in features_cuadrantes:
+        codigo = feature['properties'].get(codigo_key)
+        if codigo is None:
+            # Saltar polígonos sin codigo_key
+            continue
+            
+        if codigo in codigos_vistos:
+            # Log warning para códigos duplicados y usar primera geometría
+            print(f"WARNING: Código cuadrante duplicado '{codigo}', usando primera geometría encontrada")
+            continue
+            
+        codigos_vistos.add(codigo)
+        
+        try:
+            area_m2 = area_m2_geodesic(feature['geometry'])
+            # Protección contra áreas 0 o NaN
+            if pd.isna(area_m2) or area_m2 <= 0:
+                area_m2 = 0.0
+            area_por_codigo[codigo] = float(area_m2)
+        except Exception:
+            # Si falla cálculo de área, setear a 0.0
+            area_por_codigo[codigo] = 0.0
+    
+    # Paso D — Agregados base por cuadrante
+    g = df.groupby('codigo_cuadrante', observed=True)
+    
+    M = g.size().rename('muestras_local')
+    N = g['id_autor'].nunique().rename('n_promotores') 
+    D = g['fecha_dia'].nunique().rename('dias_operacion')
+    
+    # Paso E — Tasas por promotor y λ_q (dentro del cuadrante)
+    gp = df.groupby(['codigo_cuadrante','id_autor'], observed=True)
+    
+    M_p = gp.size().rename('M_p')
+    D_p = gp['fecha_dia'].nunique().rename('D_p')
+    
+    # Construir λ_p sólo donde D_p > 0
+    tmp = pd.concat([M_p, D_p], axis=1)
+    tmp = tmp[tmp['D_p'] > 0]
+    tmp['lambda_p'] = tmp['M_p'] / tmp['D_p']
+    
+    lambda_q = tmp['lambda_p'].groupby(level=0, observed=True).mean().rename('lambda_q')
+    
+    # Paso F — DataFrame por cuadrante (join + constantes)
+    df_q = M.to_frame().join([N, D, lambda_q], how='left')
+    
+    # Si un cuadrante no aparece en lambda_q ⇒ rellenar con 0.0
+    df_q['lambda_q'] = df_q['lambda_q'].fillna(0.0)
+    
+    # Mapear áreas desde el cache
+    df_q['area_m2'] = df_q.index.map(area_por_codigo).astype(float)
+    df_q['area_km2'] = df_q['area_m2'] / 1_000_000.0
+    df_q['hogares_por_m2'] = float(hogares_por_m2)  # constante por ciudad
+    df_q['hogares_estimados'] = df_q['area_m2'] * df_q['hogares_por_m2']
+    
+    # Paso G — C, E e ISM (raw + capped) con protección de ceros/NaN
+    
+    # Cobertura
+    df_q['C_raw'] = 0.0
+    mask_H = df_q['hogares_estimados'] > 0
+    df_q.loc[mask_H, 'C_raw'] = df_q.loc[mask_H, 'muestras_local'] / df_q.loc[mask_H, 'hogares_estimados']
+    
+    df_q['C'] = df_q['C_raw'].clip(upper=1.0)
+    df_q['over_flag'] = df_q['C_raw'] > 1.0
+    
+    # Esfuerzo
+    den_E = (df_q['n_promotores'] * df_q['dias_operacion'] * df_q['lambda_q']).astype(float)
+    
+    df_q['E_raw'] = 0.0
+    mask_E = den_E > 0
+    df_q.loc[mask_E, 'E_raw'] = df_q.loc[mask_E, 'muestras_local'] / den_E[mask_E]
+    
+    df_q['E'] = df_q['E_raw'].clip(upper=1.0)
+    
+    # ISM
+    df_q['ISM'] = 0.0
+    mask_ISM = (df_q['C'] + df_q['E']) > 0
+    df_q.loc[mask_ISM, 'ISM'] = 100.0 * (2.0 * df_q.loc[mask_ISM, 'C'] * df_q.loc[mask_ISM, 'E']) / (df_q.loc[mask_ISM, 'C'] + df_q.loc[mask_ISM, 'E'])
+    
+    # Paso H — Columnas, orden, tipos y retorno
+    
+    # Añadir columna constante ciudad
+    df_q['ciudad'] = city_key
+    
+    # Convertir índice a columna
+    df_q.index.name = 'codigo_cuadrante'
+    df_q = df_q.reset_index()
+    
+    # Asegurar tipos enteros en columnas específicas
+    df_q['muestras_local'] = df_q['muestras_local'].astype(int)
+    df_q['dias_operacion'] = df_q['dias_operacion'].astype(int)  
+    df_q['n_promotores'] = df_q['n_promotores'].astype(int)
+    
+    # Orden exacto de salida (esquema final)
+    df_q = df_q[schema_final]
+    
+    return df_q
