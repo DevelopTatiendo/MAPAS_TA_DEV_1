@@ -11,8 +11,10 @@ import time
 import logging
 import json
 import streamlit as st
-from streamlit_folium import st_folium
 import pandas as pd
+from pathlib import Path
+from PIL import Image
+import base64
 # from mapa_pruebas import generar_mapa_pruebas
 # from mapa_pedidos import generar_mapa_pedidos
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
@@ -74,16 +76,145 @@ def cargar_datos_ciudad(ciudad):
 
     return datos 
 
-# UI de Streamlit
-st.title("Gestión Visual de Operaciones")
+# Variables de marca - rutas sólidas
+APP_TITLE = "Atlas TA"
+
+BASE_DIR = Path(__file__).resolve().parent        # carpeta donde está app.py
+LOGO_FILE = BASE_DIR / "static" / "img" / "Atlas_TA.png"
+
+def img_to_b64(p: Path) -> str:
+    return base64.b64encode(p.read_bytes()).decode("utf-8")
+
+# Configuración de la página - DEBE ser el PRIMER st.* del archivo
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon=Image.open(LOGO_FILE) if LOGO_FILE.exists() else "🗺️",
+    layout="wide"
+)
+
+# CSS con paleta de marca (morado + amarillo) y hero centrado
+st.markdown("""
+<style>
+:root{
+  --primary:#5B21B6; --primary-600:#6D28D9; --accent:#FACC15;
+  --bg:#F8F7FF; --card:#FFFFFF; --text:#1F1A2F; --muted:#6B7280; --border:#E5E7EB;
+  --bg-dark:#0F1116; --card-dark:#161923; --text-dark:#EAEAF0; --muted-dark:#A3A8B3; --border-dark:#2A2F3A;
+}
+/* Contenedor más estrecho para foco visual */
+.block-container { max-width: 1100px; }
+
+/* ===== HERO de marca ===== */
+.hero-wrap{
+  display:flex; justify-content:center; margin: 6px 0 18px 0;
+}
+.hero{
+  display:flex; align-items:center; gap:28px;
+}
+.hero .logo{
+  width: 112px; height:auto; display:block;
+}
+.hero .title{
+  font-weight: 900;
+  font-size: clamp(40px, 6vw, 64px);
+  line-height: 1.0;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.hero .subtitle{
+  font-weight: 700;
+  font-size: clamp(18px, 2.6vw, 26px);
+  margin-top: 6px;
+}
+.hero .tagline{
+  color: var(--muted, #6B7280);
+  font-size: clamp(14px, 1.8vw, 18px);
+  margin-top: 4px;
+}
+
+/* Apilado en móviles */
+@media (max-width: 820px){
+  .hero{ flex-direction: column; text-align: center; gap: 14px; }
+  .hero .logo{ width: 88px; }
+}
+
+/* tipografía */
+h1, h2, h3 { letter-spacing: -0.015em; }
+.subtle { color: var(--muted); font-size: .95rem; }
+/* cards */
+.card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; }
+.card + .card{ margin-top:16px; }
+.card-header{ font-weight:700; font-size:1.05rem; margin-bottom:8px; }
+.muted{ color:var(--muted); }
+/* chips y enlaces de acción */
+.pill{
+  display:inline-block; padding:6px 12px; border:1px solid var(--border);
+  border-radius:999px; font-size:.9rem; color:var(--text); background:#F9FAFB;
+}
+a.pill, .btn-link{
+  display:block; text-align:center; text-decoration:none; color:#fff;
+  background:var(--primary); border:1px solid var(--primary);
+  padding:10px 14px; border-radius:10px; font-weight:600;
+}
+a.pill:hover, .btn-link:hover{ background:var(--primary-600); border-color:var(--primary-600); }
+a.pill .icon{ margin-right:.35rem; }
+.btn-row{ display:flex; justify-content:center; }
+.btn-row > div{ width:320px; }
+/* acento */
+.emphasis{ color:var(--accent); }
+/* espaciados */
+.sp-2{ margin: 1rem 0; } .sp-3{ margin: 1.5rem 0; }
+
+/* Dark mode alto contraste */
+@media (prefers-color-scheme: dark){
+  .block-container{ background:var(--bg-dark); }
+  .card{ background:var(--card-dark); border-color:var(--border-dark); }
+  .pill{ background:#0F1220; color:var(--text-dark); border-color:var(--border-dark); }
+  .subtle, .muted{ color:var(--muted-dark); }
+  body, .stMarkdown, .stText, .stRadio, .stSelectbox, .stMultiSelect{ color:var(--text-dark) !important; }
+  a.pill, .btn-link{ background:var(--primary-600); border-color:var(--primary-600); }
+  a.pill:hover{ filter:brightness(1.05); }
+  .hero .title, .hero .subtitle{ color: var(--text-dark, #EAEAF0); }
+  .hero .tagline{ color: var(--muted-dark, #A3A8B3); }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# UI de Streamlit - Hero centrado
+logo_b64 = img_to_b64(LOGO_FILE) if LOGO_FILE.exists() else None
+
+st.markdown(
+    f"""
+    <div class="hero-wrap">
+      <div class="hero">
+        {'<img class="logo" src="data:image/png;base64,' + logo_b64 + '" alt="Atlas TA">' if logo_b64 else ''}
+        <div class="hero-text">
+          <h1 class="title">Atlas TA</h1>
+          <div class="subtitle">El mapa de tu operación</div>
+          <div class="tagline"></div>
+        </div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Debug checks (opcional - descomentarlas si necesitas verificar rutas)
+# st.write("CWD:", os.getcwd())
+# st.write("Logo existe:", LOGO_FILE.exists())
+# st.write("Logo (abspath):", str(LOGO_FILE))
+
+# Toolbar compacta (resumen de selección)
+st.markdown('<div class="toolbar"><div></div><div id="toolbar-pill"></div></div>', unsafe_allow_html=True)
 
 st.sidebar.header("Seleccione una ciudad")
 ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Medellín", "Pereira"]
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
+# Card "Configuración y Filtros"
+st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
+
 tipos_mapa = ["Muestras", "Consultores"]  # Solo módulos activos
 # tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
-st.header("Seleccione el tipo de mapa")
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
 # Limpiar URL del mapa si cambian ciudad o tipo de mapa
@@ -97,6 +228,8 @@ elif st.session_state["last_selection"] != current_selection:
 
 # Cargar datos según la ciudad seleccionada
 datos_ciudad = cargar_datos_ciudad(ciudad)
+
+st.divider()
 
 # Formulario dinámico de filtros
 st.subheader("Aplicar Filtros")
@@ -162,17 +295,26 @@ with st.form(key="filtros_form"):
     #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
     #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
     if tipo_mapa == "Muestras":
+        # Barrios
         barrios_disponibles = datos_ciudad["barrios"]["barrio"].sort_values().unique()
         barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
         
-        color_mode = st.radio("Seleccione la funcionalidad de los colores", ["Promotores", "Temporalidad (mes)"], index=0)
+        # Fechas en dos columnas
+        c1, c2 = st.columns(2)
+        with c1: 
+            fecha_inicio = st.date_input("Fecha de Inicio")
+        with c2: 
+            fecha_fin = st.date_input("Fecha de Fin")
         
-        # Checkbox para verificación de áreas
-        verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
+        # Opciones de visualización
+        with st.expander("Opciones de visualización"):
+            # default = Temporalidad
+            color_options = ["Promotores", "Temporalidad (mes)"]
+            default_idx = 1
+            color_mode = st.radio("Colores por:", color_options, index=default_idx, key="color_mode_muestras")
+            verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
         
-        # Expander para cuadrantes personalizados
+        # Cuadrantes (opcional)
         with st.expander("🗺️ Cuadrantes (opcional)"):
             st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
             uploaded_file = st.file_uploader(
@@ -236,7 +378,7 @@ with st.form(key="filtros_form"):
     #     fecha_inicio = st.date_input("Fecha de Inicio")
     #     fecha_fin = st.date_input("Fecha de Fin")
     elif tipo_mapa == "Consultores":
-        # Lista de rutas desde BD (id_ruta, ruta)
+        # Ruta (obligatorio)
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
         df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
         if df_rutas is None or df_rutas.empty:
@@ -266,11 +408,12 @@ with st.form(key="filtros_form"):
             id_ruta = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
             nombre_ruta_ui = ruta_seleccionada if ruta_seleccionada else None
         
-        # Fechas obligatorias
-        fecha_inicio = st.date_input("Fecha de Inicio")
-        fecha_fin = st.date_input("Fecha de Fin")
-        
-
+        # Fechas en dos columnas
+        c1, c2 = st.columns(2)
+        with c1: 
+            fecha_inicio = st.date_input("Fecha de Inicio")
+        with c2: 
+            fecha_fin = st.date_input("Fecha de Fin")
         
         # Checkbox para mostrar puntos fuera de cuadrantes
         mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
@@ -328,41 +471,103 @@ with st.form(key="filtros_form"):
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         submit_button = st.form_submit_button("Generar Mapa", use_container_width=True, type="primary")
-    
-    # Placeholder fijo para el enlace del mapa generado
-    link_placeholder = st.empty()
 
-# Botón de descarga CSV para Consultores (fuera del form para mantener estado)
+# Cerrar card "Configuración y Filtros"
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Actualizar pill dinámico (solo si hay fechas disponibles)
+if submit_button and 'fecha_inicio' in locals() and 'fecha_fin' in locals():
+    st.markdown(
+        f'<div class="pill" style="text-align: center; margin: 1rem 0;">{ciudad} · {str(fecha_inicio)} → {str(fecha_fin)}</div>',
+        unsafe_allow_html=True
+    )
+
+# Card "Resultados y Descargas"
+st.markdown('<div class="card sp-2"><div class="card-header">Resultados y Descargas</div>', unsafe_allow_html=True)
+
+# Enlace del mapa (anti-embed)
+link_placeholder = st.empty()
+if "map_url" in st.session_state and st.session_state["map_url"]:
+    link_placeholder.markdown(
+      f'<div class="btn-row"><div><a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" class="pill">'
+      '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>',
+      unsafe_allow_html=True
+    )
+else:
+    link_placeholder.markdown('<div class="muted" style="text-align:center;">Genere un mapa para habilitar el enlace.</div>', unsafe_allow_html=True)
+
+# Descargas (tres botones centrados)
+
+# 1. Descarga HTML del mapa
+if tipo_mapa == "Muestras":
+    map_filename = st.session_state.get("muestras_last_filename")
+    
+    if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
+        from datetime import datetime
+        import re
+        
+        ciudad_html = re.sub(r'[^A-Za-z0-9]', '', ciudad.upper())
+        ciudad_html = ciudad_html.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
+        fecha_actual = datetime.now().strftime("%Y%m%d")
+        filename_html = f"Mapa_Muestras_{ciudad_html}_{fecha_actual}.html"
+        
+        with open(os.path.join("static", "maps", map_filename), "rb") as f:
+            html_bytes = f.read()
+        
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Descargar HTML del mapa",
+            data=html_bytes,
+            file_name=filename_html,
+            mime="text/html",
+            type="secondary",
+            use_container_width=True,
+            help="Descarga el archivo HTML del mapa generado"
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.button(
+            "📥 Descargar HTML del mapa",
+            disabled=True,
+            type="secondary",
+            use_container_width=True,
+            help="Genere un mapa para habilitar esta descarga."
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+elif tipo_mapa == "Consultores":
+    st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+    st.button(
+        "📥 Descargar HTML del mapa",
+        disabled=True,
+        type="secondary", 
+        use_container_width=True,
+        help="Descarga HTML no disponible para Consultores"
+    )
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+# 2. Descarga CSV (resumen de operación)
 if tipo_mapa == "Consultores":
     df_export = st.session_state.get("consultores_export_df")
     export_meta = st.session_state.get("consultores_export_meta")
     
     if df_export is not None and not df_export.empty and export_meta is not None:
-        # Generar nombre del archivo CSV usando metadatos guardados
         from datetime import datetime
         import re
         
-        # Normalizar ciudad (sin acentos/espacios)
         ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', export_meta["ciudad"].upper())
         ciudad_csv = ciudad_csv.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
         
-        # Formatear fechas para el nombre del archivo
         fecha_ini_str = export_meta["fecha_inicio"].strftime("%Y%m%d")
         fecha_fin_str = export_meta["fecha_fin"].strftime("%Y%m%d")
-        
-        # Timestamp actual
         timestamp = datetime.now().strftime("%H%M%S")
         
-        # Nombre del archivo
         filename_csv = f"consultores_{ciudad_csv}_{export_meta['id_ruta']}_{fecha_ini_str}-{fecha_fin_str}_{timestamp}.csv"
         
-        # Preparar DataFrame para CSV (formatear fecha_evento)
         df_csv = df_export.copy()
         if 'fecha_evento' in df_csv.columns:
-            # Convertir fecha_evento a string para evitar problemas en Excel
             df_csv['fecha_evento'] = pd.to_datetime(df_csv['fecha_evento']).dt.strftime('%Y-%m-%d %H:%M:%S')
         
-        # Reordenar columnas si existen ambas (id_evento_tipo y tipo_evento)
         if 'id_evento_tipo' in df_csv.columns and 'tipo_evento' in df_csv.columns:
             cols = list(df_csv.columns)
             cols.remove('tipo_evento')
@@ -370,108 +575,42 @@ if tipo_mapa == "Consultores":
             cols.insert(insert_at, 'tipo_evento')
             df_csv = df_csv[cols]
         
-        # Generar CSV con encoding UTF-8-SIG para Excel
         csv_data = df_csv.to_csv(index=False, sep=';').encode('utf-8-sig')
         
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.download_button(
-                label="📥 Descargar CSV (datos mostrados)",
-                data=csv_data,
-                file_name=filename_csv,
-                mime="text/csv",
-                type="secondary",
-                use_container_width=True,
-                help=f"Descarga {len(df_export)} registros mostrados en el mapa"
-            )
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Descargar CSV (resumen de operación)",
+            data=csv_data,
+            file_name=filename_csv,
+            mime="text/csv",
+            type="secondary",
+            use_container_width=True,
+            help="Descarga los datos mostrados en el mapa"
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.button(
-                "📥 Descargar CSV (datos mostrados)",
-                disabled=True,
-                type="secondary",
-                use_container_width=True,
-                help="No hay datos para descargar. Genere primero un mapa exitoso."
-            )
-
-# Botón de descarga HTML para Muestras (fuera del form para mantener estado)
-if tipo_mapa == "Muestras":
-    # Verificar si hay un mapa generado y disponible
-    map_filename = st.session_state.get("muestras_last_filename")
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.button(
+            "📥 Descargar CSV (resumen de operación)",
+            disabled=True,
+            type="secondary",
+            use_container_width=True,
+            help="Genere un mapa para habilitar esta descarga."
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+elif tipo_mapa == "Muestras":
+    df_export = st.session_state.get("muestras_export_df")
+    export_meta = st.session_state.get("muestras_export_meta")
     
-    if map_filename:
-        html_path = os.path.join("static", "maps", map_filename)
-        if os.path.exists(html_path):
-            # Generar nombre del archivo HTML para el usuario
-            from datetime import datetime
-            import re
-            
-            # Normalizar ciudad (sin acentos/espacios)
-            ciudad_html = re.sub(r'[^A-Za-z0-9]', '', ciudad.upper())
-            ciudad_html = ciudad_html.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
-            
-            # Usar fecha actual para el nombre
-            fecha_actual = datetime.now().strftime("%Y%m%d")
-            filename_html = f"Mapa_Muestras_{ciudad_html}_{fecha_actual}.html"
-            
-            # Leer archivo HTML
-            with open(html_path, "rb") as f:
-                html_bytes = f.read()
-            
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                st.download_button(
-                    label="📥 Descargar HTML del mapa",
-                    data=html_bytes,
-                    file_name=filename_html,
-                    mime="text/html",
-                    type="secondary",
-                    use_container_width=True,
-                    help="Descarga el archivo HTML del mapa de muestras generado"
-                )
-        else:
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                st.button(
-                    "📥 Descargar HTML del mapa",
-                    disabled=True,
-                    type="secondary",
-                    use_container_width=True,
-                    help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
-                )
-    else:
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.button(
-                "📥 Descargar HTML del mapa",
-                disabled=True,
-                type="secondary",
-                use_container_width=True,
-                help="No hay archivo HTML disponible. Genere primero un mapa exitoso."
-            )
-
-    # Botón de descarga CSV para Muestras (debajo del HTML)
-    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
-    
-    # Verificar si hay datos CSV disponibles
-    df_csv = st.session_state.get("muestras_export_df")
-    meta_csv = st.session_state.get("muestras_export_meta", {})
-    
-    if df_csv is not None and not df_csv.empty:
-        # Generar nombre del archivo CSV
-        from datetime import datetime, date
-        import pandas as pd
+    if df_export is not None and not df_export.empty and export_meta is not None:
+        from datetime import datetime
         import re
         
         def _fmt_yyyymmdd(x):
             try:
-                if isinstance(x, (pd.Timestamp, datetime)):
-                    return x.strftime("%Y%m%d")
-                if isinstance(x, date):
+                if hasattr(x, 'strftime'):
                     return x.strftime("%Y%m%d")
                 if isinstance(x, str) and x:
-                    # x esperado 'YYYY-MM-DD'
                     cleaned = x.replace("-", "")
                     if len(cleaned) >= 8 and cleaned[:8].isdigit():
                         return cleaned[:8]
@@ -479,79 +618,51 @@ if tipo_mapa == "Muestras":
                 pass
             return datetime.now().strftime("%Y%m%d")
         
-        # Normalizar ciudad
-        ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', meta_csv.get("ciudad", ciudad).upper())
+        ciudad_csv = re.sub(r'[^A-Za-z0-9]', '', export_meta.get("ciudad", ciudad).upper())
         ciudad_csv = ciudad_csv.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
         
-        # Formatear fechas para el nombre
-        fecha_inicio_str = _fmt_yyyymmdd(meta_csv.get("fecha_inicio"))
-        fecha_fin_str    = _fmt_yyyymmdd(meta_csv.get("fecha_fin"))
-        timestamp = datetime.now().strftime("%H%M%S")
+        fecha_inicio_fmt = _fmt_yyyymmdd(export_meta.get("fecha_inicio"))
+        fecha_fin_fmt = _fmt_yyyymmdd(export_meta.get("fecha_fin"))
         
-        filename_csv = f"muestras_{ciudad_csv}_{fecha_inicio_str}-{fecha_fin_str}_{timestamp}.csv"
+        filename_csv = f"Muestras_{ciudad_csv}_{fecha_inicio_fmt}_{fecha_fin_fmt}.csv"
         
-        # Forzar fecha_evento con hora y exportar como bytes
-        df_out = df_csv.copy()
-        if 'fecha_evento' in df_out.columns:
-            # Formateo más robusto de fecha_evento
-            def format_fecha_evento(x):
-                try:
-                    if pd.isna(x):
-                        return None
-                    dt = pd.to_datetime(x, errors='coerce')
-                    if pd.isna(dt):
-                        return str(x)  # Preservar valor original si no se puede parsear
-                    return dt.strftime('%Y-%m-%d %H:%M:%S')
-                except:
-                    return str(x) if x is not None else None
-            
-            df_out['fecha_evento'] = df_out['fecha_evento'].apply(format_fecha_evento)
+        csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
         
-        # Generar los bytes (igual que Consultores)
-        csv_data = df_out.to_csv(index=False, sep=';').encode('utf-8-sig')
-        
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.download_button(
-                label="📥 Descargar CSV (resumen de operación)",
-                data=csv_data,
-                file_name=filename_csv,
-                mime="text/csv",
-                type="secondary",
-                use_container_width=True,
-                help=f"Descarga el resumen CSV con datos de eventos y cuadrantes asignados ({len(df_out)} registros)"
-            )
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Descargar CSV (resumen de operación)",
+            data=csv_data,
+            file_name=filename_csv,
+            mime="text/csv",
+            type="secondary",
+            use_container_width=True,
+            help="Descarga los datos mostrados en el mapa"
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.button(
-                "📥 Descargar CSV (resumen de operación)",
-                disabled=True,
-                type="secondary",
-                use_container_width=True,
-                help="Genere primero un mapa exitoso"
-            )
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.button(
+            "📥 Descargar CSV (resumen de operación)",
+            disabled=True,
+            type="secondary",
+            use_container_width=True,
+            help="Genere un mapa para habilitar esta descarga."
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
 
-    # Botón de descarga ISM para Muestras (FASE 5)
-    st.markdown("<div style='margin: 0.5rem 0;'></div>", unsafe_allow_html=True)
+# 3. Descarga CSV ISM (métricas por cuadrante)
+if tipo_mapa == "Muestras":
+    df_ism_export = st.session_state.get("muestras_ism_df")
     
-    # Verificar si hay datos ISM disponibles
-    df_ism = st.session_state.get("muestras_ism_df")
-    
-    if df_ism is not None and not df_ism.empty:
-        # Generar nombre del archivo ISM CSV
-        from datetime import datetime, date
-        import pandas as pd
+    if df_ism_export is not None and not df_ism_export.empty:
+        from datetime import datetime
         import re
         
         def _fmt_yyyymmdd(x):
             try:
-                if isinstance(x, (pd.Timestamp, datetime)):
-                    return x.strftime("%Y%m%d")
-                if isinstance(x, date):
+                if hasattr(x, 'strftime'):
                     return x.strftime("%Y%m%d")
                 if isinstance(x, str) and x:
-                    # x esperado 'YYYY-MM-DD'
                     cleaned = x.replace("-", "")
                     if len(cleaned) >= 8 and cleaned[:8].isdigit():
                         return cleaned[:8]
@@ -559,50 +670,54 @@ if tipo_mapa == "Muestras":
                 pass
             return datetime.now().strftime("%Y%m%d")
         
-        # Normalizar ciudad
-        ciudad_ism = re.sub(r'[^A-Za-z0-9]', '', meta_csv.get("ciudad", ciudad).upper())
+        meta_ism = st.session_state.get("muestras_export_meta", {})
+        ciudad_ism = re.sub(r'[^A-Za-z0-9]', '', meta_ism.get("ciudad", ciudad).upper())
         ciudad_ism = ciudad_ism.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
         
-        # Formatear fechas para el nombre
-        fecha_inicio_str = _fmt_yyyymmdd(meta_csv.get("fecha_inicio"))
-        fecha_fin_str = _fmt_yyyymmdd(meta_csv.get("fecha_fin"))
+        fecha_inicio_ism = _fmt_yyyymmdd(meta_ism.get("fecha_inicio"))
+        fecha_fin_ism = _fmt_yyyymmdd(meta_ism.get("fecha_fin"))
         
-        filename_ism = f"ISM_resumen_{ciudad_ism}_{fecha_inicio_str}-{fecha_fin_str}.csv"
+        filename_ism = f"ISM_Muestras_{ciudad_ism}_{fecha_inicio_ism}_{fecha_fin_ism}.csv"
         
-        # Preparar DataFrame ISM para export
-        df_ism_export = df_ism.copy()
+        csv_data_ism = df_ism_export.to_csv(index=False, decimal=',').encode('utf-8-sig')
         
-        # Añadir columnas de rango de fechas al final
-        df_ism_export['fecha_inicio'] = meta_csv.get("fecha_inicio", "")
-        df_ism_export['fecha_fin'] = meta_csv.get("fecha_fin", "")
-        
-        # Ordenar por ISM descendente
-        df_ism_export = df_ism_export.sort_values('ISM', ascending=False)
-        
-        # Generar CSV con encoding UTF-8-SIG para Excel
-        csv_data_ism = df_ism_export.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-        
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.download_button(
-                label="📥 Resumen por cuadrante (ISM)",
-                data=csv_data_ism,
-                file_name=filename_ism,
-                mime="text/csv",
-                type="secondary",
-                use_container_width=True,
-                help=f"Descarga métricas ISM por cuadrante ({len(df_ism_export)} cuadrantes con actividad)"
-            )
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Descargar CSV ISM (métricas por cuadrante)",
+            data=csv_data_ism,
+            file_name=filename_ism,
+            mime="text/csv",
+            type="secondary",
+            use_container_width=True,
+            help="Descarga métricas ISM por cuadrante"
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            st.button(
-                "📥 Resumen por cuadrante (ISM)",
-                disabled=True,
-                type="secondary", 
-                use_container_width=True,
-                help="No hay datos ISM disponibles. Configure densidad_hab_km2 en ism_config.py"
-            )
+        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+        st.button(
+            "📥 Descargar CSV ISM (métricas por cuadrante)",
+            disabled=True,
+            type="secondary",
+            use_container_width=True,
+            help="Genere un mapa para habilitar esta descarga."
+        )
+        st.markdown('</div></div>', unsafe_allow_html=True)
+elif tipo_mapa == "Consultores":
+    st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
+    st.button(
+        "📥 Descargar CSV ISM (métricas por cuadrante)",
+        disabled=True,
+        type="secondary",
+        use_container_width=True,
+        help="ISM no disponible para Consultores"
+    )
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+# Cerrar card "Resultados y Descargas"
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Separador entre cards y procesamiento
+st.markdown('<div class="sp-3"></div>', unsafe_allow_html=True)
 
 # Separador sutil entre secciones
 st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
@@ -615,55 +730,40 @@ st.markdown(
     f"""
     <style>
     .card-cuadrantes {{
-        background: #fafafa;
-        border: 1px solid #e0e0e0;
-        border-radius: 12px;
+        background: linear-gradient(135deg, #5B21B6 0%, #6D28D9 100%);
+        color: white;
         padding: 1.5rem;
-        margin-bottom: 2rem;
+        border-radius: 12px;
+        margin: 1.5rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border: 1px solid rgba(255,255,255,.15);
     }}
     .card-cuadrantes h3 {{
-        color: #262730;
-        font-size: 1.2rem;
-        font-weight: 600;
         margin: 0 0 0.5rem 0;
-    }}
-    .card-cuadrantes p {{
-        color: #6c757d;
-        font-size: 14px;
-        line-height: 1.4;
-        margin: 0 0 1.5rem 0;
+        font-size: 1.25rem;
+        font-weight: bold;
     }}
     .cta-editor {{
         display: inline-block;
-        padding: 12px 20px;
-        background: linear-gradient(135deg, #0EA5E9 0%, #2563EB 100%);
-        color: #FFFFFF;
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
         text-decoration: none;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 16px;
-        border: none;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, .25);
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 500;
         transition: all 0.3s ease;
-        text-align: center;
-        width: 100%;
-        max-width: 280px;
+        border: 1px solid rgba(255, 255, 255, 0.3);
     }}
     .cta-editor:hover {{
-        color: #FFFFFF;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         text-decoration: none;
-    }}
-    .cta-editor:focus {{
-        outline: 2px solid #2563EB;
-        outline-offset: 2px;
-        color: #FFFFFF;
-        text-decoration: none;
+        color: white;
     }}
     @media (prefers-color-scheme: dark) {{
         .card-cuadrantes {{
-            background: #2d3748;
-            border-color: #4a5568;
+            border-color: rgba(255,255,255,.25);
         }}
         .card-cuadrantes h3 {{
             color: #f7fafc;
@@ -809,7 +909,8 @@ if submit_button:
             st.session_state["map_url"] = map_url
             # Actualizar el placeholder con el enlace
             link_placeholder.markdown(
-                f'<a href="{map_url}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+                f'<div class="btn-row"><div><a href="{map_url}" target="_blank" rel="noopener" class="pill">'
+                '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>', 
                 unsafe_allow_html=True
             )
             
@@ -827,7 +928,8 @@ if submit_button:
 if "map_url" in st.session_state and st.session_state["map_url"] is not None:
     if not submit_button:  # Solo mostrar si no acabamos de procesar (evita duplicación)
         link_placeholder.markdown(
-            f'<a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" style="text-decoration:underline; color:#1d4ed8; font-weight:500;">Ver Mapa en Nueva Pestaña</a>', 
+            f'<div class="btn-row"><div><a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" class="pill">'
+            '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>', 
             unsafe_allow_html=True
         )
 elif not submit_button:
