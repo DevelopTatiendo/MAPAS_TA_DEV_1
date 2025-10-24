@@ -313,6 +313,33 @@ with st.form(key="filtros_form"):
             default_idx = 1
             color_mode = st.radio("Colores por:", color_options, index=default_idx, key="color_mode_muestras")
             verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
+            
+            # ISM Calibración
+            st.markdown("**🎯 Calibración ISM**")
+            st.caption("Overrides opcionales para ajustar el cálculo de ISM sin modificar la configuración base")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                pph_override = st.number_input(
+                    "Personas por hogar", 
+                    min_value=1.0, 
+                    max_value=10.0, 
+                    value=None,
+                    step=0.1,
+                    placeholder="Por defecto según ciudad",
+                    help="Override para personas por hogar (afecta densidad de hogares)"
+                )
+            with col2:
+                hogares_por_m2_override = st.number_input(
+                    "Hogares por m²", 
+                    min_value=0.0, 
+                    max_value=0.01, 
+                    value=None,
+                    step=0.0001,
+                    format="%.6f",
+                    placeholder="Por defecto según ciudad",
+                    help="Override directo para hogares por metro cuadrado"
+                )
         
         # Cuadrantes (opcional)
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -467,6 +494,12 @@ with st.form(key="filtros_form"):
     #         value=manana_colombia,
     #         help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
     #     )
+    
+    # Guardar overrides ISM en session state
+    if 'pph_override' in locals():
+        st.session_state["pph_override"] = pph_override if pph_override else None
+    if 'hogares_por_m2_override' in locals():
+        st.session_state["hogares_por_m2_override"] = hogares_por_m2_override if hogares_por_m2_override else None
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -816,8 +849,12 @@ if submit_button:
         if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
+            # Obtener overrides ISM de los controles
+            pph_override = st.session_state.get("pph_override")
+            hogares_por_m2_override = st.session_state.get("hogares_por_m2_override")
+            
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas
+                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas, hogares_por_m2_override, pph_override
             )
             if resultado:
                 # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)

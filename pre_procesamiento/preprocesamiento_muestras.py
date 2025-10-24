@@ -6,7 +6,7 @@ import warnings
 from typing import List, Dict
 from .db_utils import sql_read
 from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
-from ism_config import get_city_key, compute_hogares_por_m2
+from ism_config import get_city_key, compute_hogares_por_m2, resolve_hogares_por_m2
 
 # Silenciar warnings de pandas sobre MySQL
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
@@ -403,7 +403,9 @@ def compute_ism_metrics_por_cuadrante(
     features_cuadrantes,      # list[feature GeoJSON] con geometry y properties[codigo_key]
     ciudad,                   # str (ej. 'CALI')
     codigo_key: str = 'codigo',
-    tz: str = 'America/Bogota'
+    tz: str = 'America/Bogota',
+    hogares_por_m2_override: float = None,  # Override directo para hogares/m²
+    pph_override: float = None              # Override para personas por hogar
 ) -> 'pd.DataFrame':
     """
     Calcula métricas ISM (Índice de Saturación del Mercado) por cuadrante.
@@ -419,6 +421,8 @@ def compute_ism_metrics_por_cuadrante(
         ciudad: Nombre de ciudad (ej. 'CALI') para obtener densidad demográfica
         codigo_key: Clave en properties para identificar cuadrantes (default: 'codigo')
         tz: Zona horaria para normalización de fechas (default: 'America/Bogota')
+        hogares_por_m2_override: Override directo para hogares/m² (para calibración)
+        pph_override: Override para personas por hogar (para calibración)
         
     Returns:
         pd.DataFrame con métricas ISM por cuadrante:
@@ -427,12 +431,13 @@ def compute_ism_metrics_por_cuadrante(
         - C_raw, C, E_raw, E, ISM, over_flag
         
     Raises:
-        ValueError: Si ciudad no tiene densidad_hab_km2 configurada en ism_config
+        ValueError: Si ciudad no tiene densidad_hab_km2 configurada y no se proveen overrides
         
     Notes:
         - Retorna DataFrame vacío con esquema completo si no hay eventos o cuadrantes
         - C y E se capan en 1.0, ISM usa media armónica: 2*C*E/(C+E) * 100
         - over_flag=True cuando cobertura raw > 100%
+        - Overrides permiten calibración sin modificar configuración base
         - Maneja casos edge: divisiones por cero, cuadrantes sin eventos, etc.
     """
     
@@ -464,8 +469,12 @@ def compute_ism_metrics_por_cuadrante(
     # Paso C — Constantes ciudad y áreas por código
     city_key = get_city_key(str(ciudad))
     
-    # Esto puede lanzar ValueError si densidad no está definida - propagar error
-    hogares_por_m2 = compute_hogares_por_m2(city_key)
+    # Obtener hogares_por_m2 con nueva función de override
+    hogares_por_m2 = resolve_hogares_por_m2(
+        city_key=city_key,
+        hogares_por_m2_override=hogares_por_m2_override,
+        pph_override=pph_override
+    )
     
     # Construir cache de áreas una sola vez
     area_por_codigo = {}

@@ -301,7 +301,7 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
         
     return result
 
-def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) -> str:
+def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, ciudad: str = None, debug: bool=False) -> str:
     """
     Genera popup HTML para cuadrantes con métricas ISM completas.
     
@@ -309,6 +309,7 @@ def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) 
         code: Código del cuadrante
         area_m2: Área real en m² (puede diferir de m['area_m2'])
         m: Dict con métricas ISM de compute_ism_metrics_por_cuadrante()
+        ciudad: Nombre de ciudad para calcular hogares estimados si no está disponible
         debug: Si True, incluye bloque técnico adicional
         
     Returns:
@@ -343,6 +344,25 @@ def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) 
         ism_color = "#dc2626"  # rojo
         ism_label = "Bajo"
     
+    # Calcular hogares_estimados si no está disponible
+    hogares_estimados = m.get('hogares_estimados')
+    if hogares_estimados is None:
+        try:
+            # Intentar obtener hogares_por_m2 del mismo dict de métricas
+            hogares_por_m2 = m.get('hogares_por_m2')
+            if hogares_por_m2 is None and ciudad:
+                # Como último recurso, resolver con la configuración de ciudad
+                from ism_config import resolve_hogares_por_m2, get_city_key
+                city_key = get_city_key(ciudad)
+                hogares_por_m2 = resolve_hogares_por_m2(city_key)
+            
+            if hogares_por_m2:
+                hogares_estimados = round(area_m2 * hogares_por_m2)
+            else:
+                hogares_estimados = 0
+        except Exception:
+            hogares_estimados = 0
+    
     # Formateo con ES-CO (coma decimal)
     ism_fmt = __fmt_es(ism, 1, False) + "%"
     c_fmt = __fmt_es(c, 2, False)
@@ -350,6 +370,7 @@ def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) 
     c_raw_fmt = __fmt_es(c_raw, 2, False)
     area_m2_fmt = __fmt_es(area_m2, 0)
     area_km2_fmt = __fmt_es(area_km2, 2, False)
+    hogares_estimados_fmt = __fmt_es(hogares_estimados, 0)
     
     # Chip de sobrecobertura opcional
     over_chip = ""
@@ -407,29 +428,26 @@ def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) 
         
         {over_chip}
         
-        <!-- Días y λ del cuadrante -->
-        <div style="margin-top:8px; font-size:13px; line-height:1.4; color:#374151;">
-            <div><strong>Días de operación:</strong> {m.get('dias_operacion', 0)} · <strong>λ (cuadrante):</strong> {__fmt_es(m.get('lambda_q', 0.0), 2, False)}</div>
-        </div>
-        
-        <!-- Métricas secundarias -->
+        <!-- Métricas principales (nuevo orden) -->
         <div style="margin-top:8px; font-size:13px; line-height:1.4;">
             <div><strong>Muestras (local):</strong> {muestras_local}</div>
-            <div><strong># Promotores:</strong> {n_promotores}</div>
+            <div><strong>Días de operación:</strong> {m.get('dias_operacion', 0)}</div>
+            <div><strong>Promotores:</strong> {n_promotores}</div>
+            <div><strong>Tasa:</strong> {__fmt_es(m.get('lambda_q', 0.0), 2, False)}</div>
         </div>
         
-        <!-- Área (terciario) -->
+        <!-- Área + Hogares estimados -->
         <div style="margin-top:6px; font-size:11px; color:#6b7280;">
-            Área: {area_m2_fmt} m² ({area_km2_fmt} km²)
+            Área: {area_m2_fmt} m² ({area_km2_fmt} km²) • Hogares estimados: {hogares_estimados_fmt}
         </div>
         
         {debug_block}
     </div>
     """
 
-def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None) -> str:
+def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None, ciudad: str = None, n_promotores: int = None) -> str:
     """
-    Genera popup HTML para cuadrantes con 4 métricas: área, índice de cobertura, cantidad y muestras/día.
+    Genera popup HTML para cuadrantes con métricas tradicionales: muestras, días, promotores, tasa, área y hogares estimados.
     """
     # Verificación y alertas de área inusual
     area_km2 = area_m2 / 1_000_000 if area_m2 > 0 else 0.0
@@ -438,19 +456,31 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     elif area_km2 > 5.0:
         st.warning(f"Área muy grande detectada en {codigo}: {area_km2:.2f} km²")
     
-    # Cálculo del índice de cobertura (0-1) contra meta
-    densidad_m2 = (total_local / area_m2) if area_m2 > 0 else 0.0  # Protección división por cero
-    dens_1000 = densidad_m2 * DENSIDAD_BASE_M2
-    cobertura = min(1.0, dens_1000 / OBJETIVO_X_1000M2) if area_m2 > 0 else 0.0
+    # Cálculo de tasa (lambda aproximado)
+    if n_promotores is None:
+        n_promotores = 1  # Valor por defecto si no se proporciona
     
-    mxdia = (total_local / dias_activos) if dias_activos > 0 else 0.0
+    # Tasa aproximada: muestras / (promotores * días)
+    tasa = (total_local / (n_promotores * dias_activos)) if (n_promotores > 0 and dias_activos > 0) else 0.0
+    
+    # Cálculo de hogares estimados
+    hogares_estimados = 0
+    try:
+        if ciudad:
+            from ism_config import resolve_hogares_por_m2, get_city_key
+            city_key = get_city_key(ciudad)
+            hogares_por_m2 = resolve_hogares_por_m2(city_key)
+            hogares_estimados = round(area_m2 * hogares_por_m2)
+    except Exception:
+        # Si falla la resolución de ciudad, mostrar N/D
+        pass
 
     # Formateo ES-CO con punto como separador de miles y coma como decimal
-    area_m2_fmt = fmt_int_miles(area_m2)  # "501.331"
-    area_km2_fmt = fmt_dec_es(area_km2, nd=2)  # "0,50"
-    cobertura_txt = f"{cobertura:.2f}".replace(".", ",")
-    cantidad_fmt = str(int(total_local))  # cantidad como entero
-    mxdia_fmt = fmt_dec_es(mxdia, nd=1)  # "59,0"
+    area_m2_fmt = __fmt_es(area_m2, 0)  # Usar la función estándar ya disponible
+    area_km2_fmt = __fmt_es(area_km2, 2, False)  # Sin separador de miles para decimales
+    cantidad_fmt = __fmt_es(total_local, 0)  # Con separador de miles
+    tasa_fmt = __fmt_es(tasa, 2, False)
+    hogares_estimados_fmt = __fmt_es(hogares_estimados, 0) if hogares_estimados > 0 else "N/D"
 
     # Líneas debug opcionales
     debug_lines = ""
@@ -477,29 +507,22 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
             debug_lines += f'<div style="font-size:10px;color:#9ca3af;margin-bottom:4px;">{tipo_geom} ({num_anillos} anillo{"s" if num_anillos != 1 else ""})</div>'
 
     return f"""
-    <div style="font-family: Inter, system-ui; font-size: 12px; line-height: 1.2;">
-      <div style="font-weight:600; margin-bottom:6px;">{codigo}</div>
-      {debug_lines}
-      <table style="border-collapse: collapse; width: 100%;">
-        <tbody>
-          <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Área</td>
-              <td style="padding:4px 6px; border:1px solid #d1d5db; text-align:right;">
-                {area_m2_fmt} m² ({area_km2_fmt} km²)
-              </td></tr>
-          <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Índice de cobertura</td>
-              <td style="padding:4px 6px; border:1px solid #d1d5db; text-align:right;">
-                {cobertura_txt}
-              </td></tr>
-          <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Cantidad de muestras (local)</td>
-              <td style="padding:4px 6px; border:1px solid #d1d5db; text-align:right;">
-                {cantidad_fmt}
-              </td></tr>
-          <tr><td style="padding:4px 6px; border:1px solid #d1d5db;">Muestras/día (local)</td>
-              <td style="padding:4px 6px; border:1px solid #d1d5db; text-align:right;">
-                {mxdia_fmt}
-              </td></tr>
-        </tbody>
-      </table>
+    <div style="font-family: Inter, system-ui; font-size: 14px; line-height: 1.3;">
+        <div style="font-weight:600; margin-bottom:8px; font-size:16px;">{codigo}</div>
+        {debug_lines}
+        
+        <!-- Métricas principales (nuevo orden) -->
+        <div style="margin-top:8px; font-size:13px; line-height:1.4;">
+            <div><strong>Muestras (local):</strong> {cantidad_fmt}</div>
+            <div><strong>Días de operación:</strong> {dias_activos}</div>
+            <div><strong>Promotores:</strong> {n_promotores}</div>
+            <div><strong>Tasa:</strong> {tasa_fmt}</div>
+        </div>
+        
+        <!-- Área + Hogares estimados -->
+        <div style="margin-top:6px; font-size:11px; color:#6b7280;">
+            Área: {area_m2_fmt} m² ({area_km2_fmt} km²) • Hogares estimados: {hogares_estimados_fmt}
+        </div>
     </div>
     """
 
@@ -696,7 +719,7 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False):
+def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False, hogares_por_m2_override=None, pph_override=None):
     try:
         # Activar DEBUG_AREAS si está en modo verificación
         global DEBUG_AREAS
@@ -1129,7 +1152,9 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 features_cuadrantes, 
                 ciudad, 
                 codigo_key='codigo', 
-                tz='America/Bogota'
+                tz='America/Bogota',
+                hogares_por_m2_override=hogares_por_m2_override,
+                pph_override=pph_override
             )
             
             # Construir índice rápido por código (asegurar tipo str)
@@ -1199,10 +1224,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 # Lógica ISM: usar popup ISM si hay actividad, sino fallback
                 if codigo in metrics_by_code:
                     row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, debug=DEBUG_ISM)
+                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
                 else:
                     # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info)
+                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info, ciudad)
                     # Solo añadir mensaje si NO hay muestras en el polígono
                     if m['total_muestras'] == 0:
                         popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
@@ -1232,10 +1257,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 # Lógica ISM: usar popup ISM si hay actividad, sino fallback
                 if codigo in metrics_by_code:
                     row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, debug=DEBUG_ISM)
+                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
                 else:
                     # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info)
+                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info, ciudad)
                     # Solo añadir mensaje si NO hay muestras en el polígono
                     if m['total_muestras'] == 0:
                         popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
