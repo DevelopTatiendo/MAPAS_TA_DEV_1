@@ -9,7 +9,7 @@ import streamlit as st
 from folium import FeatureGroup
 from folium.plugins import FeatureGroupSubGroup
 from matplotlib import colors
-from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores
+from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores, compute_ism_metrics_por_cuadrante
 import unicodedata
 from utils.gestor_mapas import guardar_mapa_controlado
 
@@ -27,6 +27,9 @@ OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 
 # === CONSTANTES PARA CÁLCULO DE ÁREAS ===
 DEBUG_AREAS = False  # Si True, el popup mostrará el método: "geodésico" o "fallback"
+
+# === CONSTANTE PARA DEBUG ISM ===
+DEBUG_ISM = False  # Muestra detalle técnico (H_est, λ_q, C_raw, E_raw, N, D) cuando True
 
 # === PALETA DE COLORES POR MES ===
 PALETA_MESES = {
@@ -71,6 +74,41 @@ def fmt_dec_es(n: float, nd: int = 2) -> str:
 def fmt_densidad_es(densidad_m2: float, nd: int = 6) -> str:
     """Formateo densidad con coma decimal (ES-CO): 0.000471 -> '0,000471'"""
     return f"{densidad_m2:.{nd}f}".replace(".", ",")
+
+def __fmt_es(value: float, dec: int = 0, miles: bool = True) -> str:
+    """
+    Helper local de formato numérico estilo es-CO.
+    
+    Args:
+        value: Valor numérico a formatear
+        dec: Número de decimales
+        miles: Si True, agrupa miles con punto
+        
+    Returns:
+        str: Número formateado (ejemplo: 838.039 o 8,75)
+    """
+    formatted = f"{value:.{dec}f}"
+    
+    # Separar parte entera y decimal
+    if '.' in formatted:
+        parte_entera, parte_decimal = formatted.split('.')
+    else:
+        parte_entera, parte_decimal = formatted, ""
+    
+    # Aplicar separador de miles si está habilitado
+    if miles and len(parte_entera) > 3:
+        # Agrupar de derecha a izquierda cada 3 dígitos
+        grupos = []
+        for i in range(len(parte_entera), 0, -3):
+            start = max(0, i-3)
+            grupos.append(parte_entera[start:i])
+        parte_entera = '.'.join(reversed(grupos))
+    
+    # Combinar con coma decimal si hay parte decimal
+    if parte_decimal:
+        return f"{parte_entera},{parte_decimal}"
+    else:
+        return parte_entera
 
 def _asignar_cuadrante_a_puntos(df_pts, features_cuadrantes):
     """
@@ -262,6 +300,132 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
         result['metodo_area'] = metodo_area
         
     return result
+
+def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, debug: bool=False) -> str:
+    """
+    Genera popup HTML para cuadrantes con métricas ISM completas.
+    
+    Args:
+        code: Código del cuadrante
+        area_m2: Área real en m² (puede diferir de m['area_m2'])
+        m: Dict con métricas ISM de compute_ism_metrics_por_cuadrante()
+        debug: Si True, incluye bloque técnico adicional
+        
+    Returns:
+        str: HTML del popup con jerarquía visual ISM
+    """
+    
+    # Extraer valores principales
+    ism = m.get('ISM', 0.0)
+    c = m.get('C', 0.0) 
+    e = m.get('E', 0.0)
+    c_raw = m.get('C_raw', 0.0)
+    e_raw = m.get('E_raw', 0.0)
+    over_flag = m.get('over_flag', False)
+    muestras_local = m.get('muestras_local', 0)
+    n_promotores = m.get('n_promotores', 0)
+    area_km2 = area_m2 / 1_000_000 if area_m2 > 0 else 0.0
+    
+    # Semáforo ISM por umbrales
+    if ism >= 90:
+        ism_color = "#1e40af"  # azul
+        ism_label = "Excelente"
+    elif ism >= 80:
+        ism_color = "#16a34a"  # verde intenso
+        ism_label = "Muy Bueno"
+    elif ism >= 60:
+        ism_color = "#15803d"  # verde
+        ism_label = "Bueno"
+    elif ism >= 40:
+        ism_color = "#f59e0b"  # ámbar
+        ism_label = "Regular"
+    else:
+        ism_color = "#dc2626"  # rojo
+        ism_label = "Bajo"
+    
+    # Formateo con ES-CO (coma decimal)
+    ism_fmt = __fmt_es(ism, 1, False) + "%"
+    c_fmt = __fmt_es(c, 2, False)
+    e_fmt = __fmt_es(e, 2, False)
+    c_raw_fmt = __fmt_es(c_raw, 2, False)
+    area_m2_fmt = __fmt_es(area_m2, 0)
+    area_km2_fmt = __fmt_es(area_km2, 2, False)
+    
+    # Chip de sobrecobertura opcional
+    over_chip = ""
+    if over_flag:
+        over_chip = f"""
+        <div style="margin-top:4px;font-size:11px;color:#dc2626;">
+            ⚠ Sobrecobertura detectada (C_raw: {c_raw_fmt})
+        </div>
+        """
+    
+    # Bloque debug técnico opcional
+    debug_block = ""
+    if debug:
+        h_est = m.get('hogares_estimados', 0.0)
+        lambda_q = m.get('lambda_q', 0.0)
+        d = m.get('dias_operacion', 0)
+        n = m.get('n_promotores', 0)
+        
+        h_est_fmt = __fmt_es(h_est, 1, False)
+        lambda_q_fmt = __fmt_es(lambda_q, 2, False)
+        e_raw_fmt = __fmt_es(e_raw, 2, False)
+        
+        debug_block = f"""
+        <div style="margin-top:8px;padding:6px;background:#f8fafc;border-radius:4px;font-family:monospace;font-size:11px;line-height:1.3;">
+            <div style="font-weight:600;margin-bottom:3px;color:#374151;">Debug técnico:</div>
+            <div>H_est: {h_est_fmt} · λ_q: {lambda_q_fmt}</div>
+            <div>D: {d} · N: {n}</div>
+            <div>C_raw: {c_raw_fmt} · E_raw: {e_raw_fmt}</div>
+        </div>
+        """
+    
+    return f"""
+    <div style="font-family: Inter, system-ui; font-size: 14px; line-height: 1.3;">
+        <div style="font-weight:600; margin-bottom:8px; font-size:16px;">{code}</div>
+        
+        <!-- ISM Principal -->
+        <div style="text-align:center; margin:10px 0;">
+            <div style="font-size:22px; font-weight:700; color:{ism_color}; margin-bottom:2px;">
+                {ism_fmt}
+            </div>
+            <div style="font-size:12px; color:#6b7280; font-weight:500;">
+                ISM · {ism_label}
+            </div>
+        </div>
+        
+        <!-- Chips C y E -->
+        <div style="display:flex; gap:8px; justify-content:center; margin:8px 0;">
+            <div style="background:#e5e7eb; padding:4px 8px; border-radius:12px; font-size:16px; font-weight:600;">
+                C (Cobertura): {c_fmt}
+            </div>
+            <div style="background:#e5e7eb; padding:4px 8px; border-radius:12px; font-size:16px; font-weight:600;">
+                E (Esfuerzo): {e_fmt}
+            </div>
+        </div>
+        
+        {over_chip}
+        
+        <!-- Días y λ del cuadrante -->
+        <div style="margin-top:8px; font-size:13px; line-height:1.4; color:#374151;">
+            <div><strong>Días de operación:</strong> {m.get('dias_operacion', 0)} · <strong>λ (cuadrante):</strong> {__fmt_es(m.get('lambda_q', 0.0), 2, False)}</div>
+        </div>
+        
+        <!-- Métricas secundarias -->
+        <div style="margin-top:8px; font-size:13px; line-height:1.4;">
+            <div><strong>Muestras (local):</strong> {muestras_local}</div>
+            <div><strong># Promotores:</strong> {n_promotores}</div>
+        </div>
+        
+        <!-- Área (terciario) -->
+        <div style="margin-top:6px; font-size:11px; color:#6b7280;">
+            Área: {area_m2_fmt} m² ({area_km2_fmt} km²)
+        </div>
+        
+        {debug_block}
+    </div>
+    """
 
 def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None) -> str:
     """
@@ -558,13 +722,21 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     # Retornar mapa vacío
                     mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                    return filename, 0, None
+                    # DataFrame ISM vacío con esquema
+                    schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                                  'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
+                    df_ism_empty = pd.DataFrame(columns=schema_ism)
+                    return filename, 0, None, df_ism_empty
             except ValueError:
                 st.error("❌ Error: Formato de fecha inválido para el modo 'Temporalidad (mes)'.")
                 # Retornar mapa vacío
                 mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                 filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                return filename, 0, None
+                # DataFrame ISM vacío con esquema
+                schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                              'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
+                df_ism_empty = pd.DataFrame(columns=schema_ism)
+                return filename, 0, None, df_ism_empty
 
         # Ruta de coordenadas para cada ciudad
         rutas_coordenadas = {
@@ -616,7 +788,11 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
             filepath = f"static/maps/{filename}"
             mapa.save(filepath)
-            return filename, 0, None
+            # DataFrame ISM vacío con esquema
+            schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                          'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
+            df_ism_empty = pd.DataFrame(columns=schema_ism)
+            return filename, 0, None, df_ism_empty
    
         # Selección de base geográfica
         if override_fc is not None:
@@ -673,7 +849,11 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
             filepath = f"static/maps/{filename}"
             mapa.save(filepath)
-            return filename, 0, None
+            # DataFrame ISM vacío con esquema
+            schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                          'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
+            df_ism_empty = pd.DataFrame(columns=schema_ism)
+            return filename, 0, None, df_ism_empty
 
         # Si se selecciona una ruta, filtrar también por ruta
         if barrios:
@@ -938,6 +1118,36 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 }
             ).add_to(comunas_group)
         
+        # === CÁLCULO DE MÉTRICAS ISM (FASE 4) ===
+        df_ism = None
+        metrics_by_code = {}
+        
+        try:
+            # Calcular métricas ISM usando la función de FASE 3
+            df_ism = compute_ism_metrics_por_cuadrante(
+                df_for_conteo, 
+                features_cuadrantes, 
+                ciudad, 
+                codigo_key='codigo', 
+                tz='America/Bogota'
+            )
+            
+            # Construir índice rápido por código (asegurar tipo str)
+            if not df_ism.empty:
+                metrics_by_code = {str(row['codigo_cuadrante']): row for _, row in df_ism.iterrows()}
+                logging.info(f"ISM calculado para {len(metrics_by_code)} cuadrantes con actividad")
+            else:
+                logging.info("No hay cuadrantes con actividad para cálculo ISM")
+                
+        except ValueError as e:
+            # Error esperado: densidad no definida para la ciudad
+            st.error(f"⚠️ Para habilitar ISM: {e}")
+            logging.warning(f"ISM no disponible: {e}")
+        except Exception as e:
+            # Error inesperado
+            st.error(f"❌ Error calculando ISM: {e}")
+            logging.error(f"Error inesperado en ISM: {e}")
+        
         # === CÁLCULO DE MÉTRICAS POR CUADRANTE ===
         
         # Separar padres e hijos
@@ -947,15 +1157,22 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         # Cache de métricas para evitar recálculos - clave: (tipo, codigo)
         metricas_cache = {}
         
+        # Mapeo de área para CSV - clave: codigo cuadrante, valor: area_m2
+        area_map = {}
+        
         # 1. Calcular métricas para hijos
         for feature_hijo in features_hijos:
             metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
             metricas_cache[('HIJO', metricas['codigo'])] = metricas
+            # Guardar área para CSV
+            area_map[metricas['codigo']] = metricas['area_m2']
         
         # 2. Calcular métricas para padres (cálculo directo)
         for feature_padre in features_padres:
             metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
             metricas_cache[('PADRE', metricas['codigo'])] = metricas
+            # Guardar área para CSV
+            area_map[metricas['codigo']] = metricas['area_m2']
         
         # Logging informativo para el caso PADRE-only (estándar del standardizer)
         if len(features_hijos) == 0 and len(features_padres) > 0:
@@ -968,7 +1185,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         # --- PADRES (debajo) ---
         for feature_padre in features_padres:
             props  = feature_padre.get('properties', {})
-            codigo = props.get('codigo', '')
+            codigo = str(props.get('codigo', ''))  # Asegurar tipo str
             cache_key = ('PADRE', codigo)
             if cache_key in metricas_cache:
                 m = metricas_cache[cache_key]
@@ -979,7 +1196,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 if verificar_areas:
                     verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE')
                 
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info)
+                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
+                if codigo in metrics_by_code:
+                    row_ism = metrics_by_code[codigo]
+                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, debug=DEBUG_ISM)
+                else:
+                    # Sin actividad ISM en rango: usar popup tradicional
+                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info)
+                    # Solo añadir mensaje si NO hay muestras en el polígono
+                    if m['total_muestras'] == 0:
+                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -991,7 +1218,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         # --- HIJOS (encima) ---
         for feature_hijo in features_hijos:
             props  = feature_hijo.get('properties', {})
-            codigo = props.get('codigo', '')
+            codigo = str(props.get('codigo', ''))  # Asegurar tipo str
             cache_key = ('HIJO', codigo)
             if cache_key in metricas_cache:
                 m = metricas_cache[cache_key]
@@ -1002,7 +1229,17 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 if verificar_areas:
                     verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO')
                 
-                popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info)
+                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
+                if codigo in metrics_by_code:
+                    row_ism = metrics_by_code[codigo]
+                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, debug=DEBUG_ISM)
+                else:
+                    # Sin actividad ISM en rango: usar popup tradicional
+                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info)
+                    # Solo añadir mensaje si NO hay muestras en el polígono
+                    if m['total_muestras'] == 0:
+                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
@@ -1227,8 +1464,10 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 color_mes = PALETA_MESES[mes]
                 
                 # Calcular métricas del mes
-                muestras_mes = len(df_filtrado[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)])
-                ids_mes = df_filtrado.loc[(df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo), "id_autor"].dropna().unique().tolist()
+                mask_mes = (df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)
+                muestras_mes = len(df_filtrado[mask_mes])
+                dias_hab_mes = df_filtrado.loc[mask_mes, "fecha_evento"].dt.date.nunique()
+                ids_mes = df_filtrado.loc[mask_mes, "id_autor"].dropna().unique().tolist()
                 
                 # Fechas del mes para la consulta
                 from datetime import datetime
@@ -1266,6 +1505,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                             <span>{mes_label} {anyo}</span>
                         </td>
                         <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
+                        <td style="padding:6px 8px;text-align:right;">{dias_hab_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
                         <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
@@ -1287,6 +1527,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                       <tr>
                         <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
+                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">#Días hábiles</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
                         <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
@@ -1322,75 +1563,71 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 df_csv["lat"] = df_csv.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
                 df_csv["lot"] = df_csv.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
                 
-                # --- construir columna 'id' robusta ---
-                import hashlib
-                import numpy as np
+                # Verificar que fecha_evento existe
+                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
+                    df_csv["fecha_evento"] = df_csv["fecha"]
                 
-                # 1) Partimos de un candidato: si existe 'id_evento' lo usamos, si no, 'id' si ya viniera de BD
-                cand = None
-                if "id_evento" in df_csv.columns:
-                    cand = df_csv["id_evento"].astype(str).str.strip()
-                elif "id" in df_csv.columns:
-                    cand = df_csv["id"].astype(str).str.strip()
+                # Filtrar registros con coordenadas válidas
+                df_csv = df_csv.dropna(subset=["lat", "lot"])
                 
-                # 2) Generar un ID determinístico para vacíos/duplicados
-                #    (hash corto de: fecha_evento | id_autor | lat | lot), estable y barato
-                def _mk_hash(row):
-                    fe = str(row.get("fecha_evento", ""))
-                    au = str(row.get("id_autor", ""))
-                    la = "" if pd.isna(row.get("lat")) else f"{float(row.get('lat')):.6f}"
-                    lo = "" if pd.isna(row.get("lot")) else f"{float(row.get('lot')):.6f}"
-                    seed = f"{fe}|{au}|{la}|{lo}"
-                    return hashlib.blake2b(seed.encode("utf-8"), digest_size=6).hexdigest()  # 12 hex
+                # Ordenar por fecha_evento asc, luego lat, luego lot para empates
+                sort_cols = []
+                if "fecha_evento" in df_csv.columns:
+                    sort_cols.append("fecha_evento")
+                sort_cols.extend(["lat", "lot"])
+                df_csv = df_csv.sort_values(sort_cols, ascending=True)
                 
-                # Crear serie base
-                if cand is None:
-                    base = pd.Series([""] * len(df_csv), index=df_csv.index, dtype=str)
-                else:
-                    base = cand.fillna("").astype(str)
+                # Resetear índice y crear ID simple 1..N
+                df_csv = df_csv.reset_index(drop=True)
+                df_csv["id"] = df_csv.index + 1
                 
-                # Rellenar vacíos con hash (incluyendo None y "None")
-                needs_hash = (base == "") | base.isna() | (base == "None") | (base == "nan")
-                hash_ids = df_csv.loc[needs_hash].apply(_mk_hash, axis=1)
-                base.loc[needs_hash] = hash_ids
-                
-                # Proteger contra duplicados (poco probable pero posible):
-                # si hay duplicados en 'base', desambiguamos con un sufijo incremental
-                dup_mask = base.duplicated(keep=False)
-                if dup_mask.any():
-                    # agrupar duplicados y enumerar
-                    for val, idxs in base[dup_mask].groupby(base[dup_mask]).groups.items():
-                        for k, idx in enumerate(idxs):
-                            if k == 0:
-                                continue
-                            base.at[idx] = f"{val}_{k}"
-                
-                df_csv["id"] = base.astype(str)
+                # Agregar lon duplicando lot (mantener compatibilidad)
+                df_csv["lon"] = df_csv["lot"]
                 
                 # cod_cuadrante sin reconsultas
                 cod_series = _asignar_cuadrante_a_puntos(df_csv, features_cuadrantes)
                 df_csv["cod_cuadrante"] = cod_series
                 
-                # Verificar que fecha_evento existe
-                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
-                    df_csv["fecha_evento"] = df_csv["fecha"]
+                # Agregar area_m2_cuadrante usando el mapeo calculado
+                df_csv["area_m2_cuadrante"] = df_csv["cod_cuadrante"].map(area_map).fillna(0).round().astype(int)
                 
-                # columnas finales y limpieza
-                cols = ["id", "fecha_evento", "id_autor", "lat", "lot", "cod_cuadrante"]
-                df_csv = df_csv[cols].dropna(subset=["lat", "lot"])
+                # columnas finales sugeridas
+                cols_finales = ["id", "fecha_evento", "id_autor", "lat", "lot", "lon", "cod_cuadrante", "area_m2_cuadrante"]
                 
-                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas")
+                # Incluir id_contacto si existe, justo después de id_autor
+                if "id_contacto" in df_csv.columns:
+                    insert_pos = cols_finales.index("id_autor") + 1
+                    cols_finales = cols_finales[:insert_pos] + ["id_contacto"] + cols_finales[insert_pos:]
+                
+                # Usar solo las columnas que existan
+                cols_disponibles = [col for col in cols_finales if col in df_csv.columns]
+                df_csv = df_csv[cols_disponibles]
+                
+                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas y ordenamiento fecha_evento ASC")
         except Exception as e:
             logging.error(f"Error construyendo DF CSV: {e}")
             df_csv = None
         
-        # Retornar filename, número de puntos y DF para CSV
+        # Preparar df_ism para retorno (si está vacío, crear con esquema)
+        if df_ism is None or df_ism.empty:
+            # Crear DataFrame vacío con esquema ISM de FASE 3
+            schema_ism = [
+                'ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag'
+            ]
+            df_ism = pd.DataFrame(columns=schema_ism)
+        
+        # Retornar filename, número de puntos, DF para CSV e ISM
         n_puntos = len(df_filtrado) if not df_filtrado.empty else 0
-        return filename, n_puntos, df_csv
+        return filename, n_puntos, df_csv, df_ism
 
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
-        return None, 0, None
+        # DataFrame ISM vacío con esquema para casos de error
+        schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
+                      'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
+        df_ism_empty = pd.DataFrame(columns=schema_ism)
+        return None, 0, None, df_ism_empty
     finally:
         # Restaurar DEBUG_AREAS al valor original
         if verificar_areas:

@@ -1,57 +1,29 @@
 #!/usr/bin/env python3
 """
-GeoJSON Standardizer and Metrics Calculator
+GeoJSON Sweep Line Reordering Tool
 
-This script normalizes GeoJSON files by:
-1. Standardizing quadrant codes with proper city prefixes
-2. Setting all features as PADRE level (no hierarchy)
-3. Calculating geodesic geometry metrics
-4. Exporting a CSV summary with metrics
+Reordena códigos de cuadrantes por sweep line (arriba hacia abajo, izquierda a derecha)
+manteniendo el prefijo auto-inferido (CL, PR, MD, etc.).
 
-Usage:
-    python tools/geojson_standardizer.py \
-        --input /path/to/input.geojson \
-        --output /path/to/output.geojson \
-        --city "PEREIRA" \
-        --csv-out /path/to/metrics.csv \
-        [--force-reindex]
-
-City prefixes:
-    CALI → CL
-    MANIZALES → MZ
-    BOGOTA → BG
-    MEDELLIN → MD
-    PEREIRA → PR
-    BUCARAMANGA → BC
-    BARRANQUILLA → BR
+Configuración:
+    Editar INPUT_PATH con la ruta del archivo GeoJSON de entrada
+    
+Salida:
+    Genera {nombre_base}_order.geojson en la misma carpeta
 """
 
-import argparse
 import json
-import sys
+import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
 import logging
 
-# Third-party imports (will be checked for availability)
+# Required imports
 try:
-    import geopandas as gpd
-    import pandas as pd
-    from shapely.geometry import shape, Point, Polygon
-    from shapely.ops import transform
-    import pyproj
-    from pyproj import Geod
-    HAS_GEOSPATIAL_LIBS = True
-except ImportError as e:
-    HAS_GEOSPATIAL_LIBS = False
-    MISSING_LIBS = str(e)
-
-# Optional progress bar
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
+    from shapely.geometry import shape
+    HAS_SHAPELY = True
 except ImportError:
-    HAS_TQDM = False
+    HAS_SHAPELY = False
+    print("WARNING: Shapely no disponible - usando cálculo de bounds aproximado")
 
 # Configure logging
 logging.basicConfig(
@@ -60,420 +32,285 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Official city prefix dictionary
-CITY_PREFIX = {
+# ================================================================================================
+# CONFIGURACIÓN - CAMBIAR ESTA RUTA
+# ================================================================================================
+
+INPUT_PATH = r"C:\Users\ESP_NEGOCIO\Documents\GitHub\MAPAS_TA_DEV_1\geojson\pap\manizales_base.geojson"
+
+# ================================================================================================
+# CONSTANTES
+# ================================================================================================
+
+DIGITS = 3  # Siempre 3 dígitos para códigos
+
+# Diccionario ciudad → prefijo (opcional)
+CITY_PREFIX_MAP = {
     'CALI': 'CL',
-    'MANIZALES': 'MZ',
+    'MANIZALES': 'MZ', 
     'BOGOTA': 'BG',
+    'BOGOTÁ': 'BG',
     'MEDELLIN': 'MD',
+    'MEDELLÍN': 'MD',
     'PEREIRA': 'PR',
     'BUCARAMANGA': 'BC',
     'BARRANQUILLA': 'BR'
 }
 
-# WGS84 ellipsoid for geodesic calculations
-WGS84_GEOD = Geod(ellps='WGS84')
 
-
-def check_dependencies():
-    """Check if required dependencies are available."""
-    if not HAS_GEOSPATIAL_LIBS:
-        logger.error(f"Missing required geospatial libraries: {MISSING_LIBS}")
-        logger.error("Please install: pip install geopandas shapely pyproj pandas")
-        return False
-    return True
-
-
-def get_city_prefix(city: str) -> str:
-    """Get the official prefix for a city."""
-    city_upper = city.upper().strip()
-    if city_upper not in CITY_PREFIX:
-        logger.warning(f"Unknown city '{city}', using first 2 letters as prefix")
-        return city_upper[:2]
-    return CITY_PREFIX[city_upper]
-
-
-def load_geojson(file_path: Path) -> dict:
-    """Load GeoJSON file and validate format."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        if not isinstance(data, dict) or data.get('type') != 'FeatureCollection':
-            raise ValueError("Invalid GeoJSON: must be a FeatureCollection")
-        
-        features = data.get('features', [])
-        if not features:
-            logger.warning("GeoJSON contains no features")
-        
-        logger.info(f"Loaded GeoJSON with {len(features)} features")
-        return data
-    
-    except Exception as e:
-        logger.error(f"Error loading GeoJSON from {file_path}: {e}")
-        raise
-
-
-def normalize_code(
-    feature: dict, 
-    city_prefix: str, 
-    index: int, 
-    force_reindex: bool = True
-) -> Tuple[str, str]:
+def auto_infer_prefix(features, input_path):
     """
-    Normalize feature code to proper city prefix format.
+    Auto-iniere el prefijo XX desde los códigos existentes o el contexto.
     
+    Args:
+        features: Lista de features del GeoJSON
+        input_path: Path del archivo de entrada
+        
     Returns:
-        tuple: (old_code, new_code)
+        str: Prefijo de 2 caracteres (ej: 'CL', 'MZ', etc.)
     """
-    props = feature.get('properties', {})
+    # 1. Buscar patrón ^[A-Z]{2}_\d+$ en properties["codigo"]
+    prefix_counts = {}
+    pattern = re.compile(r'^([A-Z]{2})_\d+$')
     
-    # Try to get existing code from various properties
-    old_code = props.get('codigo') or props.get('id') or props.get('name') or f'UNKNOWN_{index}'
+    for feature in features:
+        props = feature.get('properties', {})
+        codigo = props.get('codigo')
+        
+        if codigo:
+            match = pattern.match(str(codigo).upper())
+            if match:
+                prefix = match.group(1)
+                prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
     
-    # Generate new code with 3-digit padding
-    new_code = f"{city_prefix}_{str(index + 1).zfill(3)}"
+    # Prefijo mayoritario
+    if prefix_counts:
+        most_common = max(prefix_counts.items(), key=lambda x: x[1])
+        logger.info(f"Prefijo auto-detectado: '{most_common[0]}' ({most_common[1]} ocurrencias)")
+        return most_common[0]
     
-    return str(old_code), new_code
+    # 2. Intentar desde properties["ciudad"]
+    for feature in features:
+        props = feature.get('properties', {})
+        ciudad = props.get('ciudad', '').upper().strip()
+        
+        if ciudad in CITY_PREFIX_MAP:
+            prefix = CITY_PREFIX_MAP[ciudad]
+            logger.info(f"Prefijo inferido desde ciudad '{ciudad}': '{prefix}'")
+            return prefix
+    
+    # 3. Usar primeras dos letras del nombre de archivo
+    filename = Path(input_path).stem.upper()
+    if len(filename) >= 2:
+        prefix = filename[:2]
+        logger.info(f"Prefijo desde nombre de archivo '{filename}': '{prefix}'")
+        return prefix
+    
+    # 4. Fallback
+    logger.warning("No se pudo inferir prefijo - usando 'XX'")
+    return "XX"
 
 
-def calculate_geodesic_metrics(geometry: dict) -> dict:
+def get_geometry_bounds(geometry):
     """
-    Calculate geodesic metrics for a geometry.
+    Obtiene bounds (minx, miny, maxx, maxy) de una geometría.
     
+    Args:
+        geometry: Geometría GeoJSON
+        
     Returns:
-        dict: geometry metrics
+        tuple: (minx, miny, maxx, maxy)
     """
-    try:
-        # Convert to Shapely geometry
-        geom = shape(geometry)
-        
-        if geom.geom_type not in ['Polygon', 'MultiPolygon']:
-            logger.warning(f"Unsupported geometry type: {geom.geom_type}")
-            return create_empty_metrics()
-        
-        # Calculate geodesic area and perimeter
-        area_m2 = abs(WGS84_GEOD.geometry_area_perimeter(geom)[0])
-        perimeter_m = WGS84_GEOD.geometry_area_perimeter(geom)[1]
-        
-        # Calculate centroid
-        centroid = geom.centroid
-        centroid_lon, centroid_lat = centroid.x, centroid.y
-        
-        # Calculate compactness (Polsby-Popper)
-        # Compactness = 4π * Area / Perimeter²
-        compactness_polsby = (4 * 3.14159 * area_m2) / (perimeter_m ** 2) if perimeter_m > 0 else 0
-        compactness_polsby = min(1.0, compactness_polsby)  # Cap at 1.0
-        
-        # Calculate elongation ratio (simplified as length/width of bounding box)
-        bounds = geom.bounds  # (minx, miny, maxx, maxy)
-        width = bounds[2] - bounds[0]
-        height = bounds[3] - bounds[1]
-        elongation_ratio = max(width, height) / min(width, height) if min(width, height) > 0 else 1.0
-        
-        # Count holes (interior rings)
-        holes_count = 0
-        if geom.geom_type == 'Polygon':
-            holes_count = len(geom.interiors)
-        elif geom.geom_type == 'MultiPolygon':
-            holes_count = sum(len(poly.interiors) for poly in geom.geoms)
-        
-        return {
-            'area_m2': round(area_m2, 2),
-            'perimetro_m': round(perimeter_m, 2),
-            'centroid_lon': round(centroid_lon, 6),
-            'centroid_lat': round(centroid_lat, 6),
-            'compactness_polsby': round(compactness_polsby, 4),
-            'elongation_ratio': round(elongation_ratio, 2),
-            'holes_count': holes_count
-        }
+    if HAS_SHAPELY:
+        try:
+            geom = shape(geometry)
+            return geom.bounds
+        except Exception as e:
+            logger.warning(f"Error calculando bounds con Shapely: {e}")
     
-    except Exception as e:
-        logger.warning(f"Error calculating metrics for geometry: {e}")
-        return create_empty_metrics()
+    # Fallback sin Shapely
+    coords = geometry.get('coordinates', [])
+    if not coords:
+        return (0.0, 0.0, 0.0, 0.0)
+    
+    def flatten_coordinates(coord_list):
+        """Aplana recursivamente las coordenadas."""
+        flat = []
+        for item in coord_list:
+            if isinstance(item, (list, tuple)):
+                if len(item) == 2 and all(isinstance(x, (int, float)) for x in item):
+                    # Es un par de coordenadas [lon, lat]
+                    flat.append(item)
+                else:
+                    # Es anidado, continuar recursión
+                    flat.extend(flatten_coordinates(item))
+        return flat
+    
+    all_coords = flatten_coordinates(coords)
+    if not all_coords:
+        return (0.0, 0.0, 0.0, 0.0)
+    
+    lons = [coord[0] for coord in all_coords]
+    lats = [coord[1] for coord in all_coords]
+    
+    return (min(lons), min(lats), max(lons), max(lats))
 
 
-def create_empty_metrics() -> dict:
-    """Create empty metrics dict for error cases."""
-    return {
-        'area_m2': 0.0,
-        'perimetro_m': 0.0,
-        'centroid_lon': 0.0,
-        'centroid_lat': 0.0,
-        'compactness_polsby': 0.0,
-        'elongation_ratio': 1.0,
-        'holes_count': 0
-    }
-
-
-def standardize_geojson(
-    geojson_data: dict,
-    city: str,
-    force_reindex: bool = True
-) -> Tuple[dict, List[dict], Dict[str, str]]:
+def calculate_sweep_position(bounds):
     """
-    Standardize GeoJSON features with proper city codes and PADRE level.
+    Calcula la posición para el ordenamiento sweep line.
     
+    Criterio: arriba hacia abajo (top descendente), izquierda a derecha (left ascendente)
+    
+    Args:
+        bounds: (minx, miny, maxx, maxy)
+        
     Returns:
-        tuple: (standardized_geojson, metrics_list, code_mapping)
+        tuple: (-top, left) para ordenamiento
     """
-    city_prefix = get_city_prefix(city)
-    city_upper = city.upper().strip()
+    minx, miny, maxx, maxy = bounds
+    top = maxy  # Coordenada norte máxima
+    left = minx  # Coordenada oeste mínima
     
-    features = geojson_data.get('features', [])
-    standardized_features = []
-    metrics_list = []
-    code_mapping = {}
+    # Negativo en top para orden descendente (arriba primero)
+    return (-top, left)
+
+
+def reorder_by_sweep_line(features, prefix):
+    """
+    Reordena features por sweep line y asigna nuevos códigos.
     
-    logger.info(f"Standardizing {len(features)} features for city {city_upper} with prefix {city_prefix}")
-    
-    # Use tqdm if available
-    iterator = tqdm(enumerate(features), total=len(features), desc="Processing features") if HAS_TQDM else enumerate(features)
-    
-    for index, feature in iterator:
-        # Normalize the code
-        old_code, new_code = normalize_code(feature, city_prefix, index, force_reindex)
-        code_mapping[old_code] = new_code
+    Args:
+        features: Lista de features GeoJSON
+        prefix: Prefijo para los códigos (ej: 'CL')
         
-        # Calculate geometric metrics
+    Returns:
+        list: Features reordenadas con nuevos códigos
+    """
+    n = len(features)
+    logger.info(f"Reordenando {n} features con prefijo '{prefix}'")
+    
+    # Calcular posiciones de sweep line
+    feature_positions = []
+    
+    for i, feature in enumerate(features):
         geometry = feature.get('geometry', {})
-        metrics = calculate_geodesic_metrics(geometry)
+        geom_type = geometry.get('type', '')
         
-        # Update feature properties
-        properties = feature.get('properties', {})
-        properties.update({
-            'codigo': new_code,
-            'ciudad': city_upper,
-            'nivel': 'PADRE',
-            'es_hijo': False,
-            'codigo_padre': None
-        })
+        if geom_type in ['Polygon', 'MultiPolygon']:
+            bounds = get_geometry_bounds(geometry)
+            position = calculate_sweep_position(bounds)
+            feature_positions.append((position, i, feature))
+        else:
+            # Geometrías no soportadas van al final
+            logger.warning(f"Geometría tipo '{geom_type}' no soportada - enviando al final")
+            feature_positions.append(((999999, 999999), i, feature))
+    
+    # Ordenar por posición de sweep line
+    feature_positions.sort(key=lambda x: x[0])
+    
+    # Generar códigos ordenados
+    new_codes = [f"{prefix}_{str(i+1).zfill(DIGITS)}" for i in range(n)]
+    
+    # Reasignar códigos
+    reordered_features = []
+    mappings = []  # Para logging
+    
+    for idx, (position, original_idx, feature) in enumerate(feature_positions):
+        # Preservar código original
+        props = feature.get('properties', {})
+        old_code = props.get('codigo', f'ORIGINAL_{original_idx}')
+        new_code = new_codes[idx]
         
-        # Create standardized feature
-        standardized_feature = {
+        # Actualizar properties
+        new_props = props.copy()
+        new_props['old_codigo'] = str(old_code)
+        new_props['codigo'] = new_code
+        
+        # Crear nuevo feature
+        new_feature = {
             'type': 'Feature',
-            'geometry': geometry,
-            'properties': properties
+            'geometry': feature['geometry'],
+            'properties': new_props
         }
         
-        standardized_features.append(standardized_feature)
-        
-        # Add to metrics list
-        metrics_row = {
-            'cod_cuadrante': new_code,
-            'ciudad': city_upper,
-            **metrics
-        }
-        metrics_list.append(metrics_row)
+        reordered_features.append(new_feature)
+        mappings.append((old_code, new_code))
     
-    # Create standardized GeoJSON
-    standardized_geojson = {
-        'type': 'FeatureCollection',
-        'features': standardized_features
-    }
+    # Log de los primeros 3 mapeos
+    logger.info("Mapeos de códigos (primeros 3):")
+    for i, (old, new) in enumerate(mappings[:3]):
+        logger.info(f"  {old} → {new}")
     
-    return standardized_geojson, metrics_list, code_mapping
-
-
-def save_geojson(geojson_data: dict, output_path: Path):
-    """Save GeoJSON data to file."""
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(geojson_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved standardized GeoJSON to {output_path}")
-    except Exception as e:
-        logger.error(f"Error saving GeoJSON to {output_path}: {e}")
-        raise
-
-
-def save_csv(metrics_list: List[dict], csv_path: Path):
-    """Save metrics to CSV file."""
-    try:
-        df = pd.DataFrame(metrics_list)
-        
-        # Sort by cod_cuadrante
-        df = df.sort_values('cod_cuadrante')
-        
-        # Define column order
-        columns = [
-            'cod_cuadrante', 'ciudad', 'area_m2', 'perimetro_m',
-            'centroid_lon', 'centroid_lat', 'compactness_polsby',
-            'elongation_ratio', 'holes_count'
-        ]
-        
-        # Reorder columns (keep any extra columns at the end)
-        available_columns = [col for col in columns if col in df.columns]
-        extra_columns = [col for col in df.columns if col not in columns]
-        final_columns = available_columns + extra_columns
-        
-        df = df[final_columns]
-        
-        df.to_csv(csv_path, index=False, encoding='utf-8')
-        logger.info(f"Saved metrics CSV to {csv_path}")
-        logger.info(f"CSV contains {len(df)} rows and {len(df.columns)} columns")
-        
-    except Exception as e:
-        logger.error(f"Error saving CSV to {csv_path}: {e}")
-        raise
-
-
-def print_summary(
-    city: str,
-    city_prefix: str,
-    code_mapping: Dict[str, str],
-    metrics_list: List[dict]
-):
-    """Print processing summary with statistics."""
-    logger.info("=" * 60)
-    logger.info("PROCESSING SUMMARY")
-    logger.info("=" * 60)
-    logger.info(f"City: {city}")
-    logger.info(f"Prefix used: {city_prefix}")
-    logger.info(f"Total features processed: {len(code_mapping)}")
+    if len(mappings) > 3:
+        logger.info(f"  ... y {len(mappings) - 3} más")
     
-    # Show sample mappings (first 5)
-    logger.info("\nCode mappings (first 5):")
-    for i, (old_code, new_code) in enumerate(list(code_mapping.items())[:5]):
-        logger.info(f"  {old_code} → {new_code}")
+    logger.info(f"Códigos asignados: {new_codes[0]} a {new_codes[-1]}")
     
-    if len(code_mapping) > 5:
-        logger.info(f"  ... and {len(code_mapping) - 5} more")
-    
-    # Calculate statistics
-    if metrics_list:
-        areas = [m['area_m2'] for m in metrics_list]
-        perimeters = [m['perimetro_m'] for m in metrics_list]
-        
-        # Calculate percentiles
-        areas_sorted = sorted(areas)
-        perimeters_sorted = sorted(perimeters)
-        
-        n = len(areas_sorted)
-        median_idx = n // 2
-        p95_idx = int(n * 0.95)
-        
-        area_stats = {
-            'min': min(areas),
-            'median': areas_sorted[median_idx],
-            'p95': areas_sorted[p95_idx] if p95_idx < n else areas_sorted[-1]
-        }
-        
-        perimeter_stats = {
-            'min': min(perimeters),
-            'median': perimeters_sorted[median_idx],
-            'p95': perimeters_sorted[p95_idx] if p95_idx < n else perimeters_sorted[-1]
-        }
-        
-        logger.info(f"\nArea statistics (m²):")
-        logger.info(f"  Min: {area_stats['min']:,.2f}")
-        logger.info(f"  Median: {area_stats['median']:,.2f}")
-        logger.info(f"  95th percentile: {area_stats['p95']:,.2f}")
-        
-        logger.info(f"\nPerimeter statistics (m):")
-        logger.info(f"  Min: {perimeter_stats['min']:,.2f}")
-        logger.info(f"  Median: {perimeter_stats['median']:,.2f}")
-        logger.info(f"  95th percentile: {perimeter_stats['p95']:,.2f}")
-    
-    logger.info("=" * 60)
+    return reordered_features
 
 
 def main():
-    """Main function to handle CLI arguments and execute processing."""
-    parser = argparse.ArgumentParser(
-        description='Standardize GeoJSON codes and calculate geodesic metrics',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__
-    )
+    """Función principal."""
+    input_path = Path(INPUT_PATH)
     
-    parser.add_argument(
-        '--input', 
-        type=Path, 
-        required=True,
-        help='Path to input GeoJSON file'
-    )
+    logger.info(f"GeoJSON Sweep Line Reordering Tool")
+    logger.info(f"Archivo de entrada: {input_path}")
     
-    parser.add_argument(
-        '--output', 
-        type=Path, 
-        required=True,
-        help='Path to output standardized GeoJSON file'
-    )
+    # Validar archivo de entrada
+    if not input_path.exists():
+        logger.error(f"Archivo no encontrado: {input_path}")
+        return 1
     
-    parser.add_argument(
-        '--city', 
-        type=str, 
-        required=True,
-        choices=list(CITY_PREFIX.keys()),
-        help='City name (must match exactly)'
-    )
-    
-    parser.add_argument(
-        '--csv-out', 
-        type=Path, 
-        required=True,
-        help='Path to output CSV metrics file'
-    )
-    
-    parser.add_argument(
-        '--force-reindex',
-        action='store_true',
-        default=True,
-        help='Force sequential reindexing of all codes (default: True)'
-    )
-    
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
-    )
-    
-    args = parser.parse_args()
-    
-    # Set logging level
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    
+    # Cargar GeoJSON
     try:
-        # Check dependencies
-        if not check_dependencies():
-            sys.exit(1)
+        with open(input_path, 'r', encoding='utf-8') as f:
+            geojson_data = json.load(f)
+    except Exception as e:
+        logger.error(f"Error cargando GeoJSON: {e}")
+        return 1
+    
+    # Validar estructura
+    if geojson_data.get('type') != 'FeatureCollection':
+        logger.error("El archivo debe ser un FeatureCollection")
+        return 1
+    
+    features = geojson_data.get('features', [])
+    if not features:
+        logger.error("No se encontraron features en el GeoJSON")
+        return 1
+    
+    logger.info(f"Cargadas {len(features)} features")
+    
+    # Auto-inferir prefijo
+    prefix = auto_infer_prefix(features, input_path)
+    
+    # Reordenar por sweep line
+    reordered_features = reorder_by_sweep_line(features, prefix)
+    
+    # Crear GeoJSON de salida
+    output_geojson = {
+        'type': 'FeatureCollection',
+        'features': reordered_features
+    }
+    
+    # Generar ruta de salida
+    output_path = input_path.parent / f"{input_path.stem}_order.geojson"
+    
+    # Guardar archivo
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(output_geojson, f, ensure_ascii=False, indent=2)
         
-        # Validate input file
-        if not args.input.exists():
-            logger.error(f"Input file does not exist: {args.input}")
-            sys.exit(1)
+        logger.info(f"✅ Archivo guardado: {output_path}")
+        logger.info(f"✅ Procesamiento completado exitosamente!")
         
-        # Create output directories if needed
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.csv_out.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Load input GeoJSON
-        logger.info(f"Loading GeoJSON from {args.input}")
-        geojson_data = load_geojson(args.input)
-        
-        # Standardize the GeoJSON
-        logger.info("Starting standardization process...")
-        standardized_geojson, metrics_list, code_mapping = standardize_geojson(
-            geojson_data, 
-            args.city, 
-            args.force_reindex
-        )
-        
-        # Save outputs
-        logger.info("Saving outputs...")
-        save_geojson(standardized_geojson, args.output)
-        save_csv(metrics_list, args.csv_out)
-        
-        # Print summary
-        city_prefix = get_city_prefix(args.city)
-        print_summary(args.city, city_prefix, code_mapping, metrics_list)
-        
-        logger.info("✅ Processing completed successfully!")
+        return 0
         
     except Exception as e:
-        logger.error(f"❌ Processing failed: {e}")
-        sys.exit(1)
+        logger.error(f"Error guardando archivo: {e}")
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    exit(main())
