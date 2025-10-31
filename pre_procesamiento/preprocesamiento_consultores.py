@@ -1,12 +1,12 @@
 import os
 import pandas as pd
-import mysql.connector
 import unicodedata
 import logging
 import time
 from datetime import date
 from pathlib import Path
 from dotenv import load_dotenv
+from .db_utils import sql_read
 
 # Cargar variables de entorno desde .env
 dotenv_path = Path(__file__).resolve().parents[1] / ".env"
@@ -107,12 +107,11 @@ def listar_rutas_simple(ciudad:str)->pd.DataFrame:
     q = """
     SELECT r.id AS id_ruta, r.ruta
     FROM fullclean_contactos.rutas_cobro r
-    WHERE r.id_centroope = %s
+    WHERE r.id_centroope = :co
     ORDER BY r.ruta;
     """
-    cn = _conn()
-    df = pd.read_sql(q, cn, params=[co])
-    cn.close()
+    # Usar SQLAlchemy Engine a través del helper db_utils con parámetros con nombres
+    df = sql_read(q, params={'co': co})
     return df
 
 def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)->pd.DataFrame:
@@ -160,8 +159,8 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 181
-        AND e.id_evento_tipo not in (48,51,50,66,65)
+       AND ca.Id_cargo = 5
+        AND e.id_evento_tipo not in (48,51, 66,65)
       -- AND ca.Id_cargo in (181, 5)
     ORDER BY e.fecha_evento ASC;
     """
@@ -196,146 +195,119 @@ def nombre_ruta(centroope: int, id_ruta: int) -> str:
     cn.close()
     return None if df.empty else str(df.iloc[0]['ruta'])
 
-def eventos_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
-    Trae todos los eventos con coordenadas válidas para la ruta y rango especificados.
+    Trae eventos crudos filtrados para consultores (cargo=5) con coordenadas válidas.
+    Consulta SQL específica para el módulo Consultores (simple) sin cuadrantes ni métricas.
     
     Args:
-        id_centroope (int): ID del centro de operaciones
+        co (int): ID del centro de operaciones
         id_ruta (int): ID de la ruta de cobro
         f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
         f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
     
     Returns:
-        pd.DataFrame: DataFrame con columnas principales: ['id_evento', 'id_autor', 'id_consultor', 'consultor', 'apellido', 
-                     'lat', 'lon', 'fecha_evento', 'id_evento_tipo', 'tipo_evento', 'apertura', 'apertura_sac',
-                     'venta_ruta', 'venta_fuera_ruta', 'entrega_muestras', 'es_visita', 'es_apertura', 'es_venta_evento'] + otros
+        pd.DataFrame: DataFrame con columnas ['id_evento','id_contacto','lat','lon','fecha_evento',
+                     'id_autor','apellido','id_cargo','cargo','id_evento_tipo','tipo_evento']
     
     Raises:
         Exception: Si hay error en la conexión o ejecución de la consulta SQL
     """
     inicio_tiempo = time.time()
-    logging.info(f"Iniciando eventos_con_coordenadas_por_ruta_y_rango - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
+    logging.info(f"[CONSULTA_EVENTOS] CO={co} ruta={id_ruta} f_ini={f_ini} f_fin={f_fin}")
     
-    # EV_MAIN: eventos válidos por ruta y fechas (con coordenadas) + flags unificadas
+    # Consulta SQL específica para Consultores (simple) con columnas exactas según especificaciones
     q = """
     SELECT
-        e.idEvento                AS idEvento,
-        e.id_autor                AS id_autor,
-        p.apellido                AS consultor,
-        e.id_contacto             AS id_contacto,
-        e.fecha_evento            AS fecha_evento,
-        e.id_evento_tipo          AS id_evento_tipo,
-        e.tipo_evento             AS tipo_evento,
-        e.coordenada_longitud     AS coordenada_longitud,
-        e.coordenada_latitud      AS coordenada_latitud,
-        e.medio_contacto          AS medio_contacto,
-
-        -- Aliases legacy / técnicos para mantener compatibilidad aguas abajo
-        e.idEvento                AS id_evento,
-        e.coordenada_latitud      AS lat,
-        e.coordenada_longitud     AS lon,
-        p.id_cargo                AS id_cargo,
-        ca.cargo                  AS cargo,
-
-        /* Banderas */
-        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS apertura,
-        CASE WHEN e.id_evento_tipo IN (42,72,74,75,76) THEN 1 ELSE 0 END AS apertura_sac,
-        CASE WHEN e.id_evento_tipo IN (58,57) THEN 1 ELSE 0 END AS venta_ruta,
-        CASE WHEN e.id_evento_tipo = 20 THEN 1 ELSE 0 END AS venta_fuera_ruta,
-        CASE WHEN e.id_evento_tipo = 15 THEN 1 ELSE 0 END AS entrega_muestras,
-
-        -- Compatibilidad hacia atrás en pipelines actuales:
-        1  AS es_visita,
-        CASE WHEN e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,77,78) THEN 1 ELSE 0 END AS es_apertura,
-        CASE WHEN e.id_evento_tipo = 58 THEN 1 ELSE 0 END AS es_venta_evento,
-
-        -- Alias técnico para no romper groupby/rutas: id_consultor := id_autor (EVENTOS)
-        e.id_autor                AS id_consultor
-
+        e.idEvento            AS id_evento,
+        e.id_contacto         AS id_contacto,
+        e.coordenada_latitud  AS lat,
+        e.coordenada_longitud AS lon,
+        e.fecha_evento        AS fecha_evento,
+        e.id_evento_tipo      AS id_evento_tipo,
+        e.tipo_evento         AS tipo_evento,
+        p.apellido            AS apellido
     FROM fullclean_contactos.vwEventos e
-    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
-    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
-    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
-    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
-    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
-    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
-    WHERE
-          c.estado = 1
+    JOIN fullclean_contactos.vwContactos c      ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b          ON b.Id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc ON rc.id_barrio = b.Id
+    JOIN fullclean_contactos.rutas_cobro r      ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p          ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca           ON ca.Id_cargo = p.id_cargo
+    WHERE c.estado = 1
       AND c.estado_cxc IN (0,1)
-      AND p.id_cargo = 181
-      AND r.id_centroope = %s
-      AND r.id = %s
-      AND e.fecha_evento BETWEEN %s AND %s
-      AND e.id_evento_tipo NOT IN (48,51,50,66,65)
+      AND r.id_centroope = :co
+      AND r.id = :id_ruta
+      AND e.fecha_evento BETWEEN :f_ini AND :f_fin
       AND e.coordenada_latitud  IS NOT NULL
       AND e.coordenada_longitud IS NOT NULL
       AND e.coordenada_latitud  <> 0
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
+      AND ca.Id_cargo = 5
+      AND e.id_evento_tipo = 10 -- IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,76,77,78)
     ORDER BY e.fecha_evento ASC;
     """
     
     try:
-        cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
-        cn.close()
+        # Usar SQLAlchemy Engine a través del helper db_utils con parámetros con nombres
+        params_dict = {'co': co, 'id_ruta': id_ruta, 'f_ini': f_ini, 'f_fin': f_fin}
+        df = sql_read(q, params=params_dict)
         
-        # Normalizar tipos de datos
+        # Logging de resultado
+        filas_resultado = len(df)
+        logging.info(f"[CONSULTA_EVENTOS] CO={co} ruta={id_ruta} f_ini={f_ini} f_fin={f_fin} → rows={filas_resultado}")
+        
+        if filas_resultado == 0:
+            # Warning con query parametrizada para depuración (sin credenciales)
+            query_debug = q.replace(':co', str(co)).replace(':id_ruta', str(id_ruta)).replace(':f_ini', f"'{f_ini}'").replace(':f_fin', f"'{f_fin}'")
+            logging.warning(f"Query sin resultados: {query_debug}")
+        
+        # Normalizar tipos de datos según especificaciones exactas
         if not df.empty:
+            # Normalización básica según especificaciones
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['lon'], errors='coerce') 
+            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+            
+            # Normalización adicional para integridad
             df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
             df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
-            df['id_autor'] = pd.to_numeric(df['id_autor'], errors='coerce')
-            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')  # ahora existe
-            df['consultor'] = df['consultor'].fillna('').astype(str)
-            # Agregar alias para compatibilidad
-            df['apellido'] = df['consultor']
-            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
             df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
-            df['es_visita'] = pd.to_numeric(df['es_visita'], errors='coerce').fillna(0).astype(int)
-            df['es_apertura'] = pd.to_numeric(df['es_apertura'], errors='coerce').fillna(0).astype(int)
-            df['es_venta_evento'] = pd.to_numeric(df['es_venta_evento'], errors='coerce').fillna(0).astype(int)
+            df['apellido'] = df['apellido'].fillna('').astype(str)
+            
+            # Enriquecimiento de tipo_evento según Opción B - mapeo manual
+            EVENT_TYPE_LABELS = {
+                3:'Visita', 10:'Apertura', 11:'Apertura', 13:'Apertura', 15:'Muestra', 
+                16:'Apertura', 17:'Apertura', 20:'Venta fuera ruta', 21:'Apertura', 22:'Apertura', 
+                40:'Gestión', 45:'Gestión', 46:'Gestión', 55:'Venta', 56:'Venta', 57:'Venta ruta', 
+                58:'Venta ruta', 62:'Gestión', 64:'Gestión', 71:'Gestión', 73:'Gestión', 
+                74:'Apertura SAC', 76:'Apertura SAC', 77:'Gestión', 78:'Gestión'
+            }
+            
+            # Aplicar enriquecimiento: primero mapear nulos, luego fallback a ID como string
+            df['tipo_evento'] = df['tipo_evento'].fillna(df['id_evento_tipo'].map(EVENT_TYPE_LABELS))
+            df['tipo_evento'] = df['tipo_evento'].fillna(df['id_evento_tipo'].astype(str))
+            df['tipo_evento'] = df['tipo_evento'].astype(str)
             
             # Eliminar filas con coordenadas inválidas después de conversión
             df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
             
-            # Validar coordenadas realistas
+            # Validar coordenadas realistas para Colombia
             df = df[
                 (df['lat'].between(-5, 13)) & 
                 (df['lon'].between(-81, -66))
             ]
+            
+            # Logging de verificación (una sola vez) según especificaciones
+            logging.info(f"Columnas del DataFrame: {df.columns.tolist()}")
+            if len(df) > 0:
+                logging.info(f"Muestra primeras 3 filas:\n{df.head(3).to_string()}")
         
-        # Logging de estructura de datos para debugging
-        if not df.empty:
-            logging.info(f"Recorridos: columnas df_eventos = {list(df.columns)}")
-            
-            # Smoke test SQL/DF: resumen de banderas
-            total = len(df)
-            sum_venta_ruta = df['venta_ruta'].sum() if 'venta_ruta' in df.columns else 0
-            sum_venta_fuera = df['venta_fuera_ruta'].sum() if 'venta_fuera_ruta' in df.columns else 0
-            sum_sac = df['apertura_sac'].sum() if 'apertura_sac' in df.columns else 0
-            sum_muestras = df['entrega_muestras'].sum() if 'entrega_muestras' in df.columns else 0
-            logging.info(f"Resumen banderas - Total: {total}, Venta ruta: {sum_venta_ruta}, Venta fuera: {sum_venta_fuera}, SAC: {sum_sac}, Muestras: {sum_muestras}")
-            
-            # Verificación de consistencia de flags (sanity check)
-            count_tipo_20 = len(df[df['id_evento_tipo'] == 20])
-            count_tipo_57_58 = len(df[df['id_evento_tipo'].isin([57, 58])])
-            count_tipo_15 = len(df[df['id_evento_tipo'] == 15])
-            
-            if sum_venta_fuera != count_tipo_20:
-                logging.warning(f"Inconsistencia venta_fuera_ruta: flag_sum={sum_venta_fuera}, tipo_20_count={count_tipo_20}")
-            if sum_venta_ruta != count_tipo_57_58:
-                logging.warning(f"Inconsistencia venta_ruta: flag_sum={sum_venta_ruta}, tipo_57_58_count={count_tipo_57_58}")
-            if sum_muestras != count_tipo_15:
-                logging.warning(f"Inconsistencia entrega_muestras: flag_sum={sum_muestras}, tipo_15_count={count_tipo_15}")
-        
-        # Logging de tiempo de ejecución y tamaño
+        # Logging de tiempo de ejecución
         tiempo_ejecucion = time.time() - inicio_tiempo
-        filas_resultado = len(df)
-        logging.info(f"eventos_con_coordenadas_por_ruta_y_rango completada en {tiempo_ejecucion:.2f}s - {filas_resultado} eventos retornados")
+        logging.info(f"eventos_con_coordenadas_por_ruta_y_rango completada en {tiempo_ejecucion:.2f}s - {len(df)} eventos retornados")
         
         return df
         

@@ -570,8 +570,8 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     ciudadN = _norm_city(ciudad)
     centers = _coords_and_geojson()
     if ciudadN not in centers:
-        return None
-    location, _ = centers[ciudadN]
+        return None, 0, pd.DataFrame()
+    location, comunas_geojson_path = centers[ciudadN]
     
     # 2) Resolver ID de ruta real
     try:
@@ -579,27 +579,34 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         logger.info(f"Ruta resuelta: {ruta_nombre} -> ID {id_ruta_real}")
     except ValueError as e:
         logger.error(f"Error resolviendo ruta: {e}")
-        return None
+        return None, 0, pd.DataFrame()
     
-    # 3) Cargar archivo GeoJSON único de la ciudad
+    # 3) Intentar cargar archivo GeoJSON de cuadrantes (opcional - no bloqueante)
+    geojson_completo = None
     try:
         geojson_completo = _cargar_geojson_ciudad_unico(ciudad)
+        logger.info(f"Cuadrantes cargados para {ciudad}")
     except FileNotFoundError as e:
-        logger.error(f"Archivo GeoJSON no encontrado: {e}")
-        return None
+        logger.warning(f"No hay cuadrantes disponibles para {ciudad}: {e}")
+        # Continuar sin cuadrantes
     except Exception as e:
-        logger.error(f"Error cargando GeoJSON: {e}")
-        return None
+        logger.warning(f"Error cargando cuadrantes (no bloqueante): {e}")
+        # Continuar sin cuadrantes
     
-    # 4) Filtrar features por ruta específica
-    mostrar_todos = (ruta_nombre and ruta_nombre.strip().upper() == "TODOS")
-    padres_ruta, hijos_ruta, subset_fc = filter_features_by_route(
-        geojson_completo, id_ruta_real, mostrar_todos
-    )
+    # 4) Filtrar features por ruta específica (solo si hay cuadrantes)
+    padres_ruta = []
+    hijos_ruta = []
+    subset_fc = {'type': 'FeatureCollection', 'features': []}
     
-    if not padres_ruta and not hijos_ruta:
-        logger.warning(f"No hay cuadrantes para la ruta {id_ruta_real} en el archivo")
-        # Continuar pero mostrar mensaje en el mapa
+    if geojson_completo:
+        mostrar_todos = (ruta_nombre and ruta_nombre.strip().upper() == "TODOS")
+        padres_ruta, hijos_ruta, subset_fc = filter_features_by_route(
+            geojson_completo, id_ruta_real, mostrar_todos
+        )
+        
+        if not padres_ruta and not hijos_ruta:
+            logger.warning(f"No hay cuadrantes para la ruta {id_ruta_real} en el archivo")
+            # Continuar sin cuadrantes
     
     # 5) Obtener datos de eventos usando ID real
     co = get_co(ciudadN)
@@ -649,7 +656,31 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     # 7) Crear mapa base
     mapa = folium.Map(location, zoom_start=12)
     
-    # 8) Dibujar solo features del subconjunto filtrado
+    # 7.1) Cargar y añadir capa de comunas como base geográfica (SIEMPRE, independiente de cuadrantes)
+    if os.path.exists(comunas_geojson_path):
+        try:
+            with open(comunas_geojson_path, 'r', encoding='utf-8') as file:
+                comunas_geojson = json.load(file)
+            
+            # Añadir capa de comunas con estilo tenue
+            folium.GeoJson(
+                data=comunas_geojson,
+                name="Comunas",
+                style_function=lambda feature: {
+                    'fillColor': '#e5e7eb',
+                    'color': '#6b7280',
+                    'weight': 1,
+                    'fillOpacity': 0.08
+                }
+            ).add_to(mapa)
+            
+            logger.info(f"Capa de comunas cargada desde {comunas_geojson_path}")
+        except Exception as e:
+            logger.warning(f"No se pudo cargar el archivo GeoJSON de comunas: {e}")
+    else:
+        logger.warning(f"Archivo GeoJSON de comunas no encontrado: {comunas_geojson_path}")
+    
+    # 8) Dibujar solo features del subconjunto filtrado (cuadrantes - opcional)
     if subset_fc.get('features'):
         fg_contorno = folium.FeatureGroup(name="Contorno", show=True, control=False)
         fg_cuadrantes = folium.FeatureGroup(name="Cuadrantes", show=True)
@@ -730,40 +761,50 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
         """
         mapa.get_root().html.add_child(folium.Element(info_html))
 
-    # 9) Filtro espacial de eventos usando geometría del subconjunto
+    # 9) Filtro espacial de eventos usando geometría del subconjunto (SOLO si existen cuadrantes)
     df_filtrados = pd.DataFrame()
+    mask_in = None  # Para tracking de puntos dentro/fuera
     
-    if df_eventos is not None and not df_eventos.empty and (padres_ruta or hijos_ruta):
-        # Construir geometría de referencia: preferir hijos, fallback padres
-        features_para_filtro = hijos_ruta if hijos_ruta else padres_ruta
-        
-        polygons = []
-        for feat in features_para_filtro:
-            try:
-                geom = shape(feat['geometry'])
-                if not geom.is_valid:
-                    geom = geom.buffer(0)
-                polygons.append(geom)
-            except Exception:
-                continue
-        
-        if polygons:
-            # Crear unión preparada para consultas rápidas
-            union_geom = unary_union(polygons)
-            if not union_geom.is_valid:
-                union_geom = union_geom.buffer(0)
-            prepped_union = prep(union_geom)
+    # Determinar qué eventos pintar: TODOS si no hay cuadrantes, filtrados si hay
+    if df_eventos is not None and not df_eventos.empty:
+        if padres_ruta or hijos_ruta:
+            # HAY cuadrantes: aplicar filtro espacial
+            features_para_filtro = hijos_ruta if hijos_ruta else padres_ruta
             
-            # Filtrar eventos que caen dentro de los polígonos
-            def punto_dentro(row):
+            polygons = []
+            for feat in features_para_filtro:
                 try:
-                    point = Point(float(row['lon']), float(row['lat']))
-                    return prepped_union.intersects(point)
-                except:
-                    return False
+                    geom = shape(feat['geometry'])
+                    if not geom.is_valid:
+                        geom = geom.buffer(0)
+                    polygons.append(geom)
+                except Exception:
+                    continue
             
-            mask_in = df_eventos.apply(punto_dentro, axis=1)
-            df_filtrados = df_eventos[mask_in].reset_index(drop=True)
+            if polygons:
+                # Crear unión preparada para consultas rápidas
+                union_geom = unary_union(polygons)
+                if not union_geom.is_valid:
+                    union_geom = union_geom.buffer(0)
+                prepped_union = prep(union_geom)
+                
+                # Filtrar eventos que caen dentro de los polígonos
+                def punto_dentro(row):
+                    try:
+                        point = Point(float(row['lon']), float(row['lat']))
+                        return prepped_union.intersects(point)
+                    except:
+                        return False
+                
+                mask_in = df_eventos.apply(punto_dentro, axis=1)
+                df_filtrados = df_eventos[mask_in].reset_index(drop=True)
+            else:
+                # No se pudieron procesar polígonos: usar todos los eventos
+                df_filtrados = df_eventos.copy()
+        else:
+            # NO HAY cuadrantes: pintar TODOS los eventos
+            logger.info("No hay cuadrantes - pintando TODOS los eventos")
+            df_filtrados = df_eventos.copy()
 
     def _color_evento(row, fuera=False):
         """
@@ -784,7 +825,7 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
             return "#B91C1C"  # rojo para puntos fuera
         return "#374151"      # gris oscuro para puntos dentro
 
-    # 10) Pintar eventos filtrados
+    # 10) Pintar eventos (TODOS si no hay cuadrantes, filtrados si hay)
     if df_filtrados is not None and not df_filtrados.empty:
         for _, r in df_filtrados.iterrows():
             lat, lon = float(r.lat), float(r.lon)
@@ -1128,8 +1169,10 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_consultores", permitir_multiples=False)
     mapa.save(f"static/maps/{filename}")
     
-    # Retornar tupla: (filename, df_export_clean) - mismo data que se usa en leyenda
-    return filename, df_export_clean
+    # Retornar tupla de 3 elementos: (filename, n_puntos, df_export)
+    # n_puntos = total de eventos en el CSV (después de deduplicación)
+    n_puntos = total_csv
+    return filename, n_puntos, df_export_clean
 
 def analizar_consultores_por_cuadrantes(fecha_inicio: str, fecha_fin: str, ciudad: str, 
                                        ruta_id: int, geojson_path: str = None) -> tuple:

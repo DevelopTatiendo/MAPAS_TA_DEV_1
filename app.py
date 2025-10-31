@@ -20,6 +20,7 @@ import base64
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 # from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
+from mapa_consultores import generar_mapa_consultores
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
 
@@ -217,6 +218,10 @@ tipos_mapa = ["Muestras", "Consultores"]  # Solo módulos activos
 # tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
+# Compatibilidad temporal para sesiones con "Gestores"
+if tipo_mapa == "Gestores":
+    tipo_mapa = "Consultores"
+
 # Limpiar URL del mapa si cambian ciudad o tipo de mapa
 current_selection = f"{ciudad}_{tipo_mapa}"
 if "last_selection" not in st.session_state:
@@ -371,39 +376,39 @@ with st.form(key="filtros_form"):
                 # Limpiar session state si no hay archivo
                 if "muestras_override_fc" in st.session_state:
                     del st.session_state["muestras_override_fc"]
-    # elif tipo_mapa == "Visitas":
-    #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
-    #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
-    #     df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
-    #     if df_rutas is None or df_rutas.empty:
-    #         st.warning("No hay rutas disponibles para la ciudad seleccionada.")
-    #         id_ruta_visitas = None
-    #         nombre_ruta_ui_visitas = None
-    #     else:
-    #         import re
-    #         # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
-    #         rutas_list = []
-    #         for _, r in df_rutas.iterrows():
-    #             ruta_nombre = str(r.ruta)
-    #             # Extraer número inicial si existe
-    #             match = re.match(r'^(\d+)', ruta_nombre)
-    #             num = int(match.group()) if match else None
-    #             rutas_list.append((int(r.id_ruta), ruta_nombre, num))
-    #         
-    #         # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
-    #         rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
-    #         
-    #         # Crear diccionario para mapear texto → id_ruta
-    #         options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
-    #         options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
-    #         
-    #         # Selector que muestra solo el nombre de la ruta
-    #         ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
-    #         id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-    #         nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
-    #     
-    #     fecha_inicio = st.date_input("Fecha de Inicio")
-    #     fecha_fin = st.date_input("Fecha de Fin")
+    elif tipo_mapa == "Visitas":
+        # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta_visitas = None
+            nombre_ruta_ui_visitas = None
+        else:
+            import re
+            # Crear lista con ordenamiento robusto descendente (mismo flujo que Consultores)
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+            
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+            
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+            
+            # Selector que muestra solo el nombre de la ruta
+            ruta_seleccionada = st.selectbox("Seleccione una ruta de cobro:", options=[""] + options_list)
+            id_ruta_visitas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
+            nombre_ruta_ui_visitas = ruta_seleccionada if ruta_seleccionada else None
+        
+        fecha_inicio = st.date_input("Fecha de Inicio")
+        fecha_fin = st.date_input("Fecha de Fin")
     elif tipo_mapa == "Consultores":
         # Ruta (obligatorio)
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -441,9 +446,6 @@ with st.form(key="filtros_form"):
             fecha_inicio = st.date_input("Fecha de Inicio")
         with c2: 
             fecha_fin = st.date_input("Fecha de Fin")
-        
-        # Checkbox para mostrar puntos fuera de cuadrantes
-        mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrantes (rojo)", value=False)
     # elif tipo_mapa == "Pruebas":
     #     # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
     #     from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -892,38 +894,25 @@ if submit_button:
                 st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
+            # Validar que se haya seleccionado una ruta válida
             if not id_ruta:
                 st.error("Seleccione una ruta válida.")
                 filename = None
-                st.session_state["consultores_export_df"] = None
-            elif fecha_inicio > fecha_fin:
-                st.error("La fecha de inicio debe ser anterior o igual a la fecha de fin.")
-                filename = None
-                st.session_state["consultores_export_df"] = None
+                n_puntos = 0
             else:
-                # Transformar fechas a strings día-completo
-                f_ini_dt = f"{fecha_inicio} 00:00:00"
-                f_fin_dt = f"{fecha_fin} 23:59:59"
-                # Llamar función que ahora retorna tupla (filename, df_export)
-                from mapa_consultores import generar_mapa_consultores
-                resultado = manejar_error(generar_mapa_consultores, f_ini_dt, f_fin_dt, ciudad, id_ruta, nombre_ruta_ui, mostrar_fuera)
-                
-                if resultado and isinstance(resultado, tuple) and len(resultado) == 2:
-                    filename, df_export = resultado
-                    st.session_state["consultores_export_df"] = df_export
-                    # Guardar metadatos para el nombrado del CSV
-                    st.session_state["consultores_export_meta"] = {
-                        "ciudad": ciudad,
-                        "id_ruta": id_ruta,
-                        "fecha_inicio": fecha_inicio,
-                        "fecha_fin": fecha_fin
-                    }
+                from mapa_consultores_simple import generar_mapa_consultores_simple
+                resultado = manejar_error(
+                    generar_mapa_consultores_simple,
+                    ciudad,
+                    id_ruta,
+                    fecha_inicio,
+                    fecha_fin
+                )
+                if resultado:
+                    filename, n_puntos = resultado
                 else:
-                    filename = resultado  # Compatibilidad hacia atrás si algo sale mal
-                    st.session_state["consultores_export_df"] = None
-                    st.session_state["consultores_export_meta"] = None
-                    
-                map_type = "consultores"
+                    filename, n_puntos = None, 0
+            map_type = "consultores"
         # elif tipo_mapa == "Pruebas":
         #     if not id_ruta_pruebas:
         #         st.error("Seleccione una ruta válida.")
