@@ -2,6 +2,116 @@
 // Inicialización del mapa centrado por ciudad
 console.debug('Inicializando editor de cuadrantes...');
 
+// === ESTADO GLOBAL DEL MODO (SISTEMA DUAL: RUTA/PAP) ===
+let sistemaActual = 'RUTA'; // 'RUTA' o 'PAP' por defecto
+
+// === CONTADORES PARA GENERACIÓN DE CÓDIGOS ===
+// PAP: contador por ciudad (BR, CL, BG, etc.)
+const papCountersByCity = new Map(); // key: 'BR' -> max int usado
+
+// RUTA: contador de sufijos por base "CIU_ruta_ID"
+const routeDupCounters = new Map();  // key: 'BR_ruta_2701' -> max sufijo NN usado
+
+// === HELPERS DE FORMATO ===
+const pad = (n, w) => String(n).padStart(w, '0');
+
+// Regex de validación
+const RE_PAP  = /^[A-Z]{2,3}_pap_\d{3}$/;                // BR_pap_001
+const RE_RUTA = /^[A-Z]{2,3}_ruta_\d+(_\d{2})?$/;        // BR_ruta_232  ó BR_ruta_232_01
+
+function baseRuta(cityAbbr, idRuta) { 
+  return `${cityAbbr}_ruta_${idRuta}`; 
+}
+
+// Computar máximo PAP para una ciudad
+function computeMaxPapForCity(cityAbbr) {
+  let max = 0;
+  const pattern = new RegExp(`^${cityAbbr}_pap_(\\d{3})$`);
+  
+  // Buscar en todas las capas visibles
+  const searchLayers = (group) => {
+    if (!group) return;
+    group.eachLayer?.(layer => {
+      const code = layer.feature?.properties?.code || layer.feature?.properties?.codigo;
+      if (code) {
+        const match = code.match(pattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > max) max = num;
+        }
+      }
+    });
+  };
+  
+  searchLayers(DRAWN_EDITABLE);
+  searchLayers(DRAWN_LOCKED);
+  
+  // Buscar en padres activos
+  if (state.parents) {
+    state.parents.forEach(p => {
+      const code = p.feature?.properties?.code || p.feature?.properties?.codigo;
+      if (code) {
+        const match = code.match(pattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > max) max = num;
+        }
+      }
+    });
+  }
+  
+  papCountersByCity.set(cityAbbr, max);
+  return max;
+}
+
+// Computar máximo sufijo para una base RUTA
+function computeMaxDupForBase(base) {
+  let max = 0;
+  const pattern = new RegExp(`^${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}_(\\d{2})$`);
+  
+  // Buscar en todas las capas visibles
+  const searchLayers = (group) => {
+    if (!group) return;
+    group.eachLayer?.(layer => {
+      const code = layer.feature?.properties?.code || layer.feature?.properties?.codigo;
+      if (code) {
+        const match = code.match(pattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > max) max = num;
+        }
+        // También considerar la base sin sufijo como _01 implícito
+        if (code === base) {
+          if (max < 1) max = 1;
+        }
+      }
+    });
+  };
+  
+  searchLayers(DRAWN_EDITABLE);
+  searchLayers(DRAWN_LOCKED);
+  
+  // Buscar en padres activos
+  if (state.parents) {
+    state.parents.forEach(p => {
+      const code = p.feature?.properties?.code || p.feature?.properties?.codigo;
+      if (code) {
+        const match = code.match(pattern);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > max) max = num;
+        }
+        if (code === base) {
+          if (max < 1) max = 1;
+        }
+      }
+    });
+  }
+  
+  routeDupCounters.set(base, max);
+  return max;
+}
+
 // === DICCIONARIO DE RUTAS ===
 const ROUTES_MAP = {
   9:   "Ruta 3",
@@ -531,17 +641,22 @@ function calculateCentroid(geojson) {
 // === GESTIÓN DE CÓDIGOS ===
 
 // Generar próximo código de cuadrante disponible
+// Genera código de CUADRANTE PADRE según SISTEMA actual.
+// - RUTA: <PREF>_ruta_<id_ruta>  (usa 'ruta' recibido)
+// - PAP : <PREF>_pap_XXX         (contador 3 dígitos por ciudad)
+// DEPRECATED: Esta función ya no se usa, la lógica está en showPadreConfigDialog
 function generateNextCuadranteCode(ciudad, ruta) {
-  const existingCodes = getAllExistingCodes();
-  const cityPrefixCode = getCityPrefix(ciudad);
-  const prefix = `${cityPrefixCode}_`;
-  
-  let nextNum = 1;
-  while (existingCodes.includes(`${prefix}${String(nextNum).padStart(3, '0')}`)) {
-    nextNum++;
+  const cityAbbr = getCityPrefix(ciudad);
+  if (sistemaActual === 'RUTA') {
+    const idRuta = String(ruta ?? '1').trim();
+    const base = baseRuta(cityAbbr, idRuta);
+    const nextSufijo = computeMaxDupForBase(base) + 1;
+    return `${base}_${pad(nextSufijo, 2)}`;
+  } else {
+    // PAP
+    const nextNum = computeMaxPapForCity(cityAbbr) + 1;
+    return `${cityAbbr}_pap_${pad(nextNum, 3)}`;
   }
-  
-  return `${prefix}${String(nextNum).padStart(3, '0')}`;
 }
 
 // Generar próximo código de subcuadrante
@@ -1772,37 +1887,46 @@ function saveParentEditing() {
   
   console.debug('[SAVE_PARENT] Iniciando guardado de padre');
   
-  // Persistir la geometría con toGeoJSON()
-  const feat = state.activeParent.toGeoJSON();
-  const parentCode = state.activeParent.feature?.properties?.codigo;
+  // INTERCEPTAR: Abrir modal de edición de código antes de guardar
+  const props = state.activeParent.feature?.properties || {};
+  const currentSystem = props.system || sistemaActual;
   
-  // Sincronizar geometría en el feature interno
-  state.activeParent.feature.geometry = feat.geometry;
-  
-  // Registrar cambios en changeLog
-  if (parentCode) {
-    state.changeLog.set(parentCode, feat);
+  showEditCodeModal(currentSystem, props, (newProps) => {
+    // Callback: actualizar propiedades y guardar
+    Object.assign(state.activeParent.feature.properties, newProps);
     
-    // SINCRONIZACIÓN DEFENSIVA: Mantener ProjectRegistry alineado
-    const registryKey = ProjectRegistry.generateKey(feat);
-    ProjectRegistry.setFeature(registryKey, feat);
-    console.debug(`[SAVE_PARENT] Sincronizado con ProjectRegistry: ${registryKey}`);
-  }
-  
-  // Cerrar edición
-  endEditMode(true);
-  
-  // Restaurar estilos
-  state.activeParent.setStyle({ weight: 3, dashArray: "5, 5", fillOpacity: PARENT_FILL_OPACITY });
-  (state.children || []).forEach(h => applyStyleFromProperties(h));
-  
-  // Volver a mandar el padre detrás de los hijos para que los hijos sigan clicables
-  state.activeParent.bringToBack?.();
-  
-  setEditorState(EditorState.PADRE_ACTIVO);
-  
-  showToast("Cambios guardados en el cuadrante.");
-  console.debug(`[SAVE_PARENT] Padre ${parentCode} guardado exitosamente`);
+    // Persistir la geometría con toGeoJSON()
+    const feat = state.activeParent.toGeoJSON();
+    const parentCode = feat.properties.code || feat.properties.codigo;
+    
+    // Sincronizar geometría en el feature interno
+    state.activeParent.feature.geometry = feat.geometry;
+    
+    // Registrar cambios en changeLog
+    if (parentCode) {
+      state.changeLog.set(parentCode, feat);
+      
+      // SINCRONIZACIÓN DEFENSIVA: Mantener ProjectRegistry alineado
+      const registryKey = ProjectRegistry.generateKey(feat);
+      ProjectRegistry.setFeature(registryKey, feat);
+      console.debug(`[SAVE_PARENT] Sincronizado con ProjectRegistry: ${registryKey}`);
+    }
+    
+    // Cerrar edición
+    endEditMode(true);
+    
+    // Restaurar estilos
+    state.activeParent.setStyle({ weight: 3, dashArray: "5, 5", fillOpacity: PARENT_FILL_OPACITY });
+    (state.children || []).forEach(h => applyStyleFromProperties(h));
+    
+    // Volver a mandar el padre detrás de los hijos para que los hijos sigan clicables
+    state.activeParent.bringToBack?.();
+    
+    setEditorState(EditorState.PADRE_ACTIVO);
+    
+    showToast("Cambios guardados en el cuadrante.");
+    console.debug(`[SAVE_PARENT] Padre ${parentCode} guardado exitosamente`);
+  });
 }
 
 // ENHANCED: Robust containment validation with detailed error reporting
@@ -2672,6 +2796,7 @@ function setEditorState(next) {
   dis('btn-crear-padre', false);
   dis('btn-crear-hijo', !hasParent);
   dis('btn-editar-padre', !hasParent);
+  dis('btn-editar-codigo', !hasParent); // Nuevo botón
   dis('btn-editar-hijo', !hasChildren);
   
   // Controles adicionales
@@ -2694,6 +2819,7 @@ function setEditorState(next) {
     // mientras dibujo un hijo, bloqueo crear otro padre e impedir editar padre
     dis('btn-crear-padre', true);
     dis('btn-editar-padre', true);
+    dis('btn-editar-codigo', true); // También bloquear edición de código
     
     // Activar herramienta de dibujo
     enableDrawingMode('polygon');
@@ -2703,6 +2829,7 @@ function setEditorState(next) {
     // Reactivar todo lo que dependa del padre
     dis('btn-crear-hijo', !hasParent);
     dis('btn-editar-padre', !hasParent);
+    dis('btn-editar-codigo', !hasParent); // Mantener sincronizado
     dis('btn-editar-hijo', !hasChildren);
     
     // Desactivar herramientas de dibujo si estamos en IDLE
@@ -2720,22 +2847,27 @@ function setEditorState(next) {
     // Deshabilitar acciones peligrosas
     dis('btn-crear-padre', true);
     dis('btn-crear-hijo', true);
+    dis('btn-editar-codigo', true); // No editar código durante edición de geometría
     
     // Mostrar botones de guardar/cancelar, ocultar editar
     const btnEditarPadre = document.getElementById('btn-editar-padre');
+    const btnEditarCodigo = document.getElementById('btn-editar-codigo');
     const btnGuardarPadre = document.getElementById('btn-guardar-padre');
     const btnCancelarEdicion = document.getElementById('btn-cancelar-edicion-padre');
     
     if (btnEditarPadre) btnEditarPadre.style.display = 'none';
+    if (btnEditarCodigo) btnEditarCodigo.style.display = 'none';
     if (btnGuardarPadre) btnGuardarPadre.style.display = 'inline-block';
     if (btnCancelarEdicion) btnCancelarEdicion.style.display = 'inline-block';
   } else {
     // Restaurar botones normales
     const btnEditarPadre = document.getElementById('btn-editar-padre');
+    const btnEditarCodigo = document.getElementById('btn-editar-codigo');
     const btnGuardarPadre = document.getElementById('btn-guardar-padre');
     const btnCancelarEdicion = document.getElementById('btn-cancelar-edicion-padre');
     
     if (btnEditarPadre) btnEditarPadre.style.display = 'inline-block';
+    if (btnEditarCodigo) btnEditarCodigo.style.display = 'inline-block';
     if (btnGuardarPadre) btnGuardarPadre.style.display = 'none';
     if (btnCancelarEdicion) btnCancelarEdicion.style.display = 'none';
   }
@@ -2933,15 +3065,31 @@ function handlePadreCreated(layer) {
   
   // Mostrar diálogo de configuración
   showPadreConfigDialog((config) => {
-    // Configurar propiedades del padre
-    layer.feature.properties = {
+    // Configurar propiedades según sistema (PAP o RUTA)
+    const baseProps = {
       nivel: 'cuadrante',
-      codigo: config.codigo,
-      ciudad: config.ciudad,
-      id_ruta: config.ruta,
-      tipo: 'PADRE', // Identificador de tipo
-      tipo_cuadrante: config.tipo // Nuevo: tipo de cuadrante (RUTA/PAP)
+      code: config.code,
+      codigo: config.code, // Compatibilidad legacy
+      city: config.ciudad,
+      ciudad: config.ciudad, // Compatibilidad legacy
+      tipo: 'PADRE',
+      system: config.system
     };
+    
+    if (config.system === 'RUTA') {
+      baseProps.route_id = config.route_id;
+      baseProps.base_code = config.base_code;
+      baseProps.dup_index = config.dup_index;
+      if (config.route_name) {
+        baseProps.route_name = config.route_name;
+      }
+      // Legacy
+      baseProps.id_ruta = config.route_id;
+      if (config.route_name) baseProps.ruta_publica = config.route_name;
+    }
+    // PAP no requiere propiedades adicionales más allá de system, city, code
+    
+    layer.feature.properties = baseProps;
     
     // ENHANCED: Register in ProjectRegistry for data integrity
     const key = ProjectRegistry.generateKey(layer.feature);
@@ -2949,7 +3097,7 @@ function handlePadreCreated(layer) {
     
     // Register in changeLog for export tracking
     const feat = layer.toGeoJSON();
-    state.changeLog.set(feat.properties.codigo, feat);
+    state.changeLog.set(feat.properties.code, feat);
     
     // Persistir props de estilo en properties
     ensureStyleProps(layer, true);
@@ -3290,95 +3438,391 @@ function deleteSelectedChild() {
 }
 
 // Mostrar diálogo de configuración de padre
+// Versión compacta y scrollable con estructura unificada
 function showPadreConfigDialog(callback) {
-  const ciudad = getCityFromQuery();
+  const ciudad = getCityFromQuery().toUpperCase();
+  const cityAbbr = getCityPrefix(ciudad);
   
-  // Crear modal
-  const modal = document.createElement('div');
-  modal.className = 'cuadrante-modal';
-  modal.innerHTML = `
-    <div class="cuadrante-modal-content">
-      <h3>Configurar Cuadrante Padre</h3>
-      
-      <div class="form-group">
-        <label>Ciudad:</label>
-        <input type="text" id="modal-ciudad" value="${ciudad}" readonly>
-      </div>
-      
-      <div class="form-group">
-        <label>ID Ruta:</label>
-        <input type="number" id="modal-ruta" min="1" max="99" value="1" required>
-      </div>
-      
-      <div class="form-group">
-        <label>Tipo de cuadrante:</label>
-        <div style="display: flex; gap: 15px; margin-top: 8px;">
-          <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
-            <input type="radio" name="modal-tipo" id="modal-tipo-ruta" value="RUTA" checked>
-            Ruta
-          </label>
-          <label style="display: flex; align-items: center; gap: 5px; font-weight: normal;">
-            <input type="radio" name="modal-tipo" id="modal-tipo-pap" value="PAP">
-            PAP
-          </label>
+  // Validar modo excluyente
+  const tipoActual = sistemaActual;
+  
+  // Contenedor raíz con clase unificada
+  const wrap = document.createElement('div');
+  wrap.className = 'editor-modal';
+  
+  // Preparar preview inicial de PAP
+  const nextPapNum = computeMaxPapForCity(cityAbbr) + 1;
+  const papPreview = pad(nextPapNum, 3);
+  
+  // Estructura modal: dialog > content > header/body/footer
+  wrap.innerHTML = `
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 style="margin:0;font-size:18px;font-weight:600;">Configurar Cuadrante Padre (${tipoActual})</h3>
+          <button type="button" id="modal-close" aria-label="Cerrar" style="background:none;border:0;font-size:24px;cursor:pointer;line-height:1;padding:0;">&times;</button>
         </div>
-      </div>
-      
-      <div class="form-group">
-        <label>Código (se generará automáticamente):</label>
-        <div id="codigo-preview" class="codigo-preview">CL_1_01</div>
-      </div>
-      
-      <div class="modal-buttons">
-        <button type="button" class="btn btn-secondary" id="modal-cancel">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="modal-confirm">Crear Cuadrante</button>
+        
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Ciudad:</label>
+            <input type="text" id="modal-ciudad" value="${cityAbbr}" readonly style="text-transform: uppercase; background:#f5f5f5;">
+          </div>
+          
+          <!-- Campos RUTA -->
+          <div class="form-group" data-mode="RUTA">
+            <label>ID Ruta: <span style="color: red;">*</span></label>
+            <input type="number" id="modal-ruta" min="1" max="99999" value="1" required>
+            <small class="hint" style="color:#888;font-size:12px;">Número único que identifica la ruta</small>
+          </div>
+          
+          <div class="form-group" data-mode="RUTA">
+            <label>Nombre de ruta (opcional):</label>
+            <input type="text" id="modal-ruta-nombre" placeholder="Ej: 2 Barranquilla norte">
+            <small class="hint" style="color:#888;font-size:12px;">Etiqueta legible para mostrar en mapas</small>
+          </div>
+          
+          <!-- Campos PAP -->
+          <div class="form-group" data-mode="PAP">
+            <label>Número PAP:</label>
+            <div id="pap-numero-info" style="font-weight: 600; color: #11998e; font-size: 16px;">
+              Se asignará automáticamente: ${papPreview}
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Código (generado automáticamente):</label>
+            <input type="text" id="codigo-preview" readonly value="Calculando..." style="font-family:monospace;background:#f0f9ff;border:1px solid #0ea5e9;color:#0c4a6e;font-weight:600;">
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" id="modal-cancel" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="modal-confirm" class="btn btn-primary">Crear Cuadrante</button>
+        </div>
       </div>
     </div>
   `;
   
-  document.body.appendChild(modal);
+  document.body.appendChild(wrap);
+  document.body.style.overflow = 'hidden'; // Bloquear scroll del fondo
+  
+  // Mostrar solo campos del sistema correcto
+  wrap.querySelectorAll('[data-mode="RUTA"]').forEach(el => el.style.display = (tipoActual === 'RUTA' ? 'block' : 'none'));
+  wrap.querySelectorAll('[data-mode="PAP"]').forEach(el => el.style.display = (tipoActual === 'PAP' ? 'block' : 'none'));
+  
+  // Función para generar el código según sistema
+  function generateCodigoForModal() {
+    if (tipoActual === 'RUTA') {
+      const rutaInput = document.getElementById('modal-ruta');
+      const idRuta = rutaInput?.value || '1';
+      const base = baseRuta(cityAbbr, idRuta);
+      const nextSufijo = computeMaxDupForBase(base) + 1;
+      return `${base}_${pad(nextSufijo, 2)}`;
+    } else {
+      // PAP
+      const nextNum = computeMaxPapForCity(cityAbbr) + 1;
+      return `${cityAbbr}_pap_${pad(nextNum, 3)}`;
+    }
+  }
   
   // Actualizar código en tiempo real
-  const rutaInput = document.getElementById('modal-ruta');
   const codigoPreview = document.getElementById('codigo-preview');
   
   function updateCodigoPreview() {
-    const ruta = rutaInput.value || '1';
-    const codigo = generateNextCuadranteCode(ciudad, ruta);
-    codigoPreview.textContent = codigo;
+    const codigo = generateCodigoForModal();
+    codigoPreview.value = codigo;
   }
   
-  rutaInput.addEventListener('input', updateCodigoPreview);
+  // Función para cerrar modal
+  function closeModal() {
+    document.body.style.overflow = ''; // Restaurar scroll del fondo
+    wrap.remove();
+    setEditorState(EditorState.IDLE);
+  }
+  
+  if (tipoActual === 'RUTA') {
+    const rutaInput = document.getElementById('modal-ruta');
+    rutaInput?.addEventListener('input', updateCodigoPreview);
+    rutaInput?.focus();
+  }
+  
   updateCodigoPreview();
   
   // Eventos de botones
-  document.getElementById('modal-cancel').addEventListener('click', () => {
-    document.body.removeChild(modal);
-    setEditorState(EditorState.IDLE);
-  });
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-cancel').addEventListener('click', closeModal);
   
   document.getElementById('modal-confirm').addEventListener('click', () => {
-    const ruta = rutaInput.value;
-    const tipo = document.querySelector('input[name="modal-tipo"]:checked').value;
+    const codigo = codigoPreview.value;
     
-    if (!ruta || ruta < 1) {
-      alert('Ingrese un ID de ruta válido');
+    // Validar formato
+    const esValido = (tipoActual === 'RUTA') ? RE_RUTA.test(codigo) : RE_PAP.test(codigo);
+    if (!esValido) {
+      alert(`Formato de código inválido: ${codigo}`);
       return;
     }
     
-    const config = {
-      ciudad: ciudad,
-      ruta: ruta,
-      tipo: tipo,
-      codigo: codigoPreview.textContent
+    // Verificar unicidad
+    const codeExists = checkCodeExists(codigo);
+    if (codeExists) {
+      alert(`El código ${codigo} ya existe. Elija otro ID de ruta o espere a que se recalcule.`);
+      return;
+    }
+    
+    let config = {
+      ciudad: cityAbbr,
+      system: tipoActual,
+      code: codigo
     };
     
-    document.body.removeChild(modal);
+    if (tipoActual === 'RUTA') {
+      const rutaInput = document.getElementById('modal-ruta');
+      const nombreInput = document.getElementById('modal-ruta-nombre');
+      const idRuta = parseInt(rutaInput.value, 10);
+      
+      if (!idRuta || idRuta < 1) {
+        alert('Ingrese un ID de ruta válido (número positivo)');
+        return;
+      }
+      
+      const base = baseRuta(cityAbbr, idRuta);
+      const match = codigo.match(/_(\d{2})$/);
+      const dupIndex = match ? parseInt(match[1], 10) : 1;
+      
+      config.route_id = idRuta;
+      config.route_name = nombreInput?.value?.trim() || null;
+      config.base_code = base;
+      config.dup_index = dupIndex;
+    }
+    
+    document.body.style.overflow = ''; // Restaurar scroll del fondo
+    wrap.remove();
     callback(config);
   });
+}
+
+// Función auxiliar para verificar si un código ya existe
+function checkCodeExists(code) {
+  let exists = false;
   
-  // Focus en ruta
-  rutaInput.focus();
+  const check = (group) => {
+    if (!group || exists) return;
+    group.eachLayer?.(layer => {
+      const layerCode = layer.feature?.properties?.code || layer.feature?.properties?.codigo;
+      if (layerCode === code) exists = true;
+    });
+  };
+  
+  check(DRAWN_EDITABLE);
+  check(DRAWN_LOCKED);
+  
+  if (state.parents) {
+    state.parents.forEach(p => {
+      const pCode = p.feature?.properties?.code || p.feature?.properties?.codigo;
+      if (pCode === code) exists = true;
+    });
+  }
+  
+  return exists;
+}
+
+// Modal de edición de código (usado al guardar y desde el botón "✏️ Editar código")
+// Versión compacta y scrollable con estructura unificada
+function showEditCodeModal(system, currentProps, callback) {
+  const ciudad = currentProps.city || currentProps.ciudad || getCityFromQuery().toUpperCase();
+  const cityAbbr = getCityPrefix(ciudad);
+  const currentCode = currentProps.code || currentProps.codigo;
+  
+  // Helper para extraer consecutivo PAP
+  function extraerConsecutivoPAP(code) {
+    if (!code) return '';
+    const match = code.match(/_pap_(\d{3})$/);
+    return match ? parseInt(match[1], 10) : '';
+  }
+  
+  // Contenedor raíz con nueva clase unificada
+  const wrap = document.createElement('div');
+  wrap.className = 'editor-modal';
+  wrap.id = 'edit-code-modal';
+  
+  // Preparar valores iniciales
+  const routeId = currentProps.route_id || currentProps.id_ruta || 1;
+  const routeName = currentProps.route_name || currentProps.ruta_publica || '';
+  const base = currentProps.base_code || baseRuta(cityAbbr, routeId);
+  const dupIndex = currentProps.dup_index || 1;
+  const papNum = extraerConsecutivoPAP(currentCode) || 1;
+  
+  // Estructura modal: dialog > content > header/body/footer
+  wrap.innerHTML = `
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 style="margin:0;font-size:18px;font-weight:600;">Editar código del cuadrante (${system})</h3>
+          <button type="button" id="edit-close" aria-label="Cerrar" style="background:none;border:0;font-size:24px;cursor:pointer;line-height:1;padding:0;">&times;</button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Ciudad:</label>
+            <input type="text" id="edit-ciudad" value="${cityAbbr}" readonly style="text-transform: uppercase; background:#f5f5f5;">
+          </div>
+          
+          <!-- Campos RUTA -->
+          <div class="form-group" data-mode="RUTA">
+            <label>ID Ruta: <span style="color: red;">*</span></label>
+            <input type="number" id="edit-route-id" min="1" max="99999" value="${routeId}" required>
+          </div>
+          
+          <div class="form-group" data-mode="RUTA">
+            <label>Nombre de ruta (opcional):</label>
+            <input type="text" id="edit-route-name" value="${routeName}" placeholder="Ej: 2 Barranquilla norte">
+          </div>
+          
+          <div class="form-group" data-mode="RUTA">
+            <label>Base (preview):</label>
+            <div id="edit-base-preview" style="font-family:monospace;color:#666;font-weight:600;">${base}</div>
+          </div>
+          
+          <div class="form-group" data-mode="RUTA">
+            <label>Sufijo (01–99): <span style="color: red;">*</span></label>
+            <input type="number" id="edit-suffix" min="1" max="99" value="${dupIndex}" required>
+            <small class="hint" style="color:#888;font-size:12px;">Número de duplicado</small>
+          </div>
+          
+          <!-- Campos PAP -->
+          <div class="form-group" data-mode="PAP">
+            <label>Prefijo (readonly):</label>
+            <input type="text" id="edit-pap-prefix" value="${cityAbbr}_pap_" readonly style="background:#f5f5f5;font-family:monospace;">
+          </div>
+          
+          <div class="form-group" data-mode="PAP">
+            <label>Consecutivo (001–999): <span style="color: red;">*</span></label>
+            <input type="number" id="edit-pap-num" min="1" max="999" value="${papNum}" required>
+          </div>
+          
+          <div class="form-group">
+            <label>Código resultante:</label>
+            <input type="text" id="edit-code-preview" readonly value="${currentCode}" style="font-family:monospace;background:#f0f9ff;border:1px solid #0ea5e9;color:#0c4a6e;font-weight:600;">
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button type="button" id="edit-modal-cancel" class="btn btn-secondary">Cancelar</button>
+          <button type="button" id="edit-modal-save" class="btn btn-primary">Aplicar Cambios</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(wrap);
+  document.body.style.overflow = 'hidden'; // Bloquear scroll del fondo
+  
+  // Mostrar solo campos del sistema correcto
+  const sys = system.toUpperCase();
+  wrap.querySelectorAll('[data-mode="RUTA"]').forEach(el => el.style.display = (sys === 'RUTA' ? 'block' : 'none'));
+  wrap.querySelectorAll('[data-mode="PAP"]').forEach(el => el.style.display = (sys === 'PAP' ? 'block' : 'none'));
+  
+  // Función para actualizar preview del código
+  function updateEditPreview() {
+    let newCode;
+    if (sys === 'RUTA') {
+      const routeIdInput = document.getElementById('edit-route-id');
+      const suffixInput = document.getElementById('edit-suffix');
+      const routeId = routeIdInput?.value || '1';
+      const suffix = parseInt(suffixInput?.value || '1', 10);
+      const base = baseRuta(cityAbbr, routeId);
+      
+      // Actualizar preview de base
+      const basePreview = document.getElementById('edit-base-preview');
+      if (basePreview) basePreview.textContent = base;
+      
+      newCode = `${base}_${pad(suffix, 2)}`;
+    } else {
+      // PAP
+      const papNumInput = document.getElementById('edit-pap-num');
+      const papNum = parseInt(papNumInput?.value || '1', 10);
+      newCode = `${cityAbbr}_pap_${pad(papNum, 3)}`;
+    }
+    
+    const preview = document.getElementById('edit-code-preview');
+    if (preview) preview.value = newCode;
+  }
+  
+  // Función para cerrar modal
+  function closeEditModal() {
+    document.body.style.overflow = ''; // Restaurar scroll del fondo
+    wrap.remove();
+  }
+  
+  // Listeners para actualizar preview en tiempo real
+  if (sys === 'RUTA') {
+    const routeIdInput = document.getElementById('edit-route-id');
+    const suffixInput = document.getElementById('edit-suffix');
+    routeIdInput?.addEventListener('input', updateEditPreview);
+    suffixInput?.addEventListener('input', updateEditPreview);
+    routeIdInput?.focus();
+  } else {
+    const papNumInput = document.getElementById('edit-pap-num');
+    papNumInput?.addEventListener('input', updateEditPreview);
+    papNumInput?.focus();
+  }
+  
+  updateEditPreview();
+  
+  // Eventos de botones
+  document.getElementById('edit-close').addEventListener('click', closeEditModal);
+  document.getElementById('edit-modal-cancel').addEventListener('click', closeEditModal);
+  
+  document.getElementById('edit-modal-save').addEventListener('click', () => {
+    const newCode = document.getElementById('edit-code-preview').value;
+    
+    // Validar formato
+    const esValido = (sys === 'RUTA') ? RE_RUTA.test(newCode) : RE_PAP.test(newCode);
+    if (!esValido) {
+      alert(`Formato de código inválido: ${newCode}`);
+      return;
+    }
+    
+    // Verificar unicidad (permitir mismo código si no cambió)
+    if (newCode !== currentCode && checkCodeExists(newCode)) {
+      alert(`El código ${newCode} ya existe. Elija otro valor.`);
+      return;
+    }
+    
+    // Construir nuevas propiedades
+    let newProps = {
+      code: newCode,
+      codigo: newCode, // Legacy
+      city: cityAbbr,
+      ciudad: cityAbbr, // Legacy
+      system: sys
+    };
+    
+    if (sys === 'RUTA') {
+      const routeIdInput = document.getElementById('edit-route-id');
+      const routeNameInput = document.getElementById('edit-route-name');
+      const suffixInput = document.getElementById('edit-suffix');
+      
+      const routeId = parseInt(routeIdInput.value, 10);
+      const routeName = routeNameInput?.value?.trim() || null;
+      const suffix = parseInt(suffixInput.value, 10);
+      const base = baseRuta(cityAbbr, routeId);
+      
+      newProps.route_id = routeId;
+      newProps.route_name = routeName;
+      newProps.base_code = base;
+      newProps.dup_index = suffix;
+      
+      // Legacy
+      newProps.id_ruta = routeId;
+      if (routeName) newProps.ruta_publica = routeName;
+    }
+    // PAP no requiere propiedades adicionales
+    
+    closeEditModal();
+    callback(newProps);
+  });
 }
 
 // === NUEVAS FUNCIONES DE IMPORTACIÓN ===
@@ -3411,8 +3855,132 @@ async function runImportFlow(mode) {
 }
 
 // Renderizar FeatureCollection según el modo seleccionado
+// Función para detectar y resolver conflictos de código en importación
+function resolveImportCodeConflicts(fc) {
+  const ciudad = getCityFromQuery().toUpperCase();
+  const cityAbbr = getCityPrefix(ciudad);
+  
+  // Construir mapas de códigos existentes
+  const existingCodes = new Set();
+  const rutaBases = new Map(); // base -> max suffix
+  
+  // Escanear capas existentes
+  [DRAWN_EDITABLE, DRAWN_LOCKED].forEach(group => {
+    if (!group) return;
+    group.eachLayer?.(layer => {
+      const props = layer.feature?.properties || {};
+      const code = props.code || props.codigo;
+      if (code) {
+        existingCodes.add(code);
+        
+        // Si es RUTA, actualizar mapa de bases
+        if (RE_RUTA.test(code)) {
+          const base = code.match(/^(.+)_\d{2}$/)?.[1] || code;
+          const suffix = code.match(/_(\d{2})$/);
+          const num = suffix ? parseInt(suffix[1], 10) : 1;
+          rutaBases.set(base, Math.max(rutaBases.get(base) || 0, num));
+        }
+      }
+    });
+  });
+  
+  if (state.parents) {
+    state.parents.forEach(p => {
+      const props = p.feature?.properties || {};
+      const code = props.code || props.codigo;
+      if (code) {
+        existingCodes.add(code);
+        
+        if (RE_RUTA.test(code)) {
+          const base = code.match(/^(.+)_\d{2}$/)?.[1] || code;
+          const suffix = code.match(/_(\d{2})$/);
+          const num = suffix ? parseInt(suffix[1], 10) : 1;
+          rutaBases.set(base, Math.max(rutaBases.get(base) || 0, num));
+        }
+      }
+    });
+  }
+  
+  // Procesar features importadas
+  const conflicts = [];
+  const resolved = [];
+  
+  fc.features.forEach(feat => {
+    const props = feat.properties || {};
+    let code = props.code || props.codigo;
+    
+    if (!code) return; // Sin código, no hay conflicto
+    
+    // Detectar si hay conflicto
+    if (existingCodes.has(code)) {
+      // Conflicto detectado
+      conflicts.push(code);
+      
+      // Resolver según sistema
+      if (RE_RUTA.test(code)) {
+        // RUTA: asignar siguiente sufijo
+        const base = code.match(/^(.+)_\d{2}$/)?.[1] || code;
+        const nextSuffix = (rutaBases.get(base) || 0) + 1;
+        const newCode = `${base}_${pad(nextSuffix, 2)}`;
+        
+        // Actualizar propiedades
+        props.code = newCode;
+        props.codigo = newCode;
+        props.dup_index = nextSuffix;
+        
+        rutaBases.set(base, nextSuffix);
+        existingCodes.add(newCode);
+        resolved.push({ old: code, new: newCode });
+        
+        console.debug(`[IMPORT_CONFLICT] RUTA: ${code} → ${newCode}`);
+      } else if (RE_PAP.test(code)) {
+        // PAP: asignar siguiente número global
+        const nextNum = computeMaxPapForCity(cityAbbr) + 1;
+        const newCode = `${cityAbbr}_pap_${pad(nextNum, 3)}`;
+        
+        props.code = newCode;
+        props.codigo = newCode;
+        
+        existingCodes.add(newCode);
+        resolved.push({ old: code, new: newCode });
+        
+        console.debug(`[IMPORT_CONFLICT] PAP: ${code} → ${newCode}`);
+      }
+    } else {
+      // No hay conflicto, registrar código
+      existingCodes.add(code);
+      
+      // Si es RUTA, actualizar mapa de bases
+      if (RE_RUTA.test(code)) {
+        const base = code.match(/^(.+)_\d{2}$/)?.[1] || code;
+        const suffix = code.match(/_(\d{2})$/);
+        const num = suffix ? parseInt(suffix[1], 10) : 1;
+        rutaBases.set(base, Math.max(rutaBases.get(base) || 0, num));
+      }
+    }
+  });
+  
+  // Notificar al usuario
+  if (resolved.length > 0) {
+    const msg = `Se resolvieron ${resolved.length} conflictos de código:\n` +
+                resolved.map(r => `  ${r.old} → ${r.new}`).slice(0, 10).join('\n') +
+                (resolved.length > 10 ? `\n  ... y ${resolved.length - 10} más` : '');
+    console.warn('[IMPORT_CONFLICT] Conflictos resueltos:', resolved);
+    showToast(`Conflictos resueltos: ${resolved.length} códigos reasignados`, 'warning');
+    
+    // Mostrar detalles en consola
+    console.table(resolved);
+  }
+  
+  return { conflicts: conflicts.length, resolved: resolved.length };
+}
+
 function renderFCAccordingToMode(fc, mode) {
   console.log(`[RENDER] Modo: ${mode}, Features: ${fc.features?.length || 0}`);
+  
+  // RESOLVER CONFLICTOS DE CÓDIGO EN IMPORTACIÓN
+  const conflictStats = resolveImportCodeConflicts(fc);
+  console.debug(`[RENDER] Conflictos: ${conflictStats.conflicts}, Resueltos: ${conflictStats.resolved}`);
   
   // Reset limpio
   ProjectRegistry.clear();
@@ -3452,6 +4020,15 @@ function getCityFromQuery() {
 
 // Configurar controles cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
+    // Listener para toggle de sistema RUTA/PAP
+    const radios = document.querySelectorAll('input[name="sistema"]');
+    radios.forEach(rb => {
+      rb.addEventListener('change', (e) => {
+        sistemaActual = e.target.value; // 'RUTA' | 'PAP'
+        console.log(`[SISTEMA] Cambiado a: ${sistemaActual}`);
+      });
+    });
+    
     // Construir paleta
     const paletteDiv = document.getElementById('palette');
     if (paletteDiv) {
@@ -3702,6 +4279,28 @@ function exportFromVisibleLayersStrict() {
   console.debug(`[EXPORT_STRICT] Resumen de exportación:`);
   console.debug(`- Total features: ${features.length}`);
   console.debug(`- Sources:`, Object.fromEntries(sources));
+  
+  // VALIDACIÓN FINAL: Verificar unicidad de códigos en export
+  const exportCodes = new Set();
+  const duplicatesInExport = [];
+  
+  features.forEach(f => {
+    const code = f.properties?.code || f.properties?.codigo;
+    if (code) {
+      if (exportCodes.has(code)) {
+        duplicatesInExport.push(code);
+      } else {
+        exportCodes.add(code);
+      }
+    }
+  });
+  
+  if (duplicatesInExport.length > 0) {
+    console.error('[EXPORT_STRICT] ¡DUPLICADOS DETECTADOS!', duplicatesInExport);
+    showToast(`❌ Error: ${duplicatesInExport.length} códigos duplicados detectados. No se puede exportar.`, 'error');
+    alert(`Se detectaron códigos duplicados en la exportación:\n${duplicatesInExport.join(', ')}\n\nCorrija los conflictos antes de exportar.`);
+    return;
+  }
   
   // Mostrar toast informativo
   showToast(`📤 Exportando ${features.length} features desde capas visibles`, "success");
@@ -4263,6 +4862,32 @@ function loadFeatureCollection(featureCollection, options = {}) {
             // Activar picker para seleccionar padre
             activateEditPicker('parent');
         }
+    });
+    
+    // Botón editar código (abre modal directamente sin entrar en modo de edición de geometría)
+    document.getElementById('btn-editar-codigo').addEventListener('click', () => {
+        if (!state.activeParent) return;
+        
+        const props = state.activeParent.feature?.properties || {};
+        const currentSystem = props.system || sistemaActual;
+        
+        showEditCodeModal(currentSystem, props, (newProps) => {
+            // Actualizar propiedades del padre
+            Object.assign(state.activeParent.feature.properties, newProps);
+            
+            // Actualizar changeLog y ProjectRegistry
+            const feat = state.activeParent.toGeoJSON();
+            const parentCode = feat.properties.code || feat.properties.codigo;
+            
+            if (parentCode) {
+                state.changeLog.set(parentCode, feat);
+                const registryKey = ProjectRegistry.generateKey(feat);
+                ProjectRegistry.setFeature(registryKey, feat);
+            }
+            
+            showToast(`Código actualizado a: ${newProps.code}`);
+            console.debug(`[EDIT_CODE] Código actualizado: ${newProps.code}`);
+        });
     });
     
     // Botón guardar padre

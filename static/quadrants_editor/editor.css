@@ -875,3 +875,92 @@ input:checked + .slider:before { transform:translateX(20px); }
 .map-isolated .leaflet-interactive {
   cursor: crosshair !important;
 }
+
+.mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  margin-right: 12px;
+}
+
+.mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e3e6ef;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+.mode-option input { transform: translateY(1px); }
+
+/* ============================================================
+   Marco común y compacto para TODOS los modales del editor
+   ============================================================ */
+.editor-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;          /* por encima del mapa y toolbars */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;           /* margen interior para respiración en 100% vw */
+  background: rgba(0,0,0,0.25);
+}
+
+.editor-modal .modal-dialog {
+  width: 100%;
+  max-width: 560px;        /* igualar "Crear cuadrante" */
+  max-height: 88vh;        /* CLAVE: no exceder viewport */
+}
+
+.editor-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;        /* hereda el tope */
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  overflow: hidden;        /* bordes redondeados + recorte */
+}
+
+.editor-modal .modal-header,
+.editor-modal .modal-footer {
+  flex: 0 0 auto;
+  padding: 14px 18px;
+  background: #fff;
+}
+
+.editor-modal .modal-header {
+  border-bottom: 1px solid #e9edf3;
+}
+
+.editor-modal .modal-footer {
+  border-top: 1px solid #e9edf3;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.editor-modal .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;           /* CLAVE para que overflow funcione */
+  overflow: auto;          /* scroll interno del cuerpo */
+  padding: 16px 18px;
+}
+
+/* Inputs y textos largos no deben romper layout */
+.editor-modal .form-group input[type="text"],
+.editor-modal .form-group input[type="number"] {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .editor-modal .modal-dialog {
+    max-width: 100%;
+  }
+}
