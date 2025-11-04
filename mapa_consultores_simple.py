@@ -31,7 +31,7 @@ def _coords_and_geojson():
         'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
         'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
         'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
-        'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
+        'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/rutas/barranquilla/cuadrantes_rutas_barranquilla.geojson'),
         'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
     }
 
@@ -106,16 +106,40 @@ def generar_mapa_consultores_simple(ciudad: str, id_ruta: int, fecha_inicio: dat
                         'fillColor': '#e5e7eb',
                         'color': '#6b7280',
                         'weight': 1,
-                        'fillOpacity': 0.08
+                        'fillOpacity': 0.12
                     }
                 ).add_to(mapa)
                 
-                logger.info(f"Capa de comunas cargada desde {geojson_path}")
+                logger.info(f"✓ Capa cargada desde: {geojson_path}")
                 geojson_loaded = True
             except Exception as e:
-                logger.warning(f"No se pudo cargar el archivo GeoJSON de comunas desde {geojson_path}: {e}")
+                logger.warning(f"No se pudo cargar el archivo GeoJSON desde {geojson_path}: {e}")
         
-        # Fallback a ruta alternativa si es necesario
+        # Fallback 1: Para Barranquilla, intentar archivo de comunas genérico
+        if not geojson_loaded and ciudadN == 'BARRANQUILLA':
+            fallback_comunas = 'geojson/comunas_barranquilla.geojson'
+            if os.path.exists(fallback_comunas):
+                try:
+                    with open(fallback_comunas, 'r', encoding='utf-8') as file:
+                        comunas_geojson = json.load(file)
+                    
+                    folium.GeoJson(
+                        data=comunas_geojson,
+                        name="Comunas", 
+                        style_function=lambda feature: {
+                            'fillColor': '#e5e7eb',
+                            'color': '#6b7280',
+                            'weight': 1,
+                            'fillOpacity': 0.12
+                        }
+                    ).add_to(mapa)
+                    
+                    logger.info(f"✓ Capa cargada desde fallback (comunas): {fallback_comunas}")
+                    geojson_loaded = True
+                except Exception as e:
+                    logger.warning(f"No se pudo cargar el archivo GeoJSON desde fallback {fallback_comunas}: {e}")
+        
+        # Fallback 2: ciudades/{CIUDAD}/comunas.geojson
         if not geojson_loaded:
             fallback_path = f"ciudades/{ciudadN}/comunas.geojson"
             if os.path.exists(fallback_path):
@@ -130,17 +154,17 @@ def generar_mapa_consultores_simple(ciudad: str, id_ruta: int, fecha_inicio: dat
                             'fillColor': '#e5e7eb',
                             'color': '#6b7280',
                             'weight': 1,
-                            'fillOpacity': 0.08
+                            'fillOpacity': 0.12
                         }
                     ).add_to(mapa)
                     
-                    logger.info(f"Capa de comunas cargada desde fallback: {fallback_path}")
+                    logger.info(f"✓ Capa cargada desde fallback (ciudades): {fallback_path}")
                     geojson_loaded = True
                 except Exception as e:
-                    logger.warning(f"No se pudo cargar el archivo GeoJSON de comunas desde fallback {fallback_path}: {e}")
+                    logger.warning(f"No se pudo cargar el archivo GeoJSON desde fallback {fallback_path}: {e}")
         
         if not geojson_loaded:
-            logger.warning(f"No se pudo cargar capa de comunas para {ciudadN} - el mapa continuará sin ella")
+            logger.warning(f"⚠️ No se pudo cargar capa de comunas para {ciudadN} - el mapa continuará sin ella")
         
         # 7. Renderizar TODOS los eventos como CircleMarkers
         n_puntos = 0
