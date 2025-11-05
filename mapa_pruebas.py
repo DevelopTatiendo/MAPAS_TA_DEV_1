@@ -100,6 +100,26 @@ def _color_evento(tipo):
         return "#16a34a"   # verde (ventas en ruta)
     return "#374151"       # gris oscuro
 
+def _build_legend(ciudad: str, id_ruta: int | str, fi_str: str, ff_str: str, total: int) -> str:
+    """HTML de tarjeta fija arriba-izquierda con resumen."""
+    fi_d = (fi_str or "")[:10]
+    ff_d = (ff_str or "")[:10]
+    rango = fi_d if fi_d == ff_d else f"{fi_d} – {ff_d}"
+    return f"""
+    <div style="
+      position: fixed; top: 12px; left: 12px; z-index: 9999;
+      background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb;
+      border-radius: 8px; padding: 10px 12px; box-shadow: 0 1px 6px rgba(0,0,0,.15);
+      font: 13px/1.3 Arial, sans-serif; min-width: 220px;">
+      <div style="font-weight: 700; margin-bottom: 4px;">
+        Consultores — {str(ciudad).upper()}
+      </div>
+      <div><b>Ruta:</b> {id_ruta}</div>
+      <div><b>Fechas:</b> {rango}</div>
+      <div><b>Total puntos:</b> {total}</div>
+    </div>
+    """
+
 def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> tuple[str, int]:
     """
     Genera mapa Folium con eventos (consultores) sobre base GeoJSON de RUTAS de la ciudad.
@@ -158,6 +178,9 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
                 tooltip="Sin datos en el rango especificado",
                 icon=folium.Icon(color='gray', icon='info-sign')
             ).add_to(m)
+            
+            # Agregar leyenda con total 0
+            m.get_root().html.add_child(folium.Element(_build_legend(ciudad, id_ruta, fi, ff, 0)))
             
             # Guardar
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -245,6 +268,17 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
                 tipo = r.get("id_evento_tipo")
                 color = _color_evento(tipo)
                 
+                # Determinar tipo de evento (texto + id si existe)
+                tipo_txt = r.get('tipo_evento')
+                tipo_id = r.get('id_evento_tipo')
+                if pd.notna(tipo_txt) and str(tipo_txt).strip():
+                    tipo_line = str(tipo_txt).strip()
+                    if pd.notna(tipo_id):
+                        tipo_line = f"{tipo_line} (#{int(tipo_id)})"
+                else:
+                    # Fallback: solo id o 'N/D'
+                    tipo_line = f"#{int(tipo_id)}" if pd.notna(tipo_id) else "N/D"
+                
                 # Formatear fecha
                 fecha_evento = r.get('fecha_evento', 'Sin fecha')
                 if pd.notna(fecha_evento) and hasattr(fecha_evento, 'strftime'):
@@ -252,13 +286,12 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
                 else:
                     fecha_str = str(fecha_evento)
                 
-                # Popup con información del evento
                 popup_html = f"""
-                <div style="font-family: Arial, sans-serif; font-size: 12px; min-width: 200px;">
-                    <b>Evento:</b> {r.get('tipo_evento', '') or tipo}<br>
-                    <b>Fecha:</b> {fecha_str}<br>
-                    <b>Consultor:</b> {r.get('apellido', 'Sin nombre')}<br>
-                    <b>ID Contacto:</b> {int(r['id_contacto']) if pd.notna(r['id_contacto']) else 'N/A'}
+                <div style="font-family: Arial, sans-serif; font-size: 12px; min-width: 220px;">
+                  <b>Tipo:</b> {tipo_line}<br>
+                  <b>Fecha:</b> {fecha_str}<br>
+                  <b>Consultor:</b> {r.get('apellido', 'Sin nombre')}<br>
+                  <b>ID Contacto:</b> {int(r['id_contacto']) if pd.notna(r.get('id_contacto')) else 'N/A'}
                 </div>
                 """
                 
@@ -277,6 +310,9 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
             except Exception as e:
                 logger.warning(f"Error procesando punto {n_puntos}: {e}")
                 continue
+        
+        # Añadir leyenda final con total de puntos renderizados
+        m.get_root().html.add_child(folium.Element(_build_legend(ciudad, id_ruta, fi, ff, n_puntos)))
         
         # 9) Añadir control de capas
         folium.LayerControl(collapsed=True).add_to(m)
