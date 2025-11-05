@@ -946,3 +946,63 @@ def eventos_sin_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     except Exception as e:
         logging.error(f"[BD] Error en eventos_sin_coordenadas_por_ruta_y_rango: {str(e)}")
         raise
+
+def eventos_con_coordenadas_ciudad_y_rango(ciudad: str, f_ini: str, f_fin: str, id_ruta: int | None = None) -> pd.DataFrame:
+    """
+    Devuelve eventos con coordenadas para una ciudad y rango de fechas.
+    Si id_ruta es None → trae TODAS las rutas de la ciudad.
+    Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_evento_tipo, tipo_evento, apellido
+    """
+    co = get_co(_norm_city(ciudad))
+
+    q = f"""
+    SELECT
+        e.idEvento            AS id_evento,
+        e.id_contacto         AS id_contacto,
+        e.coordenada_latitud  AS lat,
+        e.coordenada_longitud AS lon,
+        e.fecha_evento        AS fecha_evento,
+        e.id_evento_tipo      AS id_evento_tipo,
+        e.tipo_evento         AS tipo_evento,
+        p.apellido            AS apellido
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c        ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b            ON b.Id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc ON rc.id_barrio = b.Id
+    JOIN fullclean_contactos.rutas_cobro r        ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p            ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca             ON ca.Id_cargo = p.id_cargo
+    WHERE
+          c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND r.id_centroope = :co
+      {"AND r.id = :id_ruta" if id_ruta is not None else ""}
+      AND e.fecha_evento BETWEEN :f_ini AND :f_fin
+      AND e.coordenada_latitud  IS NOT NULL
+      AND e.coordenada_longitud IS NOT NULL
+      AND e.coordenada_latitud  <> 0
+      AND e.coordenada_longitud <> 0
+      AND e.coordenada_latitud  BETWEEN -5  AND 13
+      AND e.coordenada_longitud BETWEEN -81 AND -66
+      AND ca.Id_cargo = 5
+      AND id_evento_tipo = 10 
+    ORDER BY e.fecha_evento ASC;
+    """
+
+    params = {"co": co, "f_ini": f_ini, "f_fin": f_fin}
+    if id_ruta is not None:
+        params["id_ruta"] = id_ruta
+
+    df = sql_read(q, params=params)
+
+    if not df.empty:
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+        df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
+        df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
+        df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
+        df['apellido'] = df['apellido'].fillna('').astype(str)
+        df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
+
+    return df

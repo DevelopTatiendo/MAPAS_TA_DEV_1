@@ -14,7 +14,7 @@ import folium
 import pandas as pd
 
 from pre_procesamiento.preprocesamiento_consultores import (
-    get_co, eventos_por_ruta_en_rango
+    eventos_con_coordenadas_ciudad_y_rango
 )
 
 # Configurar logging
@@ -120,19 +120,20 @@ def _build_legend(ciudad: str, id_ruta: int | str, fi_str: str, ff_str: str, tot
     </div>
     """
 
-def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> tuple[str, int]:
+def generar_mapa_pruebas(ciudad: str, id_ruta: int | None, fecha_inicio, fecha_fin) -> tuple[str, int]:
     """
     Genera mapa Folium con eventos (consultores) sobre base GeoJSON de RUTAS de la ciudad.
     
     Características:
     - Sin cálculo por cuadrante
     - Sin comunas (solo rutas o basemap)
-    - MarkerCluster para puntos
+    - Puntos individuales (sin MarkerCluster)
     - Colores por tipo de evento
+    - Permite id_ruta=None para mostrar TODAS las rutas
     
     Args:
         ciudad (str): Nombre de la ciudad (con acentos)
-        id_ruta (int): ID de la ruta de cobro
+        id_ruta (int | None): ID de la ruta de cobro, o None para todas las rutas
         fecha_inicio (date): Fecha de inicio
         fecha_fin (date): Fecha de fin
     
@@ -148,9 +149,8 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
         # Asegurar que existe el directorio de salida
         STATIC_MAPS.mkdir(parents=True, exist_ok=True)
         
-        # 1) Normalizar ciudad y obtener centro de operaciones
+        # 1) Normalizar ciudad
         ciudadN = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
-        co = get_co(ciudadN)
         
         # 2) Convertir fechas date → strings con horarios completos
         if hasattr(fecha_inicio, 'strftime'):
@@ -164,12 +164,13 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
             ff = f"{fecha_fin} 23:59:59"
         
         # 3) Consultar eventos con coordenadas
-        logger.info(f"[PRUEBAS] Consultando eventos - CO:{co}, Ruta:{id_ruta}, Fechas:{fi} a {ff}")
-        df = eventos_por_ruta_en_rango(co, int(id_ruta), fi, ff)
+        ruta_display = "TODOS" if id_ruta is None else str(id_ruta)
+        logger.info(f"[PRUEBAS] Consultando eventos - Ciudad:{ciudadN}, Ruta:{ruta_display}, Fechas:{fi} a {ff}")
+        df = eventos_con_coordenadas_ciudad_y_rango(ciudadN, fi, ff, id_ruta)
         
         # 4) Si no hay datos, generar mapa dummy
         if df is None or df.empty:
-            logger.warning(f"[PRUEBAS] Sin datos para CO:{co}, Ruta:{id_ruta}, Fechas:{fi}-{ff}")
+            logger.warning(f"[PRUEBAS] Sin datos para Ciudad:{ciudadN}, Ruta:{ruta_display}, Fechas:{fi}-{ff}")
             # Centro usando diccionario o fallback
             m_center = _city_center(ciudad, None)
             m = folium.Map(location=m_center, zoom_start=12)
@@ -180,11 +181,12 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
             ).add_to(m)
             
             # Agregar leyenda con total 0
-            m.get_root().html.add_child(folium.Element(_build_legend(ciudad, id_ruta, fi, ff, 0)))
+            m.get_root().html.add_child(folium.Element(_build_legend(ciudad, ruta_display, fi, ff, 0)))
             
             # Guardar
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"pruebas_{_slug_ciudad(ciudad)}_{id_ruta}_{ts}.html"
+            ruta_slug = "todos" if id_ruta is None else str(id_ruta)
+            filename = f"pruebas_{_slug_ciudad(ciudad)}_{ruta_slug}_{ts}.html"
             m.save(STATIC_MAPS / filename)
             
             logger.info(f"[PRUEBAS] Mapa generado (sin datos): {filename}")
@@ -312,14 +314,16 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int, fecha_inicio, fecha_fin) -> 
                 continue
         
         # Añadir leyenda final con total de puntos renderizados
-        m.get_root().html.add_child(folium.Element(_build_legend(ciudad, id_ruta, fi, ff, n_puntos)))
+        ruta_display = "TODOS" if id_ruta is None else str(id_ruta)
+        m.get_root().html.add_child(folium.Element(_build_legend(ciudad, ruta_display, fi, ff, n_puntos)))
         
         # 9) Añadir control de capas
         folium.LayerControl(collapsed=True).add_to(m)
         
         # 10) Guardar HTML
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"pruebas_{_slug_ciudad(ciudad)}_{id_ruta}_{ts}.html"
+        ruta_slug = "todos" if id_ruta is None else str(id_ruta)
+        filename = f"pruebas_{_slug_ciudad(ciudad)}_{ruta_slug}_{ts}.html"
         m.save(STATIC_MAPS / filename)
         
         logger.info(f"✓ Mapa Pruebas generado: {filename} con {n_puntos} puntos")

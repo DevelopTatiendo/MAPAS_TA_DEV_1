@@ -483,10 +483,18 @@ with st.form(key="filtros_form"):
             options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
             options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
             
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione la ruta (obligatorio):", options=options_list)
-            id_ruta_pruebas = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui_pruebas = ruta_seleccionada if ruta_seleccionada else None
+            # Agregar opción "TODOS" al inicio
+            options_list_plus = ["TODOS"] + options_list
+            
+            # Selector mostrando el nombre de ruta (incluye "TODOS")
+            ruta_seleccionada = st.selectbox("Seleccione la ruta:", options=options_list_plus, index=0)
+            
+            if ruta_seleccionada == "TODOS":
+                id_ruta_pruebas = None           # ← clave: None significa NO filtrar por ruta
+                nombre_ruta_ui_pruebas = "TODOS"
+            else:
+                id_ruta_pruebas = options_dict.get(ruta_seleccionada)
+                nombre_ruta_ui_pruebas = ruta_seleccionada
         
         # Fechas en dos columnas
         c1, c2 = st.columns(2)
@@ -992,23 +1000,18 @@ if submit_button:
                         st.session_state["consultores_export_meta"] = None
             map_type = "consultores"
         elif tipo_mapa == "Pruebas":
-            # Validar que se haya seleccionado una ruta válida
-            if not id_ruta_pruebas:
-                st.error("Seleccione una ruta válida.")
-                filename = None
-                n_puntos = 0
+            # id_ruta_pruebas puede ser None (para "TODOS") o un int
+            resultado = manejar_error(
+                generar_mapa_pruebas,
+                ciudad,               # str (con acentos tal como viene del radio)
+                id_ruta_pruebas,      # int | None (None para "TODOS")
+                fecha_inicio,         # date
+                fecha_fin             # date
+            )
+            if resultado:
+                filename, n_puntos = resultado
             else:
-                resultado = manejar_error(
-                    generar_mapa_pruebas,
-                    ciudad,               # str (con acentos tal como viene del radio)
-                    int(id_ruta_pruebas), # id ruta
-                    fecha_inicio,         # date
-                    fecha_fin             # date
-                )
-                if resultado:
-                    filename, n_puntos = resultado
-                else:
-                    filename, n_puntos = None, 0
+                filename, n_puntos = None, 0
             map_type = "pruebas"
 
         if filename:
