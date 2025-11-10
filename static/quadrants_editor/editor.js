@@ -167,7 +167,7 @@ function showToast(message, type = 'success') {
 }
 
 // Constante de opacidad fija para padres
-const PARENT_FILL_OPACITY = 0.35; // 35% fijo
+const PARENT_FILL_OPACITY = 0.5; // 35% fijo
 
 // Modo de exportación: 'none' | 'warn' | 'strict'
 const EXPORT_VALIDATION_MODE = 'none'; // <<— modo "sin líos"

@@ -9,7 +9,7 @@ import streamlit as st
 from folium import FeatureGroup
 from folium.plugins import FeatureGroupSubGroup
 from matplotlib import colors
-from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores, compute_ism_metrics_por_cuadrante
+from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores, compute_ism_metrics_por_cuadrante, resolver_nombre_ruta
 import unicodedata
 from utils.gestor_mapas import guardar_mapa_controlado
 
@@ -531,7 +531,7 @@ def _style_cuadrante_padre(feat):
     Estilo más tenue para cuadrantes padre (debajo de los hijos).
     """
     base = _style_cuadrante(feat)
-    base.update({'fillOpacity': 0.15, 'weight': 1.5})  # más tenue que los hijos
+    base.update({'fillOpacity': 0.5, 'weight': 1.5})  # más tenue que los hijos
     return base
 
 def _verificar_area_draw_vs_cache(feature: dict, area_cache: float, tipo_capa: str) -> dict:
@@ -664,7 +664,7 @@ def build_promotores_groups(df, parent_group, colores_promotores_map, legend_nam
                 color=color_promotor,
                 fill=True,
                 fillColor=color_promotor,
-                fillOpacity=0.7,
+                fillOpacity=0.9,
                 popup=folium.Popup(popup_text, max_width=320),
             ).add_to(sg)
 
@@ -711,7 +711,7 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
                 color=color_barrio,
                 fill=True,
                 fillColor=color_barrio,
-                fillOpacity=0.55,
+                fillOpacity=0.9,
                 popup=folium.Popup(popup_text, max_width=320),
             ).add_to(sg)
 
@@ -774,13 +774,14 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
 
         # Coordenadas para el centro del mapa y archivo GeoJSON
         coordenadas_ciudades = {
-            'CALI': ([3.4516, -76.5320], 'geojson/pap/cali_base.geojson'),
-            'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),  # Usar archivo estándar
-            'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
-            'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
-            'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
-            'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
+            'CALI': ([3.4516, -76.5320], 'geojson/rutas/cali/cuadrantes_rutas_cali.geojson'),
+            'MEDELLIN': ([6.2442, -75.5812], 'geojson/rutas/medellin/cuadrantes_rutas_medellin.geojson'),
+            'MANIZALES': ([5.0672, -75.5174], 'geojson/rutas/manizales/cuadrantes_rutas_manizales.geojson'),
+            'PEREIRA': ([4.8087, -75.6906], 'geojson/rutas/pereira/cuadrantes_rutas_pereira.geojson'),
+            'BOGOTA': ([4.7110, -74.0721], 'geojson/rutas/bogota/cuadrantes_rutas_bogota.geojson'),
+            'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/rutas/barranquilla/cuadrantes_rutas_barranquilla.geojson'),
+            'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/rutas/bucaramanga/cuadrantes_rutas_bucaramanga.geojson')
+
         }
 
         # Centroope asociado a cada ciudad
@@ -1112,6 +1113,12 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         
         for feature in barrios_geojson['features']:
             props = feature.get('properties', {})
+            # Enriquecer con display_name derivado (nombre de ruta)
+            codigo_val = (props.get('codigo') or props.get('CODIGO') or props.get('code') or '').strip()
+            if codigo_val:
+                props['display_name'] = resolver_nombre_ruta(ciudad, codigo_val, props)
+            else:
+                props['display_name'] = resolver_nombre_ruta(ciudad, codigo_val, props)
             
             # Detectar si es comuna usando heurística original
             is_comuna = any(
@@ -1211,6 +1218,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_padre in features_padres:
             props  = feature_padre.get('properties', {})
             codigo = str(props.get('codigo', ''))  # Asegurar tipo str
+            nombre_display = props.get('display_name', codigo)
             cache_key = ('PADRE', codigo)
             if cache_key in metricas_cache:
                 m = metricas_cache[cache_key]
@@ -1232,11 +1240,22 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     if m['total_muestras'] == 0:
                         popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
                 
+                # Ajustar título popup reemplazando encabezado principal
+                try:
+                    # Insertar título estilizado al inicio del popup
+                    codigo_ref = codigo if codigo and codigo != nombre_display else ''
+                    titulo_html = f"""
+                    <div style='font-weight:600;font-size:18px;margin-bottom:4px;'>{nombre_display}</div>
+                    <div style='font-size:11px;color:#666;margin-bottom:6px;'>{codigo_ref}</div>
+                    """.strip()
+                    popup_html = titulo_html + popup_html
+                except Exception:
+                    pass
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
                     popup=folium.Popup(popup_html, max_width=500),
-                    tooltip=folium.Tooltip(f"<b>{codigo}</b>"),
+                    tooltip=folium.Tooltip(f"<b>{nombre_display}</b>"),
                 )
                 layer_padre.add_to(cuadrantes_padres_group)
 
@@ -1244,6 +1263,7 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         for feature_hijo in features_hijos:
             props  = feature_hijo.get('properties', {})
             codigo = str(props.get('codigo', ''))  # Asegurar tipo str
+            nombre_display = props.get('display_name', codigo)
             cache_key = ('HIJO', codigo)
             if cache_key in metricas_cache:
                 m = metricas_cache[cache_key]
@@ -1265,11 +1285,21 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                     if m['total_muestras'] == 0:
                         popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
                 
+                # Ajustar título popup con nombre de ruta
+                try:
+                    codigo_ref = codigo if codigo and codigo != nombre_display else ''
+                    titulo_html = f"""
+                    <div style='font-weight:600;font-size:18px;margin-bottom:4px;'>{nombre_display}</div>
+                    <div style='font-size:11px;color:#666;margin-bottom:6px;'>{codigo_ref}</div>
+                    """.strip()
+                    popup_html = titulo_html + popup_html
+                except Exception:
+                    pass
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
                     popup=folium.Popup(popup_html, max_width=500),
-                    tooltip=folium.Tooltip(f"<b>{codigo}</b>"),
+                    tooltip=folium.Tooltip(f"<b>{nombre_display}</b>"),
                 )
                 layer_hijo.add_to(cuadrantes_hijos_group)
 

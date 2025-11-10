@@ -4,9 +4,13 @@ import os
 import mysql.connector
 import warnings
 from typing import List, Dict
+import logging
+import re
+import unicodedata
 from .db_utils import sql_read
 from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
 from ism_config import get_city_key, compute_hogares_por_m2, resolve_hogares_por_m2
+from .preprocesamiento_consultores import listar_rutas_simple
 
 # Silenciar warnings de pandas sobre MySQL
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
@@ -577,3 +581,48 @@ def compute_ism_metrics_por_cuadrante(
     df_q = df_q[schema_final]
     
     return df_q
+
+# === Helpers de nombres de rutas (para tooltips/popup) ===
+
+_RUTAS_CACHE = {}
+
+def _cache_nombres_rutas(ciudad: str):
+    """
+    Devuelve {id_ruta:int -> nombre:str} cacheado por ciudad (clave en mayúsculas sin acentos).
+    """
+    key = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
+    if key not in _RUTAS_CACHE:
+        try:
+            df = listar_rutas_simple(key)  # columnas: id_ruta, ruta
+            _RUTAS_CACHE[key] = {int(r.id_ruta): str(r.ruta) for _, r in df.iterrows()} if df is not None and not df.empty else {}
+        except Exception as e:
+            logging.warning(f"[RUTAS] No fue posible cargar nombres de rutas para {key}: {e}")
+            _RUTAS_CACHE[key] = {}
+    return _RUTAS_CACHE[key]
+
+def _parse_id_ruta_desde_codigo(codigo: str):
+    """
+    Extrae id_ruta desde patrones estilo 'CL_ruta_37_01'. Devuelve int o None.
+    """
+    if not isinstance(codigo, str):
+        return None
+    m = re.search(r"_ruta_(\d+)_", codigo)
+    return int(m.group(1)) if m else None
+
+def resolver_nombre_ruta(ciudad: str, codigo: str, props: dict | None = None) -> str:
+    """
+    1) Si el GeoJSON trae nombre en properties, úsalo.
+    2) Si no, parsea id_ruta del código y consulta cache BD.
+    3) Fallback: devuelve 'codigo'.
+    """
+    if props:
+        for k in ("nom_ruta", "nombre_ruta", "ruta", "nombre", "name"):
+            if k in props and str(props[k]).strip():
+                return str(props[k]).strip()
+
+    rid = _parse_id_ruta_desde_codigo(codigo)
+    if rid is not None:
+        nombres = _cache_nombres_rutas(ciudad)
+        if rid in nombres and str(nombres[rid]).strip():
+            return str(nombres[rid]).strip()
+    return str(codigo or "")
