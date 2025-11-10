@@ -313,12 +313,19 @@ with st.form(key="filtros_form"):
         with c2: 
             fecha_fin = st.date_input("Fecha de Fin")
         
+        # --- Métricas por (nuevo bloque, fuera del expander) ---
+        st.markdown("### Métricas")
+        color_options = ["Promotores", "Temporalidad (mes)"]
+        default_idx = 1  # Temporalidad por defecto
+        color_mode = st.radio(
+            "Métricas por:",
+            color_options,
+            index=default_idx,
+            key="color_mode_muestras"  # mantener la misma key para persistencia
+        )
+
         # Opciones de visualización
         with st.expander("Opciones de visualización"):
-            # default = Temporalidad
-            color_options = ["Promotores", "Temporalidad (mes)"]
-            default_idx = 1
-            color_mode = st.radio("Colores por:", color_options, index=default_idx, key="color_mode_muestras")
             verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
             
             # ISM Calibración
