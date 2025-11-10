@@ -723,7 +723,10 @@ const PALETTE = [
   '#FFA600', // amber
   '#00F7F7', // aqua
   '#FF009D', // hot pink
-  '#9A9A00'  // olive
+  '#9A9A00', // olive
+  '#000000',// NEGRO
+  '#FCC6BB',// ROJO FUERTE
+  '#440E03'// MARRÓN OSCURO
 ];
 let CURRENT_FILL = PALETTE[0];
 const STROKE_POLICY = 'black'; // 'black' | 'match'  (borde negro o igual al relleno)
@@ -802,7 +805,8 @@ const STABLE_COLOR_PALETTE = [
   '#3498DB', // light blue
   '#F39C12', // dark orange
   '#27AE60', // dark green
-  '#E67E22'  // carrot
+  '#E67E22',  // carrot
+  '000000'// NEGRO
 ];
 
 // Simple hash function for deterministic color assignment
