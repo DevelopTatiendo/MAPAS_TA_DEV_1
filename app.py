@@ -327,6 +327,7 @@ with st.form(key="filtros_form"):
         # Opciones de visualización
         with st.expander("Opciones de visualización"):
             verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
+            enable_ism = st.checkbox("Activar ISM (modo legado)", value=False, key="muestras_enable_ism")
             
             # ISM Calibración
             st.markdown("**🎯 Calibración ISM**")
@@ -919,7 +920,18 @@ if submit_button:
             hogares_por_m2_override = st.session_state.get("hogares_por_m2_override")
             
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas, hogares_por_m2_override, pph_override
+                generar_mapa_muestras,
+                fecha_inicio,
+                fecha_fin,
+                ciudad,
+                barrios,
+                promotores_sel,
+                override_fc,
+                color_mode,
+                verificar_areas,
+                hogares_por_m2_override,
+                pph_override,
+                enable_ism=st.session_state.get("muestras_enable_ism", False)
             )
             if resultado:
                 # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)

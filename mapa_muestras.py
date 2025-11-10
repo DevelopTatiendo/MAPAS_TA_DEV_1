@@ -719,7 +719,7 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False, hogares_por_m2_override=None, pph_override=None):
+def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False, hogares_por_m2_override=None, pph_override=None, enable_ism: bool = False):
     try:
         # Activar DEBUG_AREAS si está en modo verificación
         global DEBUG_AREAS
@@ -1214,6 +1214,69 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
         
         # === DIBUJAR CUADRANTES CON POPUPS Y STACKING CORRECTO ===
         
+        # === Helpers Índice (modo alterno cuando enable_ism = False) ===
+        def _calc_indice(met: dict):
+            area = met.get('area_m2')
+            mloc = met.get('muestras_local', met.get('total_muestras', 0))
+            if not area or area <= 0:
+                return None
+            try:
+                return (float(mloc) / float(area)) * 1000.0
+            except Exception:
+                return None
+
+        def _indice_pct_for_palette(indice):
+            if indice is None:
+                return None
+            return max(0.0, min(indice, 1.0)) * 100.0
+
+        def _color_por_indice(indice):
+            pct = _indice_pct_for_palette(indice)
+            if pct is None:
+                return "#999999"
+            if pct >= 90:
+                return "#1e40af"
+            elif pct >= 80:
+                return "#16a34a"
+            elif pct >= 60:
+                return "#15803d"
+            elif pct >= 40:
+                return "#f59e0b"
+            else:
+                return "#dc2626"
+
+        def _popup_cuadrante_indice(props: dict, met: dict):
+            nombre = props.get('display_name') or props.get('nombre') or props.get('codigo', 'Sin nombre')
+            muestras = int(met.get('muestras_local', met.get('total_muestras', 0)) or 0)
+            dias     = int(met.get('dias_operacion', met.get('dias_activos', 0)) or 0)
+            prom     = int(met.get('n_promotores', met.get('promotores', 0)) or 0)
+            tasa     = float(met.get('lambda_q', met.get('tasa', 0)) or 0)
+            area     = met.get('area_m2')
+            indice   = met.get('indice')
+            if area and area > 0:
+                area_m2_txt = f"{area:,.0f} m²".replace(',', '.')
+                area_km_txt = f"{area/1e6:,.2f} km²".replace(',', '.')
+                area_txt = f"{area_m2_txt} · ({area_km_txt})"
+            else:
+                area_txt = 'N/D'
+            color_hex = _color_por_indice(indice)
+            indice_txt = 'N/D' if indice is None else f"{indice:.2f}"
+            return f"""
+    <div style='font-family: Inter,system-ui,Arial;'>
+      <div style='font-weight:700;font-size:18px;margin:2px 0 6px 0;'>{nombre}</div>
+      <div style='font-size:13px;color:{color_hex};font-weight:700;margin-bottom:10px;'>Índice: {indice_txt}</div>
+      <div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>
+        <span class='chip chip-cobertura'><b>Muestras (local): {muestras}</b></span>
+        <span class='chip chip-efectividad'><b>Área: {area_txt}</b></span>
+      </div>
+      <div style='font-size:13px;line-height:1.45;'>
+        <div><b>Días de operación:</b> {dias}</div>
+        <div><b>Promotores:</b> {prom}</div>
+        <div><b>Tasa:</b> {tasa:.2f}</div>
+      </div>
+    </div>
+    """
+
         # --- PADRES (debajo) ---
         for feature_padre in features_padres:
             props  = feature_padre.get('properties', {})
@@ -1229,28 +1292,39 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 if verificar_areas:
                     verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE')
                 
-                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
-                if codigo in metrics_by_code:
-                    row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+                if enable_ism:
+                    if codigo in metrics_by_code:
+                        row_ism = metrics_by_code[codigo]
+                        popup_html = _popup_cuadrante_ism(nombre_display, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+                    else:
+                        popup_html = _popup_cuadrante_muestras(nombre_display, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info, ciudad)
+                        if m['total_muestras'] == 0:
+                            popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                    style_fn_padre = _style_cuadrante_padre
                 else:
-                    # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info, ciudad)
-                    # Solo añadir mensaje si NO hay muestras en el polígono
-                    if m['total_muestras'] == 0:
-                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                    met_idx = {
+                        'area_m2': m['area_m2'],
+                        'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
+                        'dias_operacion': m.get('dias_activos', 0),
+                        'n_promotores': 0,
+                        'lambda_q': 0.0
+                    }
+                    if codigo in metrics_by_code:
+                        row_ism = metrics_by_code[codigo]
+                        met_idx.update({
+                            'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
+                            'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
+                            'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
+                            'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q'])
+                        })
+                    met_idx['indice'] = _calc_indice(met_idx)
+                    popup_html = _popup_cuadrante_indice(props, met_idx)
+                    # ⚠️ Color sagrado: NO pintar por índice.
+                    # ASIGNACIÓN DIRECTA (IGUAL QUE EN EL BLOQUE ISM)
+                    style_fn_padre = _style_cuadrante_padre
                 
-                # Ajustar título popup reemplazando encabezado principal
-                try:
-                    # Insertar título estilizado al inicio del popup
-                    codigo_ref = codigo if codigo and codigo != nombre_display else ''
-                    titulo_html = f"""
-                    <div style='font-weight:600;font-size:18px;margin-bottom:4px;'>{nombre_display}</div>
-                    <div style='font-size:11px;color:#666;margin-bottom:6px;'>{codigo_ref}</div>
-                    """.strip()
-                    popup_html = titulo_html + popup_html
-                except Exception:
-                    pass
+                # Removido bloque de título duplicado (popup ya contiene encabezado)
+                # Usar directamente estilo base (color sagrado del GeoJSON)
                 layer_padre = folium.GeoJson(
                     data=feature_padre,
                     style_function=_style_cuadrante_padre,
@@ -1274,27 +1348,39 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 if verificar_areas:
                     verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO')
                 
-                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
-                if codigo in metrics_by_code:
-                    row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+                if enable_ism:
+                    if codigo in metrics_by_code:
+                        row_ism = metrics_by_code[codigo]
+                        popup_html = _popup_cuadrante_ism(nombre_display, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+                    else:
+                        popup_html = _popup_cuadrante_muestras(nombre_display, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info, ciudad)
+                        if m['total_muestras'] == 0:
+                            popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                    style_fn_hijo = _style_cuadrante
                 else:
-                    # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info, ciudad)
-                    # Solo añadir mensaje si NO hay muestras en el polígono
-                    if m['total_muestras'] == 0:
-                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
+                    met_idx = {
+                        'area_m2': m['area_m2'],
+                        'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
+                        'dias_operacion': m.get('dias_activos', 0),
+                        'n_promotores': 0,
+                        'lambda_q': 0.0
+                    }
+                    if codigo in metrics_by_code:
+                        row_ism = metrics_by_code[codigo]
+                        met_idx.update({
+                            'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
+                            'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
+                            'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
+                            'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q'])
+                        })
+                    met_idx['indice'] = _calc_indice(met_idx)
+                    popup_html = _popup_cuadrante_indice(props, met_idx)
+                    # ⚠️ Color sagrado: NO pintar por índice.
+                    # ASIGNACIÓN DIRECTA (IGUAL QUE EN EL BLOQUE ISM)
+                    style_fn_hijo = _style_cuadrante
                 
-                # Ajustar título popup con nombre de ruta
-                try:
-                    codigo_ref = codigo if codigo and codigo != nombre_display else ''
-                    titulo_html = f"""
-                    <div style='font-weight:600;font-size:18px;margin-bottom:4px;'>{nombre_display}</div>
-                    <div style='font-size:11px;color:#666;margin-bottom:6px;'>{codigo_ref}</div>
-                    """.strip()
-                    popup_html = titulo_html + popup_html
-                except Exception:
-                    pass
+                # Removido bloque de título duplicado (popup ya contiene encabezado)
+                # Usar directamente estilo base (color sagrado del GeoJSON)
                 layer_hijo = folium.GeoJson(
                     data=feature_hijo,
                     style_function=_style_cuadrante,
