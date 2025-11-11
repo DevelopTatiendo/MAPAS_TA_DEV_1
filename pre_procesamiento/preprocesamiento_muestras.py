@@ -10,14 +10,15 @@ import unicodedata
 from .db_utils import sql_read
 from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
 from ism_config import get_city_key, compute_hogares_por_m2, resolve_hogares_por_m2
-from .preprocesamiento_consultores import listar_rutas_simple
+from .preprocesamiento_consultores import listar_rutas_simple, get_co
+from pathlib import Path
 
 # Silenciar warnings de pandas sobre MySQL
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas')
 
 # Constante para categorías de Adquisición y Recuperación
 CATEGORIAS_ADQ_RECU = (10, 22, 38)  # Nuevos + Recuperación + Perdidos reactivados
-
+CATEGORIAS_FIELES = (1, 43, 40, 41)  # Fieles
 # Cargar variables de entorno
 load_dotenv()
 
@@ -170,12 +171,14 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
         e.idEvento AS id_muestra,
         e.id_contacto,
         e.fecha_evento, 
+        e.id_evento_tipo,
         e.id_autor,
         e.coordenada_longitud, 
         e.coordenada_latitud,
         e.medio_contacto,
         e.tipo_evento,
         e.tipo_categoria,
+        con.id_categoria AS id_contacto_categoria,
         con.id_barrio AS id_barrio,
         per.apellido AS apellido_autor
         
@@ -238,16 +241,29 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
     # Verifica las columnas disponibles
     #print("Columnas después del merge:", df_muestras_completo.columns.tolist())
 
-    # Lista de columnas deseadas (ajusta según tus archivos)
-    columnas_deseadas = [
-        'id_muestra', 'id_contacto',  'fecha_evento', 
-        'id_autor', 'coordenada_longitud', 'coordenada_latitud',
-        'tipo_evento', 'tipo_categoria','id_barrio', 'barrio', 'id_estrato',
+    # Asegurar tipos básicos requeridos por nuevas métricas
+    if 'fecha_evento' in df_muestras_completo.columns and not pd.api.types.is_datetime64_any_dtype(df_muestras_completo['fecha_evento']):
+        df_muestras_completo['fecha_evento'] = pd.to_datetime(df_muestras_completo['fecha_evento'], errors='coerce')
+
+    # Lista de columnas deseadas mínimas garantizadas para métricas nuevas
+    columnas_minimas = [
+        'id_autor', 'fecha_evento', 'id_evento_tipo', 'id_contacto',
+        'id_contacto_categoria', 'coordenada_latitud', 'coordenada_longitud'
+    ]
+
+    # Lista ampliada de columnas útiles para otros flujos existentes
+    columnas_deseadas = columnas_minimas + [
+        'id_muestra', 'tipo_evento', 'tipo_categoria', 'id_barrio', 'barrio', 'id_estrato',
         'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
     ]
     # Filtra solo las columnas que existen
     columnas_existentes = [col for col in columnas_deseadas if col in df_muestras_completo.columns]
     df_muestras_completo = df_muestras_completo[columnas_existentes]
+
+    # Crear columnas faltantes mínimas como NaN/None para garantizar esquema
+    for col in columnas_minimas:
+        if col not in df_muestras_completo.columns:
+            df_muestras_completo[col] = pd.NA
 
     
     # Si el CSV tiene 'barrio' y no 'barrio_x', no necesitas renombrar
@@ -256,6 +272,183 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
         df_muestras_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
 
     return df_muestras_completo
+
+def metricas_muestras_por_promotor(df_muestras: pd.DataFrame, fecha_inicio: str, fecha_fin: str, co=None, ids_autor=None) -> pd.DataFrame:
+    """
+    Calcula métricas base de muestras por promotor en un rango de fechas.
+
+    Retorna por id_autor:
+      - muestras_total
+      - dias_habiles (días con >= 2 muestras del promotor)
+      - muestras_no_fieles (id_contacto_categoria NOT IN CATEGORIAS_FIELES)
+      - pct_no_fieles
+    """
+    if df_muestras is None or df_muestras.empty:
+        return pd.DataFrame(columns=['id_autor', 'muestras_total', 'dias_habiles', 'muestras_no_fieles', 'pct_no_fieles'])
+
+    df = df_muestras.copy()
+
+    # Normalizar fecha_evento a datetime naive
+    if not pd.api.types.is_datetime64_any_dtype(df['fecha_evento']):
+        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+
+    f_ini = pd.to_datetime(f"{fecha_inicio} 00:00:00", errors='coerce')
+    f_fin = pd.to_datetime(f"{fecha_fin} 23:59:59", errors='coerce')
+    df = df[(df['fecha_evento'] >= f_ini) & (df['fecha_evento'] <= f_fin)]
+
+    # Filtro opcional por promotores
+    if ids_autor:
+        ids_set = {int(x) for x in ids_autor if str(x).strip()}
+        df = df[df['id_autor'].astype('Int64').isin(list(ids_set))]
+
+    if df.empty:
+        return pd.DataFrame(columns=['id_autor', 'muestras_total', 'dias_habiles', 'muestras_no_fieles', 'pct_no_fieles'])
+
+    # Base: total por promotor
+    totales = df.groupby('id_autor', observed=True).size().rename('muestras_total')
+
+    # Días hábiles: contar fechas (por promotor) con >= 2 eventos
+    df['fecha_dia'] = df['fecha_evento'].dt.date
+    cnt_por_dia = df.groupby(['id_autor', 'fecha_dia'], observed=True).size().rename('n_dia')
+    dias_habiles = (cnt_por_dia >= 2).groupby(level=0, observed=True).sum().rename('dias_habiles')
+
+    # No fieles: id_contacto_categoria NOT IN CATEGORIAS_FIELES
+    if 'id_contacto_categoria' in df.columns:
+        cats = pd.to_numeric(df['id_contacto_categoria'], errors='coerce')
+        mask_no_fiel = ~cats.isna() & ~cats.astype('Int64').isin(list(CATEGORIAS_FIELES))
+        muestras_no_fieles = mask_no_fiel.groupby(df['id_autor'], observed=True).sum().rename('muestras_no_fieles')
+    else:
+        muestras_no_fieles = pd.Series(0, index=totales.index, name='muestras_no_fieles')
+
+    # Armar DataFrame final
+    out = (
+        totales.to_frame()
+        .join(dias_habiles, how='left')
+        .join(muestras_no_fieles, how='left')
+        .fillna({'dias_habiles': 0, 'muestras_no_fieles': 0})
+    )
+
+    # Porcentaje no fieles
+    out['pct_no_fieles'] = 0.0
+    mask_den = out['muestras_total'] > 0
+    out.loc[mask_den, 'pct_no_fieles'] = (out.loc[mask_den, 'muestras_no_fieles'] / out.loc[mask_den, 'muestras_total']) * 100.0
+
+    # Tipos
+    out['muestras_total'] = out['muestras_total'].astype('int64')
+    out['dias_habiles'] = out['dias_habiles'].astype('int64')
+    out['muestras_no_fieles'] = out['muestras_no_fieles'].astype('int64')
+    out['pct_no_fieles'] = out['pct_no_fieles'].astype('float64')
+
+    out = out.reset_index()
+    return out
+
+def fetch_contactabilidad_base(ciudad: str, fecha_inicio: str, fecha_fin: str, ids_autor=None) -> pd.DataFrame:
+    """
+    Trae id_autor, id_contacto, fecha_evento, ultima_llamada para eventos de muestras (id_evento_tipo=15)
+    en el rango. No compara ultima_llamada > fecha_evento en SQL; eso se hace en pandas.
+    """
+    try:
+        ciudad_norm = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
+        co = get_co(ciudad_norm)
+
+        query = """
+        SELECT 
+            e.id_autor,
+            e.id_contacto,
+            e.fecha_evento,
+            c.ultima_llamada
+        FROM fullclean_contactos.vwEventos e
+        INNER JOIN fullclean_contactos.vwContactos c ON c.id = e.id_contacto
+        INNER JOIN fullclean_contactos.ciudades ciu ON ciu.id = c.id_ciudad
+        INNER JOIN fullclean_personal.personal per ON per.id = e.id_autor AND per.id_cargo = 39
+        WHERE 
+            e.id_evento_tipo = 15
+            AND e.fecha_evento BETWEEN :fecha_inicio AND :fecha_fin
+            AND ciu.id_centroope = :co
+        """
+
+        params = {
+            'fecha_inicio': f"{fecha_inicio} 00:00:00",
+            'fecha_fin': f"{fecha_fin} 23:59:59",
+            'co': co,
+        }
+
+        if ids_autor:
+            ids_list = [int(x) for x in ids_autor if str(x).strip()]
+            if ids_list:
+                placeholders = ",".join([f":id_{i}" for i in range(len(ids_list))])
+                query += f" AND e.id_autor IN ({placeholders})"
+                for i, v in enumerate(ids_list):
+                    params[f"id_{i}"] = v
+
+        df = sql_read(query + ";", params=params, schema="fullclean_contactos")
+
+        # Normalizar tipos
+        if not df.empty:
+            if not pd.api.types.is_datetime64_any_dtype(df['fecha_evento']):
+                df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+            if 'ultima_llamada' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['ultima_llamada']):
+                df['ultima_llamada'] = pd.to_datetime(df['ultima_llamada'], errors='coerce')
+        return df
+    except Exception as e:
+        logging.warning(f"fetch_contactabilidad_base error: {e}")
+        return pd.DataFrame(columns=['id_autor', 'id_contacto', 'fecha_evento', 'ultima_llamada'])
+
+def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin: str, ids_autor=None) -> pd.DataFrame:
+    """
+    Pipeline de preprocesamiento para métricas por promotor en Muestras.
+
+    - Usa crear_df(...) para traer muestras del CO de la ciudad.
+    - Calcula métricas base con metricas_muestras_por_promotor(...).
+    - Calcula contactabilidad a partir de ultima_llamada > fecha_evento en pandas.
+    - Añade columnas M1, M2, M3, muestras_m2 vacías.
+    """
+    # Resolver centroope y ruta de coordenadas de barrios de la ciudad
+    ciudad_norm = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
+    co = get_co(ciudad_norm)
+    # Ruta a CSV de barrios para la ciudad
+    root = Path(__file__).resolve().parents[1]
+    ruta_coordenadas = root / 'ciudades' / ciudad_norm / 'barrios.csv'
+
+    # Traer muestras del rango
+    try:
+        df_muestras = crear_df(co, fecha_inicio, fecha_fin, str(ruta_coordenadas), promotores=ids_autor)
+    except Exception:
+        # Fallback: si no existe CSV, traer sólo desde BD sin merge
+        df_muestras = consultar_muestras_db(co, fecha_inicio, fecha_fin, promotores=ids_autor)
+
+    # Métricas base
+    base = metricas_muestras_por_promotor(df_muestras, fecha_inicio, fecha_fin, co=co, ids_autor=ids_autor)
+
+    # Contactabilidad
+    df_contact = fetch_contactabilidad_base(ciudad, fecha_inicio, fecha_fin, ids_autor=ids_autor)
+    if not df_contact.empty:
+        df_contact['contactable'] = df_contact['ultima_llamada'].notna() & (df_contact['ultima_llamada'] > df_contact['fecha_evento'])
+        contactables = df_contact.groupby('id_autor', observed=True)['contactable'].sum().rename('muestras_contactables')
+    else:
+        contactables = pd.Series(0, index=base.set_index('id_autor').index if not base.empty else [], name='muestras_contactables')
+
+    out = base.set_index('id_autor').join(contactables, how='left').fillna({'muestras_contactables': 0})
+    out['muestras_contactables'] = out['muestras_contactables'].astype('int64')
+    out['pct_contactables'] = 0.0
+    den = out['muestras_total'] > 0
+    out.loc[den, 'pct_contactables'] = (out.loc[den, 'muestras_contactables'] / out.loc[den, 'muestras_total']) * 100.0
+
+    # Columnas vacías solicitadas
+    out['M1'] = None
+    out['M2'] = None
+    out['M3'] = None
+    out['muestras_m2'] = None
+
+    # Orden de columnas de salida
+    cols = [
+        'muestras_total', 'dias_habiles', 'muestras_no_fieles', 'pct_no_fieles',
+        'muestras_contactables', 'pct_contactables', 'M1', 'M2', 'M3', 'muestras_m2'
+    ]
+    # Asegurar id_autor como primera columna
+    out = out.reset_index()
+    out = out[['id_autor'] + cols]
+    return out
 
 def obtener_promotores_por_ids(ids):
     """
