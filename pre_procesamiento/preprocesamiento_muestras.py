@@ -179,6 +179,7 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
         e.tipo_evento,
         e.tipo_categoria,
         con.id_categoria AS id_contacto_categoria,
+        con.ultima_llamada AS ultima_llamada,
         con.id_barrio AS id_barrio,
         per.apellido AS apellido_autor
         
@@ -244,11 +245,13 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
     # Asegurar tipos básicos requeridos por nuevas métricas
     if 'fecha_evento' in df_muestras_completo.columns and not pd.api.types.is_datetime64_any_dtype(df_muestras_completo['fecha_evento']):
         df_muestras_completo['fecha_evento'] = pd.to_datetime(df_muestras_completo['fecha_evento'], errors='coerce')
+    if 'ultima_llamada' in df_muestras_completo.columns and not pd.api.types.is_datetime64_any_dtype(df_muestras_completo['ultima_llamada']):
+        df_muestras_completo['ultima_llamada'] = pd.to_datetime(df_muestras_completo['ultima_llamada'], errors='coerce')
 
     # Lista de columnas deseadas mínimas garantizadas para métricas nuevas
     columnas_minimas = [
         'id_autor', 'fecha_evento', 'id_evento_tipo', 'id_contacto',
-        'id_contacto_categoria', 'coordenada_latitud', 'coordenada_longitud'
+        'id_contacto_categoria', 'ultima_llamada', 'coordenada_latitud', 'coordenada_longitud'
     ]
 
     # Lista ampliada de columnas útiles para otros flujos existentes
@@ -417,37 +420,94 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
         # Fallback: si no existe CSV, traer sólo desde BD sin merge
         df_muestras = consultar_muestras_db(co, fecha_inicio, fecha_fin, promotores=ids_autor)
 
-    # Métricas base
-    base = metricas_muestras_por_promotor(df_muestras, fecha_inicio, fecha_fin, co=co, ids_autor=ids_autor)
+    # Normalizar tipos base necesarios
+    if not df_muestras.empty:
+        if not pd.api.types.is_datetime64_any_dtype(df_muestras['fecha_evento']):
+            df_muestras['fecha_evento'] = pd.to_datetime(df_muestras['fecha_evento'], errors='coerce')
+        if 'ultima_llamada' in df_muestras.columns and not pd.api.types.is_datetime64_any_dtype(df_muestras['ultima_llamada']):
+            df_muestras['ultima_llamada'] = pd.to_datetime(df_muestras['ultima_llamada'], errors='coerce')
 
-    # Contactabilidad
-    df_contact = fetch_contactabilidad_base(ciudad, fecha_inicio, fecha_fin, ids_autor=ids_autor)
-    if not df_contact.empty:
-        df_contact['contactable'] = df_contact['ultima_llamada'].notna() & (df_contact['ultima_llamada'] > df_contact['fecha_evento'])
-        contactables = df_contact.groupby('id_autor', observed=True)['contactable'].sum().rename('muestras_contactables')
+    # Filtro rango fecha por seguridad
+    if not df_muestras.empty:
+        f_ini = pd.to_datetime(f"{fecha_inicio} 00:00:00", errors='coerce')
+        f_fin = pd.to_datetime(f"{fecha_fin} 23:59:59", errors='coerce')
+        df_muestras = df_muestras[(df_muestras['fecha_evento'] >= f_ini) & (df_muestras['fecha_evento'] <= f_fin)]
+
+    if df_muestras.empty:
+        return pd.DataFrame(columns=[
+            'id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles',
+            'muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles',
+            'M1','M2','M3','muestras_m2'
+        ])
+
+    df_work = df_muestras.copy()
+    # dias_habiles
+    df_work['fecha_dia'] = df_work['fecha_evento'].dt.date
+    conteo_dia = df_work.groupby(['id_autor','fecha_dia'], observed=True).size().rename('n_dia')
+    dias_hab = (conteo_dia >= 2).groupby(level=0, observed=True).sum().rename('dias_habiles')
+
+    # muestras_total
+    totales = df_work.groupby('id_autor', observed=True).size().rename('muestras_total')
+
+    # no fieles
+    if 'id_contacto_categoria' in df_work.columns:
+        cats = pd.to_numeric(df_work['id_contacto_categoria'], errors='coerce')
+        mask_nf = ~cats.isna() & ~cats.astype('Int64').isin(list(CATEGORIAS_FIELES))
+        muestras_nf = mask_nf.groupby(df_work['id_autor'], observed=True).sum().rename('muestras_no_fieles')
     else:
-        contactables = pd.Series(0, index=base.set_index('id_autor').index if not base.empty else [], name='muestras_contactables')
+        muestras_nf = pd.Series(0, index=totales.index, name='muestras_no_fieles')
 
-    out = base.set_index('id_autor').join(contactables, how='left').fillna({'muestras_contactables': 0})
-    out['muestras_contactables'] = out['muestras_contactables'].astype('int64')
+    # contactables
+    if 'ultima_llamada' in df_work.columns:
+        df_work['contactable'] = df_work['ultima_llamada'].notna() & (df_work['ultima_llamada'] > df_work['fecha_evento'])
+        contactables = df_work.groupby('id_autor', observed=True)['contactable'].sum().rename('muestras_contactables')
+    else:
+        contactables = pd.Series(0, index=totales.index, name='muestras_contactables')
+
+    # contactables no fieles
+    if 'id_contacto_categoria' in df_work.columns and 'contactable' in df_work.columns:
+        df_work['contactable_nf'] = mask_nf & df_work['contactable']
+        contactables_nf = df_work.groupby('id_autor', observed=True)['contactable_nf'].sum().rename('muestras_contactables_nofieles')
+    else:
+        contactables_nf = pd.Series(0, index=totales.index, name='muestras_contactables_nofieles')
+
+    out = (
+        totales.to_frame()
+        .join(dias_hab, how='left')
+        .join(muestras_nf, how='left')
+        .join(contactables, how='left')
+        .join(contactables_nf, how='left')
+        .fillna({'dias_habiles':0,'muestras_no_fieles':0,'muestras_contactables':0,'muestras_contactables_nofieles':0})
+    )
+
+    # porcentajes
+    out['pct_no_fieles'] = 0.0
+    mask_tot = out['muestras_total'] > 0
+    out.loc[mask_tot, 'pct_no_fieles'] = (out.loc[mask_tot,'muestras_no_fieles'] / out.loc[mask_tot,'muestras_total'])*100.0
+
     out['pct_contactables'] = 0.0
-    den = out['muestras_total'] > 0
-    out.loc[den, 'pct_contactables'] = (out.loc[den, 'muestras_contactables'] / out.loc[den, 'muestras_total']) * 100.0
+    out.loc[mask_tot, 'pct_contactables'] = (out.loc[mask_tot,'muestras_contactables'] / out.loc[mask_tot,'muestras_total'])*100.0
 
-    # Columnas vacías solicitadas
-    out['M1'] = None
-    out['M2'] = None
-    out['M3'] = None
-    out['muestras_m2'] = None
+    # % Muestras contactables (NO fieles, sobre total) = contactables_nofieles / total * 100
+    out['pct_contactables_nofieles'] = 0.0
+    out.loc[mask_tot,'pct_contactables_nofieles'] = (
+        out.loc[mask_tot,'muestras_contactables_nofieles'] / out.loc[mask_tot,'muestras_total']
+    ) * 100.0
 
-    # Orden de columnas de salida
-    cols = [
-        'muestras_total', 'dias_habiles', 'muestras_no_fieles', 'pct_no_fieles',
-        'muestras_contactables', 'pct_contactables', 'M1', 'M2', 'M3', 'muestras_m2'
-    ]
-    # Asegurar id_autor como primera columna
+    # tipos
+    for c in ['muestras_total','dias_habiles','muestras_no_fieles','muestras_contactables','muestras_contactables_nofieles']:
+        out[c] = out[c].astype('int64')
+    for c in ['pct_no_fieles','pct_contactables','pct_contactables_nofieles']:
+        out[c] = out[c].astype('float64')
+
+    # placeholders
+    out['M1'] = pd.NA
+    out['M2'] = pd.NA
+    out['M3'] = pd.NA
+    out['muestras_m2'] = pd.NA
+
     out = out.reset_index()
-    out = out[['id_autor'] + cols]
+    out = out[['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2']]
     return out
 
 def obtener_promotores_por_ids(ids):

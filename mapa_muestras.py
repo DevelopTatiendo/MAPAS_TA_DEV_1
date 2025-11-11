@@ -623,6 +623,83 @@ def color_for_promotor(centroope: int, id_autor: int) -> str:
     except Exception:
         return "#64748B"  # Gris fallback
 
+# === Assets para tablas ordenables en leyendas ===
+_TA_SORTABLE_ASSETS_ADDED = False
+
+def inject_sort_assets(mapa):
+        """Inserta CSS y JS para ordenar tablas (idempotente por proceso)."""
+        global _TA_SORTABLE_ASSETS_ADDED
+        if _TA_SORTABLE_ASSETS_ADDED:
+                return
+        css_block = """
+        <style id="ta-sortable-css">
+        .ta-sortable th { cursor:pointer; white-space:nowrap; }
+        .ta-sortable th .ta-sort-arrow { margin-left:6px; opacity:.5; }
+        .ta-sortable th.ta-sort-asc  .ta-sort-arrow::after { content:"▲"; opacity:1; }
+        .ta-sortable th.ta-sort-desc .ta-sort-arrow::after { content:"▼"; opacity:1; }
+        </style>
+        """
+        js_block = """
+        <script id="ta-sortable-js">
+        (function(){
+            if (window.TASortable) return; // idempotencia
+            function normNum(s){
+                if (s==null) return NaN;
+                s = String(s).trim().toLowerCase();
+                if (s==="—" || s==="" || s==="na" || s==="n/d") return NaN;
+                s = s.replace(/\s/g,"");
+                s = s.replace(/[%,$€]/g,"");
+                s = s.replace(/\./g,"");         // quita miles con punto
+                s = s.replace(/,/g,".");         // coma -> punto (por si acaso)
+                var v = parseFloat(s);
+                return isNaN(v) ? NaN : v;
+            }
+            function getCellVal(td, type){
+                const txt = td?.textContent ?? "";
+                if (type==="num" || type==="percent" || type==="money") return normNum(txt);
+                if (type==="date") return new Date(txt).getTime() || 0;
+                return txt.toString().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
+            }
+            function sortTable(tbl, colIdx, type, dir){
+                const tbody = tbl.tBodies[0];
+                const rows = Array.from(tbody.rows);
+                rows.sort((a,b)=>{
+                    const va = getCellVal(a.cells[colIdx], type);
+                    const vb = getCellVal(b.cells[colIdx], type);
+                    if (isNaN(va) && isNaN(vb)) return 0;
+                    if (isNaN(va)) return  1;
+                    if (isNaN(vb)) return -1;
+                    return (va<vb?-1:va>vb?1:0) * (dir==="asc"?1:-1);
+                });
+                rows.forEach(r=>tbody.appendChild(r));
+            }
+            function attach(table){
+                if (!table || table.__taSortable) return;
+                table.__taSortable = true;
+                const ths = table.tHead ? Array.from(table.tHead.rows[0].cells) : [];
+                ths.forEach((th, i)=>{
+                    const type = th.dataset.type || "text";
+                    const span = document.createElement("span"); span.className="ta-sort-arrow"; th.appendChild(span);
+                    th.addEventListener("click", ()=>{
+                        const cur = th.classList.contains("ta-sort-asc") ? "asc" : th.classList.contains("ta-sort-desc") ? "desc" : "";
+                        ths.forEach(h=>h.classList.remove("ta-sort-asc","ta-sort-desc"));
+                        const dir = (cur==="" || cur==="desc") ? "asc" : "desc";
+                        th.classList.add(dir==="asc"?"ta-sort-asc":"ta-sort-desc");
+                        sortTable(table, i, type, dir);
+                    });
+                });
+            }
+            window.TASortable = { initAll: function(){ document.querySelectorAll("table.ta-sortable").forEach(attach); }, attach };
+        })();
+        </script>
+        """
+        try:
+                mapa.get_root().html.add_child(folium.Element(css_block))
+                mapa.get_root().html.add_child(folium.Element(js_block))
+                _TA_SORTABLE_ASSETS_ADDED = True
+        except Exception:
+                pass
+
 def get_promotor_display_name(pid, df_filtrado, legend_name_map=None):
     """Función centralizada para obtener el nombre visible del promotor."""
     pid_str = str(pid)
@@ -1094,7 +1171,7 @@ def generar_mapa_muestras(
                 df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados)
             except Exception as e:
                 logging.error(f"Error métricas promotores muestras: {e}")
-                df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','M1','M2','M3','muestras_m2'])
+                df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2'])
             prom_metrics = {int(r['id_autor']): r for _, r in df_prom.iterrows()} if not df_prom.empty else {}
             legend_rows = []
             for (nombre_compacto, _sg, count_muestras, color_hex) in grupos_promotores:
@@ -1114,6 +1191,7 @@ def generar_mapa_muestras(
                 muestras_por_dia_habil = int(muestras_total / dias_habiles) if dias_habiles > 0 else 0
                 pct_no_fieles = float(met.get('pct_no_fieles', 0.0) or 0.0)
                 pct_contactables = float(met.get('pct_contactables', 0.0) or 0.0)
+                pct_contactables_nofieles = float(met.get('pct_contactables_nofieles', 0.0) or 0.0)
                 m1 = met.get('M1')
                 m2 = met.get('M2')
                 m3 = met.get('M3')
@@ -1141,6 +1219,7 @@ def generar_mapa_muestras(
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m3)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_placeholder(muestras_m2) if muestras_m2 is not None else '—'}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
                 """)
             legend_html = f"""
@@ -1162,7 +1241,8 @@ def generar_mapa_muestras(
                         <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M2</th>
                         <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M3</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Muestras por m² (usando M1)'>Muestras/m² (M1)</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras contactables</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1282,7 +1362,11 @@ def generar_mapa_muestras(
 
         # Agregar leyenda si aplica
         if legend_html:
+            # Inyectar assets de ordenamiento si faltan e insertar leyenda
+            inject_sort_assets(mapa)
             mapa.get_root().html.add_child(folium.Element(legend_html))
+            # Hook de inicialización para tablas ordenables
+            mapa.get_root().html.add_child(folium.Element("<script>window.TASortable && window.TASortable.initAll();</script>"))
 
         # Resumen flotante (arriba a la izquierda)
         html_content = f"""
