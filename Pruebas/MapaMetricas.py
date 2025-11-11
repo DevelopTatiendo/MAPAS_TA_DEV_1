@@ -20,6 +20,7 @@ CIUDAD = "CALI"
 CENTROOPE = 2
 FECHA_INICIO = "2025-01-01"
 FECHA_FIN    = "2025-12-31"
+promotor_num = 2 # 1 = mejor promotor (más muestras), 2 = segundo, etc.
 
 # Usar rutas absolutas desde la raíz del repo
 GEOJSON_RUTAS_CALI     = os.path.join(BASE_DIR, "geojson", "rutas", "cali", "cuadrantes_rutas_cali.geojson")
@@ -145,13 +146,38 @@ def main():
     except Exception as e:
         logging.error(f"Error cargando GeoJSON: {e}")
 
-    # Determinar IDs y nombres visibles
-    ids_promotores = [int(x) for x in df["id_autor"].dropna().unique().tolist() if str(x).strip()]
+    # Determinar el promotor en la posición 'promotor_num' por cantidad de muestras
+    df_plot = df.copy()
+    selected_pid = None
+    selected_count = None
+    if "id_autor" in df.columns:
+        counts = None
+        try:
+            counts = df["id_autor"].dropna().astype(int).value_counts()
+        except Exception as e:
+            logging.warning(f"No fue posible calcular el ranking de promotores: {e}")
+            counts = pd.Series(dtype=int)
+
+        total_promotores = int(counts.shape[0]) if counts is not None else 0
+        if total_promotores == 0:
+            raise ValueError("No se encontraron asesores/promotores en el conjunto de datos para el rango solicitado.")
+
+        if promotor_num < 1 or promotor_num > total_promotores:
+            raise ValueError(
+                f"promotor_num ({promotor_num}) es inválido: hay {total_promotores} asesores encontrados"
+            )
+
+        # Seleccionar el N-ésimo promotor (1-indexed)
+        selected_pid = int(counts.index[promotor_num - 1])
+        selected_count = int(counts.iloc[promotor_num - 1])
+        df_plot = df[df["id_autor"].astype("Int64") == selected_pid].copy()
+
+    ids_promotores = [selected_pid] if selected_pid is not None else [int(x) for x in df["id_autor"].dropna().unique().tolist() if str(x).strip()]
     nombre_map = {}
     try:
-        fetched = obtener_promotores_por_ids(ids_promotores) or {}
+        fetched = obtener_promotores_por_ids([p for p in ids_promotores if p is not None]) or {}
         for pid in ids_promotores:
-            raw_name = fetched.get(str(pid)) or fetched.get(pid)  # dict puede usar str keys
+            raw_name = fetched.get(str(pid)) or fetched.get(pid)
             nombre_map[str(pid)] = _compactar_nombre(raw_name, str(pid))
     except Exception as e:
         logging.warning(f"Fallo obtener nombres promotores: {e}")
@@ -163,8 +189,8 @@ def main():
     for pid in ids_promotores:
         color_cache[str(pid)] = color_for_promotor(CENTROOPE, pid) if _HAS_COLOR_FN else color_for_promotor(CENTROOPE, pid)
 
-    # Pintar puntos
-    for _, row in df.iterrows():
+    # Pintar puntos (solo del promotor top si fue identificado)
+    for _, row in df_plot.iterrows():
         lat = row["_lat"]
         lon = row["_lon"]
         pid = row.get("id_autor")
@@ -206,7 +232,9 @@ def main():
 
     print(f"HTML generado: {HTML_OUT}")
     print(f"CSV generado: {CSV_OUT}")
-    print(f"len(df)={len(df)}")
+    print(f"len(df)={len(df)}; mostrado={len(df_plot)}")
+    if selected_pid is not None:
+        print(f"Promotor seleccionado (rank={promotor_num}): id={selected_pid}, muestras={selected_count}")
 
 
 if __name__ == "__main__":
