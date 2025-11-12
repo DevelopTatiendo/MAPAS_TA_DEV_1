@@ -76,7 +76,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad (solo cambia esta línea para alternar)
-CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "PEREIRA"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 if CIUDAD not in CIUDADES:
     raise ValueError(f"Ciudad inválida: {CIUDAD}. Disponibles: {list(CIUDADES)}")
 
@@ -84,11 +84,11 @@ if CIUDAD not in CIUDADES:
 _cfg = CIUDADES[CIUDAD]
 CENTROOPE = _cfg["centroope"]
 
-FECHA_INICIO = "2024-01-01"
-FECHA_FIN    = "2024-12-31"
-promotor_num = 1
+FECHA_INICIO = "2025-01-01"
+FECHA_FIN    = "2025-12-31"
+promotor_num = 4
 MANUAL_k = False
-K_target = 6
+K_target = 4
 
 RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados")
 os.makedirs(RESULTADOS_DIR, exist_ok=True)
@@ -172,6 +172,24 @@ def _from_utm_to_lonlat(centroids_xy, transformer):
 def _k_range(n_points):
     return list(range(2, max(2, min(12, n_points - 1)) + 1))
 
+def _format_decimal_comma(df, decimals=3):
+    """
+    Convierte TODAS las columnas numéricas a string con coma decimal.
+    NaN -> cadena vacía. No agrega separador de miles.
+    """
+    import numpy as _np
+    import pandas as _pd
+
+    out = df.copy()
+    # detectar columnas numéricas
+    num_cols = [c for c in out.columns if _np.issubdtype(out[c].dtype, _np.number)]
+    fmt = "{:." + str(decimals) + "f}"
+    for c in num_cols:
+        out[c] = out[c].apply(
+            lambda x: "" if _pd.isna(x) else fmt.format(float(x)).replace(".", ",")
+        )
+    return out
+
 def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
     """Calcula inertia (SSE) por K y métricas complementarias (Davies-Bouldin, Calinski-Harabasz).
     Guarda: codo.png y metricas_por_k.csv (siempre sobreescritos)."""
@@ -200,12 +218,15 @@ def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
     fig.tight_layout(); fig.savefig(elbow_png, dpi=150); plt.close(fig)
 
     import pandas as _pd
-    _pd.DataFrame({
+    dfk = _pd.DataFrame({
         "K": ks,
         "inertia": inertias,
         "davies_bouldin": dbis,
         "calinski_harabasz": chis
-    }).to_csv(csv_por_k_path, index=False, sep=";", encoding="utf-8-sig")
+    })
+    # Forzar coma decimal
+    dfk = _format_decimal_comma(dfk, decimals=3)
+    dfk.to_csv(csv_por_k_path, index=False, sep=";", encoding="utf-8-sig")
 
     return ks, inertias
 
@@ -252,11 +273,14 @@ def _compute_metrics_csv(X, labels, km, transformer, out_csv_path):
     except Exception:
         chi = np.nan
 
+    rmse_global = float(np.sqrt(km.inertia_ / X.shape[0])) if X.shape[0] else np.nan  # m
+
     glob = {
         "scope": "global",
         "n_points": int(X.shape[0]),
         "k": int(km.n_clusters),
-        "inertia": float(km.inertia_),
+        "inertia_m2": float(km.inertia_),  # m^2
+        "rmse_global_m": rmse_global,
         "davies_bouldin": float(dbi) if dbi==dbi else np.nan,
         "calinski_harabasz": float(chi) if chi==chi else np.nan
     }
@@ -271,41 +295,74 @@ def _compute_metrics_csv(X, labels, km, transformer, out_csv_path):
     for cl in sorted(np.unique(labels)):
         mask = (labels == cl)
         Xi = X[mask]
+        di = d[mask]  # distancias punto-centroide en m
         ni = Xi.shape[0]
         pct = ni / X.shape[0] if X.shape[0] else np.nan
-        sse = float(np.sum((Xi - centers[cl])**2))
-        mean_d = float(np.mean(d[mask])) if ni else np.nan
-        med_d  = float(np.median(d[mask])) if ni else np.nan
-        max_d  = float(np.max(d[mask])) if ni else np.nan
+
+        sse = float(np.sum((Xi - centers[cl])**2))             # m^2
+        mean_d = float(np.mean(di)) if ni else np.nan          # m
+        med_d  = float(np.median(di)) if ni else np.nan        # m
+        max_d  = float(np.max(di)) if ni else np.nan           # m
+
+        # Nuevas métricas interpretables
+        rmse_m = float(np.sqrt(sse / ni)) if ni else np.nan    # m
+        p50 = float(np.percentile(di, 50)) if ni else np.nan    # m
+        p80 = float(np.percentile(di, 80)) if ni else np.nan    # m
+        p90 = float(np.percentile(di, 90)) if ni else np.nan    # m
+        p95 = float(np.percentile(di, 95)) if ni else np.nan    # m
+
         stdx   = float(np.std(Xi[:,0])) if ni else np.nan
         stdy   = float(np.std(Xi[:,1])) if ni else np.nan
         bbox_w = float(np.max(Xi[:,0]) - np.min(Xi[:,0])) if ni else np.nan
         bbox_h = float(np.max(Xi[:,1]) - np.min(Xi[:,1])) if ni else np.nan
         bbox_diag = float(np.sqrt(bbox_w**2 + bbox_h**2)) if ni else np.nan
 
-        # Centroide en lat/lon
+        # Centroide en lat/lon y WKT
         cent_ll = _from_utm_to_lonlat(centers[[cl]], transformer)[0]  # [lat, lon]
+        cent_wkt = f"POINT({cent_ll[1]} {cent_ll[0]})"                # lon lat
 
         rows.append({
             "scope": "cluster",
             "cluster": int(cl),
             "n_points": int(ni),
             "pct_points": round(pct, 6),
+
+            # Centroide en grados y UTM
             "centroid_lat": float(cent_ll[0]),
             "centroid_lon": float(cent_ll[1]),
             "centroid_x_m": float(centers[cl,0]),
             "centroid_y_m": float(centers[cl,1]),
-            "sse_cluster": sse,
+            "centroid_wkt": cent_wkt,
+
+            # Tamaño/formas
+            "bbox_w_m": bbox_w,
+            "bbox_h_m": bbox_h,
+            "bbox_diag_m": bbox_diag,
+
+            # Dispersión y errores
+            "sse_cluster_m2": sse,
+            "rmse_m": rmse_m,
             "mean_dist_m": mean_d,
             "median_dist_m": med_d,
+            "p80_dist_m": p80,
+            "p90_dist_m": p90,
+            "p95_dist_m": p95,
             "max_dist_m": max_d,
             "std_x_m": stdx,
             "std_y_m": stdy,
-            "bbox_diag_m": bbox_diag
         })
 
     import pandas as _pd
-    _pd.DataFrame(rows).to_csv(out_csv_path, index=False, sep=";", encoding="utf-8-sig")
+    dfm = _pd.DataFrame(rows)
+    # columnas en km derivadas (opcional)
+    for col in ["rmse_m","mean_dist_m","median_dist_m","p80_dist_m","p90_dist_m","p95_dist_m",
+                "max_dist_m","bbox_w_m","bbox_h_m","bbox_diag_m","std_x_m","std_y_m"]:
+        if col in dfm.columns:
+            dfm[col.replace("_m","_km")] = dfm[col] / 1000.0
+    # Forzar coma decimal en todo el DataFrame
+    dfm = _format_decimal_comma(dfm, decimals=3)
+    # Guardado Excel-friendly
+    dfm.to_csv(out_csv_path, index=False, sep=";", encoding="utf-8-sig")
 
 def _cluster_and_draw(df_plot, resultados_dir, mapa, cluster_palette):
     """Aplica KMeans sobre df_plot (promotor filtrado), pinta puntos por cluster y centroides negros."""
