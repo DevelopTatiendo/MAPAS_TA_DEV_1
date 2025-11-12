@@ -21,18 +21,84 @@ from sklearn.cluster import KMeans, MiniBatchKMeans
 from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
 from pyproj import Transformer
 
-# Constantes de la prueba
-CIUDAD = "CALI"
-CENTROOPE = 2
+
+# === Configuración multi-ciudad ===
+CIUDADES = {
+    "CALI": {
+        "centroope": 2,
+        "center": [3.4516, -76.5320],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "cali", "cuadrantes_rutas_cali.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_CALI.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "MEDELLIN": {
+        "centroope": 3,
+        "center": [6.2442, -75.5812],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "medellin", "cuadrantes_rutas_medellin.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_MEDELLIN.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "MANIZALES": {
+        "centroope": 6,
+        "center": [5.0672, -75.5174],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "manizales", "cuadrantes_rutas_manizales.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_MANIZALES.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "PEREIRA": {
+        "centroope": 5,
+        "center": [4.8087, -75.6906],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "pereira", "cuadrantes_rutas_pereira.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_PEREIRA.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "BOGOTA": {
+        "centroope": 4,
+        "center": [4.7110, -74.0721],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "bogota", "cuadrantes_rutas_bogota.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_BOGOTA.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "BARRANQUILLA": {
+        "centroope": 8,
+        "center": [10.9720, -74.7962],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "barranquilla", "cuadrantes_rutas_barranquilla.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_BARRANQUILLA.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+    "BUCARAMANGA": {
+        "centroope": 7,
+        "center": [7.1193, -73.1227],
+        "geojson": os.path.join(BASE_DIR, "geojson", "rutas", "bucaramanga", "cuadrantes_rutas_bucaramanga.geojson"),
+        "csv_rutas": os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_BUCARAMANGA.csv"),
+        "epsg_utm": "EPSG:32618",
+    },
+}
+
+# Selección de ciudad (solo cambia esta línea para alternar)
+CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+if CIUDAD not in CIUDADES:
+    raise ValueError(f"Ciudad inválida: {CIUDAD}. Disponibles: {list(CIUDADES)}")
+
+# Derivados de la ciudad
+_cfg = CIUDADES[CIUDAD]
+CENTROOPE = _cfg["centroope"]
+
 FECHA_INICIO = "2024-01-01"
 FECHA_FIN    = "2024-12-31"
-promotor_num = 4 # 1 = mejor promotor (más muestras), 2 = segundo, etc.
-MANUAL_k = False  # Si True, no calcula K óptimo; usa K_target directamente
-K_target = 4     # K por defecto cuando MANUAL_k=True
+promotor_num = 1
+MANUAL_k = False
+K_target = 6
 
-# Usar rutas absolutas desde la raíz del repo
-GEOJSON_RUTAS_CALI     = os.path.join(BASE_DIR, "geojson", "rutas", "cali", "cuadrantes_rutas_cali.geojson")
-RUTA_COORDENADAS_CALI  = os.path.join(BASE_DIR, "pre_procesamiento", "data", "BARRIOS_COORDENADAS_RUTAS_COMPLETO_CALI.csv")
+RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados")
+os.makedirs(RESULTADOS_DIR, exist_ok=True)
+HTML_OUT        = os.path.join(RESULTADOS_DIR, f"muestras_simple_{CIUDAD}_2025.html")
+CSV_OUT         = os.path.join(RESULTADOS_DIR, f"muestras_{CIUDAD}_2025.csv")
+HTML_OUT_CLUST  = os.path.join(RESULTADOS_DIR, f"muestras_simple_{CIUDAD}_2025_clusters.html")
+ELBOW_PNG       = os.path.join(RESULTADOS_DIR, "codo.png")
+METRICS_CSV     = os.path.join(RESULTADOS_DIR, "metricas_clusters.csv")
+METRICAS_K_CSV  = os.path.join(RESULTADOS_DIR, "metricas_por_k.csv")
+TAU_ELBOW       = 0.12
 
 # Paleta de fallback si no existe color_for_promotor
 FALLBACK_COLORS = [
@@ -53,17 +119,6 @@ except Exception:
     def color_for_promotor(co, pid):
         idx = abs(int(pid)) % len(FALLBACK_COLORS)
         return FALLBACK_COLORS[idx]
-
-RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados")
-os.makedirs(RESULTADOS_DIR, exist_ok=True)
-
-HTML_OUT = os.path.join(RESULTADOS_DIR, "muestras_simple_CALI_2025.html")
-CSV_OUT  = os.path.join(RESULTADOS_DIR, "muestras_CALI_2025.csv")
-HTML_OUT_CLUST = os.path.join(RESULTADOS_DIR, "muestras_simple_CALI_2025_clusters.html")
-ELBOW_PNG      = os.path.join(RESULTADOS_DIR, "codo.png")
-METRICS_CSV    = os.path.join(RESULTADOS_DIR, "metricas_clusters.csv")
-METRICAS_K_CSV = os.path.join(RESULTADOS_DIR, "metricas_por_k.csv")
-TAU_ELBOW      = 0.12  # Umbral relativo de mejora para piso del codo
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
@@ -100,10 +155,10 @@ def _compactar_nombre(nombre: str, pid: str) -> str:
     return f"id {pid}"
 
 
-# ==== Helpers de clustering y proyección (UTM 18N para Cali) ====
+# ==== Helpers de clustering y proyección (UTM por ciudad) ====
 def _to_utm_xy(df_plot):
-    """Convierte lon/lat → x/y (m) en EPSG:32618 (UTM 18N, Cali)."""
-    transformer = Transformer.from_crs("EPSG:4326", "EPSG:32618", always_xy=True)
+    """Convierte lon/lat → x/y (m) según EPSG UTM configurado por ciudad."""
+    transformer = Transformer.from_crs("EPSG:4326", _cfg["epsg_utm"], always_xy=True)
     xs, ys = transformer.transform(df_plot["_lon"].astype(float).values,
                                    df_plot["_lat"].astype(float).values)
     X = np.column_stack([xs, ys])
@@ -178,10 +233,13 @@ def _k_por_curvatura(ks, inertias):
     return ks[idx]
 
 def _elegir_k_elbow(ks, inertias, tau=0.12):
-    """Regla final SOLO-CODO: menor entre piso por umbral y máximo de curvatura."""
+    """
+    Regla final SOLO-CODO: prioriza el 'piso del codo'.
+    Si piso (umbral) y curvatura discrepan, toma el MÁS ALTO (codo tardío).
+    """
     k_tau  = _k_por_codo_threshold(ks, inertias, tau=tau)
     k_curv = _k_por_curvatura(ks, inertias)
-    return min(k_tau, k_curv)
+    return max(k_tau, k_curv)
 
 def _compute_metrics_csv(X, labels, km, transformer, out_csv_path):
     """Genera CSV con métricas globales y por cluster (sin silhouette, siempre sobreescribe)."""
@@ -309,23 +367,23 @@ def _cluster_and_draw(df_plot, resultados_dir, mapa, cluster_palette):
             popup=folium.Popup(f"<b>Centroide</b> cluster {cl}", max_width=200)
         ).add_to(mapa)
 
-    return df_plot
+    return df_plot, k_best
 
 
 def main():
-    logging.info("Iniciando generación de mapa de muestras CALI 2025")
+    logging.info(f"Iniciando generación de mapa de muestras {CIUDAD} 2025")
     # Consultar datos base
-    if not os.path.exists(RUTA_COORDENADAS_CALI):
-        logging.warning(f"No existe archivo de coordenadas: {RUTA_COORDENADAS_CALI}. Continuando sin merge de barrios.")
+    if not os.path.exists(_cfg["csv_rutas"]):
+        logging.warning(f"No existe archivo de coordenadas: {_cfg['csv_rutas']}. Continuando sin merge de barrios.")
     try:
-        df = crear_df(CENTROOPE, FECHA_INICIO, FECHA_FIN, RUTA_COORDENADAS_CALI, promotores=None)
+        df = crear_df(CENTROOPE, FECHA_INICIO, FECHA_FIN, _cfg["csv_rutas"], promotores=None)
     except Exception as e:
         logging.error(f"Error al crear DF base: {e}")
         df = pd.DataFrame()
 
     if df.empty:
         logging.warning("DF vacío: se generará mapa sin puntos.")
-        mapa = folium.Map(location=[3.4516, -76.5320], zoom_start=12)
+        mapa = folium.Map(location=_cfg["center"], zoom_start=12)
         mapa.save(HTML_OUT)
         pd.DataFrame().to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
         print(f"HTML vacío: {HTML_OUT}")
@@ -342,8 +400,8 @@ def main():
         df = _resolver_lat_lon(df)
     except Exception as e:
         logging.error(f"Abortando: {e}")
-        mapa = folium.Map(location=[3.4516, -76.5320], zoom_start=12)
-        folium.Marker(location=[3.4516, -76.5320], popup="Sin columnas lat/lon válidas").add_to(mapa)
+        mapa = folium.Map(location=_cfg["center"], zoom_start=12)
+        folium.Marker(location=_cfg["center"], popup="Sin columnas lat/lon válidas").add_to(mapa)
         mapa.save(HTML_OUT)
         df.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
         print(f"HTML con error: {HTML_OUT}")
@@ -366,16 +424,16 @@ def main():
         logging.error(f"No fue posible guardar CSV: {e}")
 
     # Construir mapa base
-    mapa = folium.Map(location=[3.4516, -76.5320], zoom_start=12)
+    mapa = folium.Map(location=_cfg["center"], zoom_start=12)
 
-    # Cargar GeoJSON rutas Cali (opcional)
+    # Cargar GeoJSON de rutas de la ciudad (opcional)
     try:
-        if os.path.exists(GEOJSON_RUTAS_CALI):
-            with open(GEOJSON_RUTAS_CALI, "r", encoding="utf-8") as f:
+        if os.path.exists(_cfg["geojson"]):
+            with open(_cfg["geojson"], "r", encoding="utf-8") as f:
                 geojson_data = json.load(f)
-            folium.GeoJson(geojson_data, name="Rutas Cali").add_to(mapa)
+            folium.GeoJson(geojson_data, name=f"Rutas {CIUDAD.title()}").add_to(mapa)
         else:
-            logging.warning(f"GeoJSON no encontrado: {GEOJSON_RUTAS_CALI}")
+            logging.warning(f"GeoJSON no encontrado: {_cfg['geojson']}")
     except Exception as e:
         logging.error(f"Error cargando GeoJSON: {e}")
 
@@ -429,7 +487,7 @@ def main():
     ]
 
     # Ejecutar clustering (añade df_plot['cluster'], pinta puntos y centroides)
-    df_plot = _cluster_and_draw(df_plot, RESULTADOS_DIR, mapa, CLUSTER_PALETTE)
+    df_plot, k_chosen = _cluster_and_draw(df_plot, RESULTADOS_DIR, mapa, CLUSTER_PALETTE)
 
     # Actualizar CSV crudo para incluir 'cluster' (sobre-escritura, último resultado)
     try:
@@ -453,6 +511,8 @@ def main():
     print(f"len(df)={len(df)}; mostrado={len(df_plot)}")
     if selected_pid is not None:
         print(f"Promotor seleccionado (rank={promotor_num}): id={selected_pid}, muestras={selected_count}")
+    if 'k_chosen' in locals():
+        print(f"K elegido (clusters): {k_chosen}")
     if os.path.exists(ELBOW_PNG):
         print(f"Codo: {ELBOW_PNG}")
     if os.path.exists(METRICS_CSV):
