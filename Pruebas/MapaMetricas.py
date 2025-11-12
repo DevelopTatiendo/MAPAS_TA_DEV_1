@@ -76,7 +76,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad (solo cambia esta línea para alternar)
-CIUDAD = "PEREIRA"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 if CIUDAD not in CIUDADES:
     raise ValueError(f"Ciudad inválida: {CIUDAD}. Disponibles: {list(CIUDADES)}")
 
@@ -86,7 +86,7 @@ CENTROOPE = _cfg["centroope"]
 
 FECHA_INICIO = "2025-01-01"
 FECHA_FIN    = "2025-12-31"
-promotor_num = 4
+promotor_num = 3
 MANUAL_k = False
 K_target = 4
 
@@ -99,6 +99,16 @@ ELBOW_PNG       = os.path.join(RESULTADOS_DIR, "codo.png")
 METRICS_CSV     = os.path.join(RESULTADOS_DIR, "metricas_clusters.csv")
 METRICAS_K_CSV  = os.path.join(RESULTADOS_DIR, "metricas_por_k.csv")
 TAU_ELBOW       = 0.12
+
+# === Auditoría sub-agrupación KMeans ===
+P_OUTLIER           = 0.10   # fracción radial a podar (0 = sin poda)
+SUBK_KMAX_ABS       = 8      # k máximo para sub-clustering
+SUBK_KMAX_FRAC      = 0.20   # k_max dinámico = min(SUBK_KMAX_ABS, ceil(frac*n))
+ELBOW_POLICY        = "min"  # usar primer codo (permite k=1)
+MIN_SUB_FRAC        = 0.12   # subcluster mínimo como % del cluster podado
+PALETA_SUBS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
+               "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"]
+SUBK_P_OUTLIER      = 0.10   # poda adicional dentro de cada sub-cluster
 
 # Paleta de fallback si no existe color_for_promotor
 FALLBACK_COLORS = [
@@ -189,6 +199,168 @@ def _format_decimal_comma(df, decimals=3):
             lambda x: "" if _pd.isna(x) else fmt.format(float(x)).replace(".", ",")
         )
     return out
+
+
+def _reset_resultados_ciudad(base_dir, ciudad):
+    """Elimina y recrea la estructura Pruebas/Resultados/<CIUDAD>/{base,sub_clusters}."""
+    import shutil
+    resultados_dir = os.path.join(base_dir, "Pruebas", "Resultados")
+    shutil.rmtree(resultados_dir, ignore_errors=True)
+    base_ciudad = os.path.join(resultados_dir, ciudad)
+    base_dir_out = os.path.join(base_ciudad, "base")
+    sub_dir = os.path.join(base_ciudad, "sub_clusters")
+    os.makedirs(base_dir_out, exist_ok=True)
+    os.makedirs(sub_dir, exist_ok=True)
+    return resultados_dir, base_ciudad, base_dir_out, sub_dir
+
+
+def _podar_outliers_xy(X, p=P_OUTLIER):
+    """Poda radial respecto al centroide; devuelve (X_filtrado, mask_keep)."""
+    if p <= 0 or len(X) < 5:
+        return X, np.ones(len(X), dtype=bool)
+    c = X.mean(axis=0)
+    r = np.sqrt(((X - c) ** 2).sum(axis=1))
+    thr = np.quantile(r, 1 - p)
+    keep = r <= thr
+    return X[keep], keep
+
+
+def _elbow_min_k(X, kmax):
+    """Selecciona k* por 'primer codo' sobre log(WCSS), evaluando k=1..kmax (kmax>=1)."""
+    wcss = []
+    for k in range(1, int(kmax) + 1):
+        km = KMeans(n_clusters=k, n_init="auto", random_state=42)
+        km.fit(X)
+        wcss.append(km.inertia_)
+
+    if len(wcss) == 1:
+        return 1, wcss
+
+    y = np.log(np.array(wcss))
+    d1 = np.diff(y)
+    d2 = np.diff(d1)
+    idx_codo = int(np.argmax(d2)) + 2  # +2 por doble diff
+    kstar = max(1, min(int(kmax), idx_codo))
+    return kstar, wcss
+
+
+def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="C_subkmeans.html", filename_csv="C_resumen.csv"):
+    """Genera un mapa sin LayerControl con tres pasadas y un CSV de métricas por sub-cluster KMeans."""
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Asegurar columnas _lat/_lon
+    if "_lat" not in df_cluster.columns or "_lon" not in df_cluster.columns:
+        # Intentar resolver desde columnas estándar
+        try:
+            df_cluster = _resolver_lat_lon(df_cluster)
+        except Exception:
+            pass
+
+    latlon = df_cluster[["_lat","_lon"]].to_numpy(float)
+    X, _ = _to_utm_xy(df_cluster)
+
+    # Poda
+    Xp, keep_mask = _podar_outliers_xy(X, P_OUTLIER)
+    df_pod = df_cluster.loc[df_cluster.index[keep_mask]].copy()
+    latlon_pod = df_pod[["_lat","_lon"]].to_numpy(float)
+    n = len(Xp)
+
+    # Si muy pocos tras poda
+    center = [float(latlon[:,0].mean()), float(latlon[:,1].mean())] if len(latlon) else [0,0]
+    m = folium.Map(location=center, zoom_start=13)
+
+    # Original (gris claro)
+    for la, lo in latlon:
+        folium.CircleMarker([float(la), float(lo)], radius=3,
+                            color="#c5c8ce", fill=True, fillOpacity=0.45).add_to(m)
+
+    # Podado (azul tenue)
+    for la, lo in latlon_pod:
+        folium.CircleMarker([float(la), float(lo)], radius=3,
+                            color="#5b9bd5", fill=True, fillOpacity=0.7).add_to(m)
+
+    rows = []
+    if n >= 10:
+        # kmax efectivo
+        kmax_eff = max(1, min(SUBK_KMAX_ABS, int(np.ceil(SUBK_KMAX_FRAC * n))))
+        k_opt, _ = _elbow_min_k(Xp, kmax_eff)
+
+        km = KMeans(n_clusters=int(k_opt), n_init="auto", random_state=42).fit(Xp)
+        labels = km.labels_
+
+        # filtrar subclusters pequeños
+        sub_ids = []
+        for lab in range(int(k_opt)):
+            size_lab = int((labels == lab).sum())
+            if size_lab >= max(8, int(MIN_SUB_FRAC * n)):
+                sub_ids.append(lab)
+        if not sub_ids:
+            sub_ids = [0]
+
+        # pintar subclusters + centroides
+        for i, lab in enumerate(sub_ids):
+            color = PALETA_SUBS[i % len(PALETA_SUBS)]
+            mask = (labels == lab)
+            Xi = Xp[mask]
+            df_iso = df_pod.iloc[np.where(mask)[0]].copy()
+
+            # Poda adicional dentro del sub-cluster (10%)
+            Xi2, keep2 = _podar_outliers_xy(Xi, p=SUBK_P_OUTLIER)
+            if len(Xi2) == 0:
+                Xi2 = Xi
+                keep2 = np.ones(len(Xi), dtype=bool)
+            df_iso_pruned = df_iso.iloc[keep2].copy()
+
+            # Puntos coloreados (prunados por subcluster)
+            for la, lo in df_iso_pruned[["_lat","_lon"]].to_numpy(float):
+                folium.CircleMarker([float(la), float(lo)], radius=4,
+                                    color=color, fill=True, fillOpacity=0.95).add_to(m)
+
+            # Centroide del subcluster prunado
+            cx, cy = Xi2.mean(axis=0)
+            clatlon = np.array(_from_utm_to_lonlat(np.array([[cx, cy]]), transformer))[0]
+            folium.CircleMarker([float(clatlon[0]), float(clatlon[1])],
+                                radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(m)
+
+            di = np.sqrt(((Xi2 - np.array([cx, cy]))**2).sum(axis=1))
+            bbox_w = float(Xi2[:,0].max() - Xi2[:,0].min())
+            bbox_h = float(Xi2[:,1].max() - Xi2[:,1].min())
+            bbox_d = float(np.sqrt(bbox_w**2 + bbox_h**2))
+            rows.append({
+                "sub_id": int(lab),
+                "n_pts": int(len(Xi2)),
+                "pct_cluster": round(len(Xi2)/max(n,1), 6),
+                "centroid_lat": float(clatlon[0]),
+                "centroid_lon": float(clatlon[1]),
+                "mean_dist_m": float(di.mean()) if len(di) else np.nan,
+                "max_dist_m": float(di.max()) if len(di) else np.nan,
+                "bbox_diag_m": bbox_d,
+                "k_opt": int(k_opt)
+            })
+
+        # Leyenda fija
+        legend = """
+        <div style="
+            position: fixed; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(255,255,255,0.9); padding: 10px 12px;
+            border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15);
+            font: 12px/1.2 Inter, system-ui;">
+          <div style="font-weight:600; margin-bottom:6px;">Sub-clusters (K-Means)</div>
+          {rows}
+        </div>"""
+        row_t = '<div><span style="display:inline-block;width:10px;height:10px;background:{c};margin-right:6px;border-radius:2px;"></span>{txt}</div>'
+        legend_rows = []
+        for i, rec in enumerate(rows):
+            color = PALETA_SUBS[i % len(PALETA_SUBS)]
+            legend_rows.append(row_t.format(c=color, txt=f"sub {rec['sub_id']}: {rec['n_pts']} pts · {rec['pct_cluster']:.1%}"))
+        m.get_root().html.add_child(folium.Element(legend.format(rows="".join(legend_rows))))
+
+    # Guardar HTML y CSV
+    m.save(os.path.join(out_dir, filename_html))
+    cols = ["sub_id","n_pts","pct_cluster","centroid_lat","centroid_lon","mean_dist_m","max_dist_m","bbox_diag_m","k_opt"]
+    df_rows = pd.DataFrame(rows, columns=cols)
+    df_rows = _format_decimal_comma(df_rows, decimals=6)
+    df_rows.to_csv(os.path.join(out_dir, filename_csv), index=False, sep=";", encoding="utf-8-sig")
 
 def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
     """Calcula inertia (SSE) por K y métricas complementarias (Davies-Bouldin, Calinski-Harabasz).
@@ -429,6 +601,15 @@ def _cluster_and_draw(df_plot, resultados_dir, mapa, cluster_palette):
 
 def main():
     logging.info(f"Iniciando generación de mapa de muestras {CIUDAD} 2025")
+    # Reset de resultados y reubicación de rutas a Pruebas/Resultados/<CIUDAD>/base/
+    global RESULTADOS_DIR, HTML_OUT, CSV_OUT, HTML_OUT_CLUST, ELBOW_PNG, METRICS_CSV, METRICAS_K_CSV
+    RESULTADOS_DIR, BASE_CIUDAD_DIR, BASE_DIR_OUT, SUBCLUSTERS_DIR = _reset_resultados_ciudad(BASE_DIR, CIUDAD)
+    HTML_OUT       = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025.html")
+    CSV_OUT        = os.path.join(BASE_DIR_OUT, f"muestras_{CIUDAD}_2025.csv")
+    HTML_OUT_CLUST = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025_clusters.html")
+    ELBOW_PNG      = os.path.join(BASE_DIR_OUT, "codo.png")
+    METRICS_CSV    = os.path.join(BASE_DIR_OUT, "metricas_clusters.csv")
+    METRICAS_K_CSV = os.path.join(BASE_DIR_OUT, "metricas_por_k.csv")
     # Consultar datos base
     if not os.path.exists(_cfg["csv_rutas"]):
         logging.warning(f"No existe archivo de coordenadas: {_cfg['csv_rutas']}. Continuando sin merge de barrios.")
@@ -466,13 +647,7 @@ def main():
         print(f"len(df)={len(df)}")
         return
 
-    # Limpiar salidas previas de clustering (mantener solo último resultado)
-    for pat in ("codo*.png", "*_clusters.html", "metricas_clusters*.csv", "metricas_por_k*.csv"):
-        for f in glob.glob(os.path.join(RESULTADOS_DIR, pat)):
-            try:
-                os.remove(f)
-            except Exception:
-                pass
+    # No es necesario limpiar: RESULTADOS_DIR fue recreado desde cero
 
     # Guardar CSV crudo consultado
     try:
@@ -554,6 +729,28 @@ def main():
         df_out.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
     except Exception as e:
         logging.warning(f"No fue posible actualizar CSV con clusters: {e}")
+
+    # Auditoría de sub-clusters KMeans por cluster del promotor seleccionado
+    try:
+        transformer_audit = Transformer.from_crs("EPSG:4326", _cfg["epsg_utm"], always_xy=True)
+        asesor_id = int(df_plot["id_autor"].iloc[0]) if ("id_autor" in df_plot.columns and len(df_plot) > 0) else 0
+        if "cluster" in df_plot.columns:
+            for cl in sorted(df_plot["cluster"].dropna().unique().astype(int)):
+                df_c = df_plot[df_plot["cluster"] == cl].copy()
+                # Garantizar _lat/_lon
+                if "_lat" not in df_c.columns or "_lon" not in df_c.columns:
+                    try:
+                        df_c = _resolver_lat_lon(df_c)
+                    except Exception:
+                        pass
+                out_dir = os.path.join(SUBCLUSTERS_DIR, f"asesor_{asesor_id}", f"cluster_{cl}")
+                _export_subclusters_kmeans(
+                    df_c, transformer_audit, out_dir,
+                    filename_html=f"C{cl}_subkmeans.html",
+                    filename_csv=f"C{cl}_resumen.csv"
+                )
+    except Exception as e:
+        logging.warning(f"Auditoría sub-clusters KMeans omitida por error: {e}")
 
     # Guardar HTML
     try:
