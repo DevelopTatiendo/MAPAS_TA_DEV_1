@@ -79,6 +79,10 @@ desktop.ini
 # Mapas HTML generados por la app (mantén solo los de esta carpeta)
 static/maps/*.html
 
+Pruebas/Resultados/**
+Pruebas/Resultados/*.html
+Pruebas/Resultados/*.csv
+
 # ⚠️ No ignores todo *.html / *.pdf globalmente
 # Si necesitas ignorar PDFs de informes, hazlo por carpeta:
 # reports/**/*.pdf
@@ -113,3 +117,4 @@ scratch/
 
 # Contenedores
 docker-compose.override.yml
+

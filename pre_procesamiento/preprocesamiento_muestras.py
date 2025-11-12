@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 import os
 import mysql.connector
@@ -330,12 +331,11 @@ def metricas_muestras_por_promotor(df_muestras: pd.DataFrame, fecha_inicio: str,
         .join(muestras_no_fieles, how='left')
         .fillna({'dias_habiles': 0, 'muestras_no_fieles': 0})
     )
-
-    # Porcentaje no fieles
-    out['pct_no_fieles'] = 0.0
-    mask_den = out['muestras_total'] > 0
-    out.loc[mask_den, 'pct_no_fieles'] = (out.loc[mask_den, 'muestras_no_fieles'] / out.loc[mask_den, 'muestras_total']) * 100.0
-
+    # % Muestras contactables (NO fieles) = contactables_no_fieles / no_fieles * 100
+    out['pct_contactables_nofieles'] = 0.0
+    mask_den = out['muestras_no_fieles'] > 0
+    out.loc[mask_den, 'pct_contactables_nofieles'] = (
+        out.loc[mask_den, 'muestras_contactables_nofieles'] / out.loc[mask_den, 'muestras_no_fieles'] ) * 100.0
     # Tipos
     out['muestras_total'] = out['muestras_total'].astype('int64')
     out['dias_habiles'] = out['dias_habiles'].astype('int64')
@@ -488,11 +488,14 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
     out['pct_contactables'] = 0.0
     out.loc[mask_tot, 'pct_contactables'] = (out.loc[mask_tot,'muestras_contactables'] / out.loc[mask_tot,'muestras_total'])*100.0
 
-    # % Muestras contactables (NO fieles, sobre total) = contactables_nofieles / total * 100
-    out['pct_contactables_nofieles'] = 0.0
-    out.loc[mask_tot,'pct_contactables_nofieles'] = (
-        out.loc[mask_tot,'muestras_contactables_nofieles'] / out.loc[mask_tot,'muestras_total']
+    # % Muestras contactables dentro de los NO fieles
+    out['pct_contactables_nofieles'] = np.nan
+    mask_nf_den = out['muestras_no_fieles'] > 0
+    out.loc[mask_nf_den, 'pct_contactables_nofieles'] = (
+        out.loc[mask_nf_den, 'muestras_contactables_nofieles'] / out.loc[mask_nf_den, 'muestras_no_fieles']
     ) * 100.0
+    # Opcional: evitar mostrar 0.0 cuando no hay datos
+    out['pct_contactables_nofieles'] = out['pct_contactables_nofieles'].replace(0.0, np.nan)
 
     # tipos
     for c in ['muestras_total','dias_habiles','muestras_no_fieles','muestras_contactables','muestras_contactables_nofieles']:
