@@ -18,6 +18,9 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans, MiniBatchKMeans
+from sklearn.neighbors import NearestNeighbors
+from shapely.geometry import Point, shape, mapping
+from shapely.ops import unary_union, transform as shp_transform
 from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
 from pyproj import Transformer
 
@@ -110,6 +113,13 @@ PALETA_SUBS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
                "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"]
 SUBK_P_OUTLIER      = 0.10   # poda adicional dentro de cada sub-cluster
 
+# === Polígonos (preparación) ===
+RADIO_BETA           = 0.95   # r = RADIO_BETA * q70(1-NN)
+PODA_FINAL_FRAC      = 0.10   # poda radial previa a poligonizar
+MIN_PTS_POLIGONO     = 10     # si hay menos, usar ConvexHull en Fase 2
+DEC_COMAS            = True   # CSV con coma decimal y ';'
+CLIP_A_RUTAS         = True   # clipping final a perímetro de ciudad (Fase 2)
+
 # Paleta de fallback si no existe color_for_promotor
 FALLBACK_COLORS = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
@@ -200,6 +210,133 @@ def _format_decimal_comma(df, decimals=3):
         )
     return out
 
+def dump_csv_coma_decimal(df: pd.DataFrame, path: str, decimals: int = 6):
+    """Guarda CSV con ';' y coma decimal si DEC_COMAS=True."""
+    try:
+        to_write = _format_decimal_comma(df, decimals=decimals) if DEC_COMAS else df
+        to_write.to_csv(path, index=False, sep=";", encoding="utf-8-sig")
+    except Exception:
+        # fallback simple
+        df.to_csv(path, index=False, sep=";", encoding="utf-8-sig")
+
+def nn_stats_subcluster(X: np.ndarray):
+    """Devuelve (d1nn por punto, q60,q70,q80) en metros para un sub-cluster en UTM."""
+    n = len(X)
+    if n < 2:
+        return np.array([]), np.nan, np.nan, np.nan
+    nn = NearestNeighbors(n_neighbors=min(2, n)).fit(X)
+    dists, _ = nn.kneighbors(X)
+    d1 = dists[:, 1]
+    q60 = float(np.percentile(d1, 60))
+    q70 = float(np.percentile(d1, 70))
+    q80 = float(np.percentile(d1, 80))
+    return d1, q60, q70, q80
+
+
+# ===== Helpers de polígonos (Fase 2) =====
+def _city_perimeter_union_utm(cfg, transformer):
+    try:
+        if not os.path.exists(cfg.get("geojson", "")):
+            return None
+        with open(cfg["geojson"], "r", encoding="utf-8") as f:
+            gj = json.load(f)
+        geoms = []
+        def proj_ll_to_utm(x, y, z=None):
+            X, Y = transformer.transform(x, y)
+            return (X, Y)
+        for feat in gj.get("features", []):
+            try:
+                g_ll = shape(feat.get("geometry", {}))
+                g_utm = shp_transform(proj_ll_to_utm, g_ll)
+                geoms.append(g_utm)
+            except Exception:
+                continue
+        if not geoms:
+            return None
+        return unary_union(geoms).buffer(0)
+    except Exception:
+        return None
+
+
+def _final_radial_prune(X, frac):
+    if frac <= 0 or len(X) < 5:
+        return X
+    c = X.mean(axis=0)
+    r = np.sqrt(((X - c) ** 2).sum(axis=1))
+    thr = np.quantile(r, 1 - frac)
+    return X[r <= thr]
+
+
+def _union_of_disks_geom_utm(X, r, clip_geom_utm=None):
+    if len(X) == 0:
+        return None
+    disks = [Point(float(x), float(y)).buffer(float(r)) for x, y in X]
+    geom = unary_union(disks).buffer(0)
+    # Filtrar partes muy pequeñas si multipolígono
+    try:
+        if geom.geom_type == "MultiPolygon":
+            total_area = float(sum(p.area for p in geom.geoms))
+            thr_area = max(0.05 * total_area, 15000.0)
+            parts = [p for p in geom.geoms if p.area >= thr_area]
+            if parts:
+                geom = unary_union(parts).buffer(0)
+    except Exception:
+        pass
+    # Clipping
+    if clip_geom_utm is not None and CLIP_A_RUTAS:
+        try:
+            geom = geom.intersection(clip_geom_utm).buffer(0)
+        except Exception:
+            pass
+    return geom
+
+
+def _convex_hull_geom_utm(X):
+    if len(X) == 0:
+        return None
+    try:
+        from shapely.geometry import MultiPoint
+        return MultiPoint([(float(x), float(y)) for x, y in X]).convex_hull
+    except Exception:
+        return None
+
+
+def _geom_utm_to_lonlat(geom_utm, transformer):
+    if geom_utm is None:
+        return None
+    def proj_utm_to_ll(x, y, z=None):
+        lon, lat = transformer.transform(x, y, direction="INVERSE")
+        return (lon, lat)
+    try:
+        return shp_transform(proj_utm_to_ll, geom_utm)
+    except Exception:
+        return None
+
+
+def _polygon_metrics(geom_utm, X_used):
+    if geom_utm is None:
+        return {
+            "area_m2": np.nan, "perimetro_m": np.nan, "pct_puntos_cubiertos": np.nan,
+            "bbox_diag_m": np.nan
+        }
+    area = float(geom_utm.area)
+    peri = float(geom_utm.length)
+    # % puntos cubiertos
+    covered = 0
+    for x, y in X_used:
+        try:
+            if geom_utm.contains(Point(float(x), float(y))):
+                covered += 1
+        except Exception:
+            pass
+    pct = covered / max(1, len(X_used))
+    minx, miny, maxx, maxy = geom_utm.bounds
+    bbox_diag = float(np.hypot(maxx - minx, maxy - miny))
+    return {
+        "area_m2": area, "perimetro_m": peri, "pct_puntos_cubiertos": pct,
+        "bbox_diag_m": bbox_diag
+    }
+
 
 def _reset_resultados_ciudad(base_dir, ciudad):
     """Elimina y recrea la estructura Pruebas/Resultados/<CIUDAD>/{base,sub_clusters}."""
@@ -244,7 +381,14 @@ def _elbow_min_k(X, kmax):
     return kstar, wcss
 
 
-def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="C_subkmeans.html", filename_csv="C_resumen.csv"):
+def _export_subclusters_kmeans(
+    df_cluster,
+    transformer,
+    out_dir,
+    filename_html="C_subkmeans.html",
+    filename_csv="C_resumen.csv",
+    poligonos_cluster_dir: str | None = None
+):
     """Genera un mapa sin LayerControl con tres pasadas y un CSV de métricas por sub-cluster KMeans."""
     os.makedirs(out_dir, exist_ok=True)
 
@@ -338,6 +482,47 @@ def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="
                 "k_opt": int(k_opt)
             })
 
+            # — Fase 1: preparación de polígonos (diagnóstico qNN y preview) —
+            try:
+                if poligonos_cluster_dir is not None:
+                    sub_dir = os.path.join(poligonos_cluster_dir, f"sub_{int(lab)}")
+                    os.makedirs(sub_dir, exist_ok=True)
+                    # qNN stats sobre Xi2 (ya en UTM, podado subcluster)
+                    d1, q60, q70, q80 = nn_stats_subcluster(Xi2)
+                    n_pts = len(Xi2)
+                    if n_pts > 0:
+                        df_q = pd.DataFrame({
+                            "id_local": np.arange(n_pts, dtype=int),
+                            "d1nn_m": d1,
+                            "q60_m": q60,
+                            "q70_m": q70,
+                            "q80_m": q80,
+                            "n_puntos": n_pts,
+                        })
+                    else:
+                        df_q = pd.DataFrame(columns=["id_local","d1nn_m","q60_m","q70_m","q80_m","n_puntos"])
+                    dump_csv_coma_decimal(df_q, os.path.join(sub_dir, "_prep_qnn.csv"))
+
+                    # preview HTML: puntos del subcluster (prunado), centroide y caja con q70 y n
+                    latlon_sc = df_iso_pruned[["_lat","_lon"]].to_numpy(float)
+                    center_sc = [float(latlon_sc[:,0].mean()), float(latlon_sc[:,1].mean())] if len(latlon_sc) else [0,0]
+                    m2 = folium.Map(location=center_sc, zoom_start=13)
+                    for la, lo in latlon_sc:
+                        folium.CircleMarker([float(la), float(lo)], radius=4, color=color, fill=True, fillOpacity=0.95).add_to(m2)
+                    folium.CircleMarker([float(clatlon[0]), float(clatlon[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(m2)
+                    # leyenda simple con q70 y n
+                    legend = f"""
+                    <div style='position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;'>
+                      <div style='font-weight:600; margin-bottom:6px;'>Prep sub {int(lab)}</div>
+                      <div>q70(1-NN): {q70:.1f} m</div>
+                      <div>n puntos: {n_pts}</div>
+                    </div>
+                    """
+                    m2.get_root().html.add_child(folium.Element(legend))
+                    m2.save(os.path.join(sub_dir, "_prep_preview.html"))
+            except Exception as _e:
+                logging.warning(f"Prep polígonos sub {int(lab)} falló: {_e}")
+
         # Leyenda fija
         legend = """
         <div style="
@@ -361,6 +546,9 @@ def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="
     df_rows = pd.DataFrame(rows, columns=cols)
     df_rows = _format_decimal_comma(df_rows, decimals=6)
     df_rows.to_csv(os.path.join(out_dir, filename_csv), index=False, sep=";", encoding="utf-8-sig")
+
+    # Devolver filas (por si agregamos un resumen por asesor más adelante)
+    return rows
 
 def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
     """Calcula inertia (SSE) por K y métricas complementarias (Davies-Bouldin, Calinski-Harabasz).
@@ -604,6 +792,8 @@ def main():
     # Reset de resultados y reubicación de rutas a Pruebas/Resultados/<CIUDAD>/base/
     global RESULTADOS_DIR, HTML_OUT, CSV_OUT, HTML_OUT_CLUST, ELBOW_PNG, METRICS_CSV, METRICAS_K_CSV
     RESULTADOS_DIR, BASE_CIUDAD_DIR, BASE_DIR_OUT, SUBCLUSTERS_DIR = _reset_resultados_ciudad(BASE_DIR, CIUDAD)
+    POLIGONOS_DIR = os.path.join(BASE_CIUDAD_DIR, "poligonos")
+    os.makedirs(POLIGONOS_DIR, exist_ok=True)
     HTML_OUT       = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025.html")
     CSV_OUT        = os.path.join(BASE_DIR_OUT, f"muestras_{CIUDAD}_2025.csv")
     HTML_OUT_CLUST = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025_clusters.html")
@@ -733,6 +923,8 @@ def main():
     # Auditoría de sub-clusters KMeans por cluster del promotor seleccionado
     try:
         transformer_audit = Transformer.from_crs("EPSG:4326", _cfg["epsg_utm"], always_xy=True)
+        # Perímetro de la ciudad (union) en UTM para clipping (opcional)
+        clip_city_utm = _city_perimeter_union_utm(_cfg, transformer_audit) if CLIP_A_RUTAS else None
         asesor_id = int(df_plot["id_autor"].iloc[0]) if ("id_autor" in df_plot.columns and len(df_plot) > 0) else 0
         if "cluster" in df_plot.columns:
             for cl in sorted(df_plot["cluster"].dropna().unique().astype(int)):
@@ -744,13 +936,159 @@ def main():
                     except Exception:
                         pass
                 out_dir = os.path.join(SUBCLUSTERS_DIR, f"asesor_{asesor_id}", f"cluster_{cl}")
-                _export_subclusters_kmeans(
+                out_dir_pol = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"cluster_{cl}")
+                os.makedirs(out_dir_pol, exist_ok=True)
+                kmeans_rows = _export_subclusters_kmeans(
                     df_c, transformer_audit, out_dir,
                     filename_html=f"C{cl}_subkmeans.html",
-                    filename_csv=f"C{cl}_resumen.csv"
+                    filename_csv=f"C{cl}_resumen.csv",
+                    poligonos_cluster_dir=out_dir_pol
                 )
+                # Generación de polígonos por sub-cluster (Fase 2)
+                # Recorremos sub_<s> detectados a partir de los archivos _prep_qnn.csv
+                try:
+                    for sub_name in sorted([d for d in os.listdir(out_dir_pol) if d.startswith("sub_")]):
+                        sub_idx = int(sub_name.split("_")[1])
+                        sub_dir = os.path.join(out_dir_pol, sub_name)
+                        # Reconstruir Xi2 (UTM) a partir de df de este sub-cluster
+                        # Usamos la misma selección del loop kmeans anterior: labels == sub_idx
+                        X_all, _ = _to_utm_xy(df_c)
+                        # Necesitamos recrear kmeans para esta partición o reutilizar labels guardados
+                        # Simpler: filtramos por proximidad al centroide estimado de df_iso_pruned usado arriba no persistido.
+                        # Alternativa robusta: volver a ejecutar kmeans (k_opt) sobre Xp del cluster y extraer subset.
+                        # Para mantener consistencia, derivamos desde archivos _prep_qnn.csv si existen tamaños >0.
+                        qnn_path = os.path.join(sub_dir, "_prep_qnn.csv")
+                        if not os.path.exists(qnn_path):
+                            continue
+                        # Necesitamos las coordenadas UTM de los puntos prunados del sub;
+                        # Como no persistimos índices, recomputamos etiquetas localmente replicando pasos mínimos:
+                        # 1) Poda global del cluster df_c
+                        X_cluster, _ = _to_utm_xy(df_c)
+                        Xp, keep_mask = _podar_outliers_xy(X_cluster, P_OUTLIER)
+                        idx_p = np.where(keep_mask)[0]
+                        # 2) Reentrenar KMeans con k calculado igual que antes
+                        kmax_eff = max(1, min(SUBK_KMAX_ABS, int(np.ceil(SUBK_KMAX_FRAC * len(Xp)))))
+                        k_opt, _ = _elbow_min_k(Xp, kmax_eff)
+                        km_local = KMeans(n_clusters=int(k_opt), n_init="auto", random_state=42).fit(Xp)
+                        labels_local = km_local.labels_
+                        mask_sub = (labels_local == sub_idx)
+                        Xi = Xp[mask_sub]
+                        if len(Xi) == 0:
+                            continue
+                        # Poda por subcluster (10%) como en auditoría
+                        Xi2, _ = _podar_outliers_xy(Xi, p=SUBK_P_OUTLIER)
+                        if len(Xi2) == 0:
+                            Xi2 = Xi
+                        # Poda final radial antes de poligonizar
+                        Xf = _final_radial_prune(Xi2, PODA_FINAL_FRAC)
+                        # qNN y radio
+                        d1, q60, q70, q80 = nn_stats_subcluster(Xf)
+                        r = float(RADIO_BETA * q70) if not np.isnan(q70) else 0.0
+                        # Geometría
+                        if len(Xf) >= MIN_PTS_POLIGONO and r > 0:
+                            geom_utm = _union_of_disks_geom_utm(Xf, r, clip_city_utm)
+                        else:
+                            geom_utm = _convex_hull_geom_utm(Xf)
+                        geom_ll = _geom_utm_to_lonlat(geom_utm, transformer_audit)
+                        # Métricas y export per sub
+                        mets = _polygon_metrics(geom_utm, Xf)
+                        mets.update({
+                            "r_m": r,
+                            "q70_m": float(q70) if not np.isnan(q70) else np.nan,
+                            "n_puntos_usados": int(len(Xf))
+                        })
+                        # GeoJSON
+                        gj_path = os.path.join(sub_dir, f"sub_{sub_idx}.geojson")
+                        try:
+                            if geom_ll is not None:
+                                gj = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": mapping(geom_ll)}]}
+                                with open(gj_path, "w", encoding="utf-8") as fgj:
+                                    json.dump(gj, fgj)
+                        except Exception:
+                            pass
+                        # Métricas CSV
+                        df_m = pd.DataFrame([mets])
+                        dump_csv_coma_decimal(df_m, os.path.join(sub_dir, f"sub_{sub_idx}_metricas.csv"))
+                        # Audit HTML
+                        try:
+                            # idx_p are positional indices over df_c after poda; mask_sub selects the subcluster within Xp
+                            # Use iloc (positional) instead of loc (label-based) to avoid KeyError when df_c has non-range index
+                            latlon_sc = df_c.iloc[idx_p[mask_sub]][["_lat","_lon"]].to_numpy(float)
+                            center_sc = [float(latlon_sc[:,0].mean()), float(latlon_sc[:,1].mean())] if len(latlon_sc) else _cfg["center"]
+                            ma = folium.Map(location=center_sc, zoom_start=13)
+                            # puntos
+                            for la, lo in latlon_sc:
+                                folium.CircleMarker([float(la), float(lo)], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.8).add_to(ma)
+                            # borde polígono
+                            if geom_ll is not None:
+                                folium.GeoJson(mapping(geom_ll), name="poligono",
+                                               style_function=lambda x: {"color":"#111","weight":2,"fillColor":"#2ca02c","fillOpacity":0.25}).add_to(ma)
+                            # centroide
+                            if len(Xf):
+                                cx, cy = np.mean(Xf, axis=0)
+                                cll = np.array(_from_utm_to_lonlat(np.array([[cx, cy]]), transformer_audit))[0]
+                                folium.CircleMarker([float(cll[0]), float(cll[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(ma)
+                            # leyenda
+                            legend = f"""
+                            <div style='position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;'>
+                              <div style='font-weight:600; margin-bottom:6px;'>sub {sub_idx} · r={mets['r_m']:.1f} m</div>
+                              <div>área: {mets['area_m2']:.0f} m²</div>
+                              <div>perímetro: {mets['perimetro_m']:.0f} m</div>
+                              <div>cubiertos: {mets['pct_puntos_cubiertos']:.0%}</div>
+                              <div>n usados: {mets['n_puntos_usados']}</div>
+                            </div>
+                            """
+                            ma.get_root().html.add_child(folium.Element(legend))
+                            ma.save(os.path.join(sub_dir, f"sub_{sub_idx}_audit.html"))
+                        except Exception:
+                            pass
+                        # Acumular fila para resumen asesor
+                        if 'asesor_rows' not in locals():
+                            asesor_rows = []
+                        asesor_rows.append({
+                            "cluster": int(cl),
+                            "sub_id": int(sub_idx),
+                            **mets
+                        })
+                except Exception as e2:
+                    logging.warning(f"Polígonos (Fase 2) cluster {cl} error: {e2}")
+                # Guardar resumen por asesor (agregado posteriormente)
+                if isinstance(kmeans_rows, list):
+                    # Inicializar lista en contexto de asesor si no existe
+                    if 'asesor_rows' not in locals():
+                        asesor_rows = []
+                    for rec in kmeans_rows:
+                        rec2 = rec.copy()
+                        rec2["cluster"] = int(cl)
+                        asesor_rows.append(rec2)
     except Exception as e:
         logging.warning(f"Auditoría sub-clusters KMeans omitida por error: {e}")
+
+    # Resumen por asesor (si se generó)
+    try:
+        if 'asesor_rows' in locals() and isinstance(asesor_rows, list) and len(asesor_rows):
+            df_res = pd.DataFrame(asesor_rows)
+            # totales por cluster
+            g = df_res.groupby("cluster", as_index=False)[["area_m2","perimetro_m","n_puntos_usados"]].sum()
+            g["sub_id"] = "TOTAL_CLUSTER"
+            # total asesor
+            total = {
+                "cluster": "TOTAL_ASESOR",
+                "sub_id": "TOTAL_ASESOR",
+                "area_m2": float(df_res["area_m2"].sum()),
+                "perimetro_m": float(df_res["perimetro_m"].sum()),
+                "n_puntos_usados": int(df_res["n_puntos_usados"].sum()),
+                "pct_puntos_cubiertos": "",
+                "bbox_diag_m": "",
+                "r_m": "",
+                "q70_m": "",
+            }
+            df_out = pd.concat([df_res, g[df_res.columns.intersection(g.columns)].reindex(columns=df_res.columns, fill_value=""), pd.DataFrame([total])], ignore_index=True)
+            out_res = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"resumen_areas_asesor_{asesor_id}.csv")
+            os.makedirs(os.path.dirname(out_res), exist_ok=True)
+            dump_csv_coma_decimal(df_out, out_res)
+    except Exception as e:
+        logging.warning(f"No fue posible generar resumen por asesor: {e}")
 
     # Guardar HTML
     try:
