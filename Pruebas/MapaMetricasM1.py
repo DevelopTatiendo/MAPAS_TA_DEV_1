@@ -93,7 +93,7 @@ promotor_num = 3
 MANUAL_k = False
 K_target = 4
 
-RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados")
+RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados M1")
 os.makedirs(RESULTADOS_DIR, exist_ok=True)
 HTML_OUT        = os.path.join(RESULTADOS_DIR, f"muestras_simple_{CIUDAD}_2025.html")
 CSV_OUT         = os.path.join(RESULTADOS_DIR, f"muestras_{CIUDAD}_2025.csv")
@@ -108,15 +108,29 @@ P_OUTLIER           = 0.10   # fracción radial a podar (0 = sin poda)
 SUBK_KMAX_ABS       = 8      # k máximo para sub-clustering
 SUBK_KMAX_FRAC      = 0.20   # k_max dinámico = min(SUBK_KMAX_ABS, ceil(frac*n))
 ELBOW_POLICY        = "min"  # usar primer codo (permite k=1)
-MIN_SUB_FRAC        = 0.12   # subcluster mínimo como % del cluster podado
+MIN_SUB_FRAC        = 0.01  # subcluster mínimo como % del cluster podado
 PALETA_SUBS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
                "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"]
-SUBK_P_OUTLIER      = 0.10   # poda adicional dentro de cada sub-cluster
+SUBK_P_OUTLIER      = 0.00   # poda adicional dentro de cada sub-cluster
 
 # === Polígonos (preparación) ===
-RADIO_BETA           = 0.95   # r = RADIO_BETA * q70(1-NN)
-PODA_FINAL_FRAC      = 0.10   # poda radial previa a poligonizar
-MIN_PTS_POLIGONO     = 10     # si hay menos, usar ConvexHull en Fase 2
+# Control fino del área de discos por sub-cluster
+RADIO_PCTL           = 80     # percentil de 1-NN para el radio (60 conservador – 80 expansivo)
+RADIO_BETA           = 0.95   # factor multiplicador del percentil
+PODA_FINAL_FRAC      = 0.05   # poda radial previa a poligonizar (0–0.15 típico)
+MIN_PTS_POLIGONO     = 8      # si hay menos, usar ConvexHull en Fase 2
+
+# Filtrado de partes pequeñas en la unión de discos
+DISKS_MIN_PART_FRAC  = 0.01   # descarta islas < 5% del área total
+DISKS_MIN_PART_ABS   = 1500  # y también si < 15.000 m²
+
+# Capa de rutas en auditorías
+ADD_RUTAS_BASE       = True
+RUTAS_STROKE_COLOR   = "#2a6fef"
+RUTAS_STROKE_WEIGHT  = 2
+RUTAS_FILL_COLOR     = "#2a6fef"
+RUTAS_FILL_OPACITY   = 0.12
+
 DEC_COMAS            = True   # CSV con coma decimal y ';'
 CLIP_A_RUTAS         = True   # clipping final a perímetro de ciudad (Fase 2)
 
@@ -276,7 +290,7 @@ def _union_of_disks_geom_utm(X, r, clip_geom_utm=None):
     try:
         if geom.geom_type == "MultiPolygon":
             total_area = float(sum(p.area for p in geom.geoms))
-            thr_area = max(0.05 * total_area, 15000.0)
+            thr_area = max(DISKS_MIN_PART_FRAC * total_area, float(DISKS_MIN_PART_ABS))
             parts = [p for p in geom.geoms if p.area >= thr_area]
             if parts:
                 geom = unary_union(parts).buffer(0)
@@ -313,6 +327,26 @@ def _geom_utm_to_lonlat(geom_utm, transformer):
         return None
 
 
+def _add_rutas_layer(mapa):
+    """Agrega la capa GeoJSON de rutas/cuadrantes de la ciudad al mapa, si está configurada."""
+    try:
+        if ADD_RUTAS_BASE and os.path.exists(_cfg.get("geojson", "")):
+            with open(_cfg["geojson"], "r", encoding="utf-8") as f:
+                gj = json.load(f)
+            folium.GeoJson(
+                gj,
+                name=f"Rutas {CIUDAD.title()}",
+                style_function=lambda feat: {
+                    "color": RUTAS_STROKE_COLOR,
+                    "weight": RUTAS_STROKE_WEIGHT,
+                    "fillColor": RUTAS_FILL_COLOR,
+                    "fillOpacity": RUTAS_FILL_OPACITY,
+                },
+            ).add_to(mapa)
+    except Exception as e:
+        logging.warning(f"No se pudo cargar capa rutas: {e}")
+
+
 def _polygon_metrics(geom_utm, X_used):
     if geom_utm is None:
         return {
@@ -339,9 +373,9 @@ def _polygon_metrics(geom_utm, X_used):
 
 
 def _reset_resultados_ciudad(base_dir, ciudad):
-    """Elimina y recrea la estructura Pruebas/Resultados/<CIUDAD>/{base,sub_clusters}."""
+    """Elimina y recrea la estructura Pruebas/Resultados M1/<CIUDAD>/{base,sub_clusters}."""
     import shutil
-    resultados_dir = os.path.join(base_dir, "Pruebas", "Resultados")
+    resultados_dir = os.path.join(base_dir, "Pruebas", "Resultados M1")
     shutil.rmtree(resultados_dir, ignore_errors=True)
     base_ciudad = os.path.join(resultados_dir, ciudad)
     base_dir_out = os.path.join(base_ciudad, "base")
@@ -411,7 +445,12 @@ def _export_subclusters_kmeans(
 
     # Si muy pocos tras poda
     center = [float(latlon[:,0].mean()), float(latlon[:,1].mean())] if len(latlon) else [0,0]
-    m = folium.Map(location=center, zoom_start=13)
+    m = folium.Map(location=center, zoom_start=13, zoom_control=False)
+    # Capa base de rutas (opcional)
+    try:
+        _add_rutas_layer(m)
+    except Exception:
+        pass
 
     # Original (gris claro)
     for la, lo in latlon:
@@ -506,7 +545,11 @@ def _export_subclusters_kmeans(
                     # preview HTML: puntos del subcluster (prunado), centroide y caja con q70 y n
                     latlon_sc = df_iso_pruned[["_lat","_lon"]].to_numpy(float)
                     center_sc = [float(latlon_sc[:,0].mean()), float(latlon_sc[:,1].mean())] if len(latlon_sc) else [0,0]
-                    m2 = folium.Map(location=center_sc, zoom_start=13)
+                    m2 = folium.Map(location=center_sc, zoom_start=13, zoom_control=False)
+                    try:
+                        _add_rutas_layer(m2)
+                    except Exception:
+                        pass
                     for la, lo in latlon_sc:
                         folium.CircleMarker([float(la), float(lo)], radius=4, color=color, fill=True, fillOpacity=0.95).add_to(m2)
                     folium.CircleMarker([float(clatlon[0]), float(clatlon[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(m2)
@@ -789,7 +832,7 @@ def _cluster_and_draw(df_plot, resultados_dir, mapa, cluster_palette):
 
 def main():
     logging.info(f"Iniciando generación de mapa de muestras {CIUDAD} 2025")
-    # Reset de resultados y reubicación de rutas a Pruebas/Resultados/<CIUDAD>/base/
+    # Reset de resultados y reubicación de rutas a Pruebas/Resultados M1/<CIUDAD>/base/
     global RESULTADOS_DIR, HTML_OUT, CSV_OUT, HTML_OUT_CLUST, ELBOW_PNG, METRICS_CSV, METRICAS_K_CSV
     RESULTADOS_DIR, BASE_CIUDAD_DIR, BASE_DIR_OUT, SUBCLUSTERS_DIR = _reset_resultados_ciudad(BASE_DIR, CIUDAD)
     POLIGONOS_DIR = os.path.join(BASE_CIUDAD_DIR, "poligonos")
@@ -811,7 +854,7 @@ def main():
 
     if df.empty:
         logging.warning("DF vacío: se generará mapa sin puntos.")
-        mapa = folium.Map(location=_cfg["center"], zoom_start=12)
+        mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
         mapa.save(HTML_OUT)
         pd.DataFrame().to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
         print(f"HTML vacío: {HTML_OUT}")
@@ -828,7 +871,7 @@ def main():
         df = _resolver_lat_lon(df)
     except Exception as e:
         logging.error(f"Abortando: {e}")
-        mapa = folium.Map(location=_cfg["center"], zoom_start=12)
+        mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
         folium.Marker(location=_cfg["center"], popup="Sin columnas lat/lon válidas").add_to(mapa)
         mapa.save(HTML_OUT)
         df.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
@@ -846,7 +889,7 @@ def main():
         logging.error(f"No fue posible guardar CSV: {e}")
 
     # Construir mapa base
-    mapa = folium.Map(location=_cfg["center"], zoom_start=12)
+    mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
 
     # Cargar GeoJSON de rutas de la ciudad (opcional)
     try:
@@ -983,7 +1026,9 @@ def main():
                         Xf = _final_radial_prune(Xi2, PODA_FINAL_FRAC)
                         # qNN y radio
                         d1, q60, q70, q80 = nn_stats_subcluster(Xf)
-                        r = float(RADIO_BETA * q70) if not np.isnan(q70) else 0.0
+                        # 1-NN ya en 'd1'; calcula percentil configurable y luego aplica factor
+                        q_sel = float(np.percentile(d1, RADIO_PCTL)) if len(d1) else 0.0
+                        r = float(RADIO_BETA * q_sel)
                         # Geometría
                         if len(Xf) >= MIN_PTS_POLIGONO and r > 0:
                             geom_utm = _union_of_disks_geom_utm(Xf, r, clip_city_utm)
@@ -1015,7 +1060,11 @@ def main():
                             # Use iloc (positional) instead of loc (label-based) to avoid KeyError when df_c has non-range index
                             latlon_sc = df_c.iloc[idx_p[mask_sub]][["_lat","_lon"]].to_numpy(float)
                             center_sc = [float(latlon_sc[:,0].mean()), float(latlon_sc[:,1].mean())] if len(latlon_sc) else _cfg["center"]
-                            ma = folium.Map(location=center_sc, zoom_start=13)
+                            ma = folium.Map(location=center_sc, zoom_start=13, zoom_control=False)
+                            try:
+                                _add_rutas_layer(ma)
+                            except Exception:
+                                pass
                             # puntos
                             for la, lo in latlon_sc:
                                 folium.CircleMarker([float(la), float(lo)], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.8).add_to(ma)
@@ -1036,6 +1085,8 @@ def main():
                               <div>perímetro: {mets['perimetro_m']:.0f} m</div>
                               <div>cubiertos: {mets['pct_puntos_cubiertos']:.0%}</div>
                               <div>n usados: {mets['n_puntos_usados']}</div>
+                              <div>pctl NN: {RADIO_PCTL}</div>
+                              <div>β: {RADIO_BETA}</div>
                             </div>
                             """
                             ma.get_root().html.add_child(folium.Element(legend))
@@ -1052,41 +1103,35 @@ def main():
                         })
                 except Exception as e2:
                     logging.warning(f"Polígonos (Fase 2) cluster {cl} error: {e2}")
-                # Guardar resumen por asesor (agregado posteriormente)
-                if isinstance(kmeans_rows, list):
-                    # Inicializar lista en contexto de asesor si no existe
-                    if 'asesor_rows' not in locals():
-                        asesor_rows = []
-                    for rec in kmeans_rows:
-                        rec2 = rec.copy()
-                        rec2["cluster"] = int(cl)
-                        asesor_rows.append(rec2)
+                # (eliminado) no agregamos filas de kmeans_rows al resumen para evitar duplicados
     except Exception as e:
         logging.warning(f"Auditoría sub-clusters KMeans omitida por error: {e}")
 
-    # Resumen por asesor (si se generó)
+    # --- Resumen por asesor (SOLO métricas de polígonos) ---
     try:
         if 'asesor_rows' in locals() and isinstance(asesor_rows, list) and len(asesor_rows):
-            df_res = pd.DataFrame(asesor_rows)
-            # totales por cluster
-            g = df_res.groupby("cluster", as_index=False)[["area_m2","perimetro_m","n_puntos_usados"]].sum()
-            g["sub_id"] = "TOTAL_CLUSTER"
-            # total asesor
-            total = {
-                "cluster": "TOTAL_ASESOR",
-                "sub_id": "TOTAL_ASESOR",
-                "area_m2": float(df_res["area_m2"].sum()),
-                "perimetro_m": float(df_res["perimetro_m"].sum()),
-                "n_puntos_usados": int(df_res["n_puntos_usados"].sum()),
-                "pct_puntos_cubiertos": "",
-                "bbox_diag_m": "",
-                "r_m": "",
-                "q70_m": "",
-            }
-            df_out = pd.concat([df_res, g[df_res.columns.intersection(g.columns)].reindex(columns=df_res.columns, fill_value=""), pd.DataFrame([total])], ignore_index=True)
+            import pandas as _pd
+            # Añadimos area_km2 a las columnas exportadas
+            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados"]
+
+            df_res = _pd.DataFrame(asesor_rows)
+
+            # Quedarse únicamente con filas que traen áreas/perímetros (polígonos)
+            df_res = df_res[_pd.to_numeric(df_res.get("area_m2"), errors="coerce").notna()].copy()
+
+            # Calcular km² ANTES de formatear
+            df_res["area_km2"] = _pd.to_numeric(df_res["area_m2"], errors="coerce") / 1_000_000.0
+
+            # Dejar solo las columnas solicitadas, en ese orden
+            df_res = df_res[cols_keep].copy()
+
+            # Guardar SIN totales por cluster ni total asesor
             out_res = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"resumen_areas_asesor_{asesor_id}.csv")
             os.makedirs(os.path.dirname(out_res), exist_ok=True)
-            dump_csv_coma_decimal(df_out, out_res)
+
+            # Formato CSV con separador ';' y coma decimal para números.
+            # Usamos 3 decimales para todo (área m2 y km2 saldrán con coma).
+            dump_csv_coma_decimal(df_res, out_res, decimals=3)
     except Exception as e:
         logging.warning(f"No fue posible generar resumen por asesor: {e}")
 
