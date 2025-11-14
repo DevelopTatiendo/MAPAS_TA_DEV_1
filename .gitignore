@@ -63,7 +63,7 @@ pnpm-lock.yaml
 
 # =========================
 # IDE / OS
-# =========================
+# ========================= 
 .vscode/
 .idea/
 *.swp
@@ -78,6 +78,15 @@ desktop.ini
 # =========================
 # Mapas HTML generados por la app (mantén solo los de esta carpeta)
 static/maps/*.html
+
+Pruebas/Resultados M1/**
+Pruebas/Resultados M1/*.html
+Pruebas/Resultados M1/*.csv
+
+Pruebas/Resultados M2/**
+Pruebas/Resultados M2/*.html
+Pruebas/Resultados M2/*.csv
+
 
 # ⚠️ No ignores todo *.html / *.pdf globalmente
 # Si necesitas ignorar PDFs de informes, hazlo por carpeta:
@@ -113,3 +122,4 @@ scratch/
 
 # Contenedores
 docker-compose.override.yml
+

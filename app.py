@@ -21,6 +21,8 @@ import base64
 # from mapa_visitas import generar_mapa_visitas_individuales
 from mapa_muestras import generar_mapa_muestras
 from mapa_consultores import generar_mapa_consultores
+from mapa_consultores_simple import generar_mapa_consultores_simple
+from mapa_pruebas import generar_mapa_pruebas
 from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
 
@@ -214,7 +216,7 @@ ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 # Card "Configuración y Filtros"
 st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
-tipos_mapa = ["Muestras", "Consultores"]  # Solo módulos activos
+tipos_mapa = ["Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
 # tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
@@ -311,13 +313,21 @@ with st.form(key="filtros_form"):
         with c2: 
             fecha_fin = st.date_input("Fecha de Fin")
         
+        # --- Métricas por (nuevo bloque, fuera del expander) ---
+        st.markdown("### Métricas")
+        color_options = ["Promotores", "Temporalidad (mes)"]
+        default_idx = 1  # Temporalidad por defecto
+        color_mode = st.radio(
+            "Métricas por:",
+            color_options,
+            index=default_idx,
+            key="color_mode_muestras"  # mantener la misma key para persistencia
+        )
+
         # Opciones de visualización
         with st.expander("Opciones de visualización"):
-            # default = Temporalidad
-            color_options = ["Promotores", "Temporalidad (mes)"]
-            default_idx = 1
-            color_mode = st.radio("Colores por:", color_options, index=default_idx, key="color_mode_muestras")
             verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
+            enable_ism = st.checkbox("Activar ISM (modo legado)", value=False, key="muestras_enable_ism")
             
             # ISM Calibración
             st.markdown("**🎯 Calibración ISM**")
@@ -439,6 +449,60 @@ with st.form(key="filtros_form"):
             ruta_seleccionada = st.selectbox("Seleccione la ruta (obligatorio):", options=options_list)
             id_ruta = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
             nombre_ruta_ui = ruta_seleccionada if ruta_seleccionada else None
+        
+        # Fechas en dos columnas
+        c1, c2 = st.columns(2)
+        with c1: 
+            fecha_inicio = st.date_input("Fecha de Inicio")
+        with c2: 
+            fecha_fin = st.date_input("Fecha de Fin")
+        
+        # Toggle para modo simple (sin cuadrantes)
+        modo_simple = st.checkbox("Modo simple (sin cuadrantes)", value=True, help="Muestra todos los puntos sobre la capa base de la ciudad, sin cálculo de métricas por cuadrante")
+        
+        # Opción para mostrar puntos fuera de cuadrante (solo visible en modo completo)
+        if not modo_simple:
+            mostrar_fuera = st.checkbox("Mostrar puntos fuera de cuadrante", value=False, help="Incluye eventos que no están dentro de ningún cuadrante")
+        else:
+            mostrar_fuera = False  # No aplica en modo simple
+    elif tipo_mapa == "Pruebas":
+        # Ruta (obligatorio)
+        from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
+        df_rutas = listar_rutas_simple(ciudad)  # columnas: id_ruta, ruta
+        if df_rutas is None or df_rutas.empty:
+            st.warning("No hay rutas disponibles para la ciudad seleccionada.")
+            id_ruta_pruebas = None
+            nombre_ruta_ui_pruebas = None
+        else:
+            import re
+            # Crear lista con ordenamiento robusto descendente
+            rutas_list = []
+            for _, r in df_rutas.iterrows():
+                ruta_nombre = str(r.ruta)
+                # Extraer número inicial si existe
+                match = re.match(r'^(\d+)', ruta_nombre)
+                num = int(match.group()) if match else None
+                rutas_list.append((int(r.id_ruta), ruta_nombre, num))
+            
+            # Ordenar: primero rutas numéricas (desc), luego alfanuméricas (desc)
+            rutas_list.sort(key=lambda x: (0 if x[2] is not None else 1, -x[2] if x[2] is not None else 0, x[1].upper()), reverse=True)
+            
+            # Crear diccionario para mapear texto → id_ruta
+            options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
+            options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
+            
+            # Agregar opción "TODOS" al inicio
+            options_list_plus = ["TODOS"] + options_list
+            
+            # Selector mostrando el nombre de ruta (incluye "TODOS")
+            ruta_seleccionada = st.selectbox("Seleccione la ruta:", options=options_list_plus, index=0)
+            
+            if ruta_seleccionada == "TODOS":
+                id_ruta_pruebas = None           # ← clave: None significa NO filtrar por ruta
+                nombre_ruta_ui_pruebas = "TODOS"
+            else:
+                id_ruta_pruebas = options_dict.get(ruta_seleccionada)
+                nombre_ruta_ui_pruebas = ruta_seleccionada
         
         # Fechas en dos columnas
         c1, c2 = st.columns(2)
@@ -856,7 +920,18 @@ if submit_button:
             hogares_por_m2_override = st.session_state.get("hogares_por_m2_override")
             
             resultado = manejar_error(
-                generar_mapa_muestras, fecha_inicio, fecha_fin, ciudad, barrios, promotores_sel, override_fc, color_mode, verificar_areas, hogares_por_m2_override, pph_override
+                generar_mapa_muestras,
+                fecha_inicio,
+                fecha_fin,
+                ciudad,
+                barrios,
+                promotores_sel,
+                override_fc,
+                color_mode,
+                verificar_areas,
+                hogares_por_m2_override,
+                pph_override,
+                enable_ism=st.session_state.get("muestras_enable_ism", False)
             )
             if resultado:
                 # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)
@@ -900,33 +975,63 @@ if submit_button:
                 filename = None
                 n_puntos = 0
             else:
-                from mapa_consultores_simple import generar_mapa_consultores_simple
-                resultado = manejar_error(
-                    generar_mapa_consultores_simple,
-                    ciudad,
-                    id_ruta,
-                    fecha_inicio,
-                    fecha_fin
-                )
-                if resultado:
-                    filename, n_puntos = resultado
+                # Desvío según modo simple o completo
+                if modo_simple:
+                    # Modo simple: sin cuadrantes, solo capa base + puntos
+                    resultado = manejar_error(
+                        generar_mapa_consultores_simple,
+                        ciudad,
+                        int(id_ruta),
+                        fecha_inicio,  # Pasar date directamente
+                        fecha_fin      # Pasar date directamente
+                    )
+                    if resultado:
+                        filename, n_puntos = resultado
+                    else:
+                        filename, n_puntos = None, 0
+                    # Limpiar session state (simple no exporta CSV)
+                    st.session_state["consultores_export_df"] = None
+                    st.session_state["consultores_export_meta"] = None
                 else:
-                    filename, n_puntos = None, 0
+                    # Modo completo: con cuadrantes y métricas
+                    resultado = manejar_error(
+                        generar_mapa_consultores,
+                        str(fecha_inicio),
+                        str(fecha_fin),
+                        ciudad,
+                        int(id_ruta),
+                        nombre_ruta_ui if nombre_ruta_ui else "",
+                        mostrar_fuera
+                    )
+                    if resultado:
+                        filename, n_puntos, df_export = resultado
+                        # Guardar DataFrame para descarga CSV
+                        st.session_state["consultores_export_df"] = df_export
+                        st.session_state["consultores_export_meta"] = {
+                            "ciudad": ciudad,
+                            "id_ruta": id_ruta,
+                            "fecha_inicio": fecha_inicio,
+                            "fecha_fin": fecha_fin
+                        }
+                    else:
+                        filename, n_puntos = None, 0
+                        st.session_state["consultores_export_df"] = None
+                        st.session_state["consultores_export_meta"] = None
             map_type = "consultores"
-        # elif tipo_mapa == "Pruebas":
-        #     if not id_ruta_pruebas:
-        #         st.error("Seleccione una ruta válida.")
-        #         filename = None
-        #     else:
-        #         from mapa_pruebas import generar_mapa_pruebas_proyeccion
-        #         filename = manejar_error(
-        #             generar_mapa_pruebas_proyeccion,
-        #             ciudad,
-        #             id_ruta_pruebas,          # ruta_id_ui: ID entero resuelto desde el selector
-        #             nombre_ruta_ui_pruebas,   # ruta_nombre_ui: nombre para mostrar en leyenda
-        #             str(fecha_objetivo)       # fecha_objetivo: YYYY-MM-DD del día objetivo
-        #         )
-        #     map_type = "pruebas"
+        elif tipo_mapa == "Pruebas":
+            # id_ruta_pruebas puede ser None (para "TODOS") o un int
+            resultado = manejar_error(
+                generar_mapa_pruebas,
+                ciudad,               # str (con acentos tal como viene del radio)
+                id_ruta_pruebas,      # int | None (None para "TODOS")
+                fecha_inicio,         # date
+                fecha_fin             # date
+            )
+            if resultado:
+                filename, n_puntos = resultado
+            else:
+                filename, n_puntos = None, 0
+            map_type = "pruebas"
 
         if filename:
             # Agregar cache-busting al URL del mapa

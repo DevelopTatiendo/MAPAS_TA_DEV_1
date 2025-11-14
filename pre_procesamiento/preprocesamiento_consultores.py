@@ -8,12 +8,44 @@ from pathlib import Path
 from dotenv import load_dotenv
 from .db_utils import sql_read
 
+# === IMPORTS DE BD ===
+try:
+    import mysql.connector as mysql
+except ImportError:
+    # Fallback por si el paquete está expuesto como 'mysql'
+    try:
+        from mysql import connector as mysql
+    except ImportError:
+        logging.error("No se pudo importar mysql.connector. Instale el paquete: pip install mysql-connector-python")
+        mysql = None
+
 # Cargar variables de entorno desde .env
 dotenv_path = Path(__file__).resolve().parents[1] / ".env"
 if dotenv_path.exists():
     load_dotenv(dotenv_path=dotenv_path, override=False)
 else:
     print(f"⚠️ Advertencia: Archivo .env no encontrado en {dotenv_path}")
+
+# === Helper de conexión ===
+def _get_conn():
+    """
+    Crear conexión a MySQL usando variables de entorno.
+    Intenta usar DB_HOST/DB_USER/DB_PASSWORD o fallback a MYSQL_HOST/MYSQL_USER/MYSQL_PASSWORD.
+    """
+    if mysql is None:
+        raise RuntimeError("mysql.connector no está disponible. Instale: pip install mysql-connector-python")
+    
+    try:
+        return mysql.connect(
+            host=os.getenv("DB_HOST") or os.getenv("MYSQL_HOST"),
+            database=os.getenv("DB_NAME", "fullclean_contactos"),
+            user=os.getenv("DB_USER") or os.getenv("MYSQL_USER"),
+            password=os.getenv("DB_PASSWORD") or os.getenv("MYSQL_PASSWORD"),
+            autocommit=True
+        )
+    except Exception as e:
+        logging.error(f"[BD] Error al conectar a MySQL: {e}")
+        raise
 
 # --- Resolver CO por ciudad (reusar mapping de otros módulos) ---
 CENTROOPES = {'CALI':2,'MEDELLIN':3,'MANIZALES':6,'PEREIRA':5,'BOGOTA':4,'BARRANQUILLA':8,'BUCARAMANGA':7}
@@ -25,57 +57,25 @@ def _norm_city(ciudad: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
 
 def _conn():
-    """Crear conexión a MySQL validando variables de entorno obligatorias."""
-    # Variables obligatorias
-    required_vars = ["DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"]
-    missing_vars = []
-    
-    for var in required_vars:
-        value = os.getenv(var)
-        if not value or value.strip() == "":
-            missing_vars.append(var)
-    
-    if missing_vars:
-        raise ValueError(f"Variables de entorno faltantes para conexión BD: {', '.join(missing_vars)}")
-    
-    # Obtener valores
-    host = os.getenv("DB_HOST").strip()
-    user = os.getenv("DB_USER").strip()
-    password = os.getenv("DB_PASSWORD")
-    database = os.getenv("DB_NAME").strip()
-    
-    # Puerto opcional (sin requerirlo)
-    port = int(os.getenv("DB_PORT", "3306"))
-    
-    # Log de configuración (enmascarando contraseña)
-    user_masked = user[:2] + '*' * (len(user) - 2) if len(user) > 2 else user
-    logging.info(f"Conectando BD - Host: {host}, DB: {database}, Usuario: {user_masked}")
-    
-    try:
-        return mysql.connector.connect(
-            host=host,
-            user=user,
-            password=password,
-            database=database,
-            port=port
-        )
-    except mysql.connector.Error as e:
-        logging.error(f"Error de conexión BD: {e}")
-        raise
+    """
+    DEPRECATED: Usar _get_conn() en su lugar.
+    Crear conexión a MySQL validando variables de entorno obligatorias.
+    """
+    # Delegar a _get_conn() para evitar duplicación
+    return _get_conn()
 
 def ping_db():
     """Prueba básica de conectividad a la base de datos."""
     try:
-        conn = _conn()
-        cursor = conn.cursor()
-        cursor.execute("SELECT 1")
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        with _get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            result = cursor.fetchone()
+            cursor.close()
         logging.info("Ping BD exitoso")
         return result is not None
     except Exception as e:
-        logging.error(f"Ping BD falló: {e}")
+        logging.error(f"[BD] Ping BD falló: {e}")
         return False
 
 def _pick_col(df, candidates):
@@ -160,24 +160,28 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
        AND ca.Id_cargo = 5
-        AND e.id_evento_tipo not in (48,51, 66,65)
+        AND e.id_evento_tipo = 10 --  not in (48,51, 66,65)
       -- AND ca.Id_cargo in (181, 5)
     ORDER BY e.fecha_evento ASC;
     """
-    cn = _conn()
-    df = pd.read_sql(q, cn, params=[centroope, id_ruta, f_ini, f_fin])
-    cn.close()
     
-    # Normalizar tipos por seguridad
-    if not df.empty:
-        df['id_autor'] = pd.to_numeric(df['id_autor'], errors='coerce')
-        df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
-        df['apellido'] = df['apellido'].fillna('').astype(str)
-        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
-        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
-        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
-        df = df.dropna(subset=['lat','lon'])
-    return df
+    try:
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=[centroope, id_ruta, f_ini, f_fin])
+        
+        # Normalizar tipos por seguridad
+        if not df.empty:
+            df['id_autor'] = pd.to_numeric(df['id_autor'], errors='coerce')
+            df['id_consultor'] = pd.to_numeric(df['id_consultor'], errors='coerce')
+            df['apellido'] = df['apellido'].fillna('').astype(str)
+            df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+            df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+            df = df.dropna(subset=['lat','lon'])
+        return df
+    except Exception as e:
+        logging.error(f"[BD] Error en eventos_por_ruta_en_rango: {e}")
+        raise
 
 def nombre_ruta(centroope: int, id_ruta: int) -> str:
     """
@@ -190,10 +194,14 @@ def nombre_ruta(centroope: int, id_ruta: int) -> str:
     WHERE r.id_centroope = %s AND r.id = %s
     LIMIT 1;
     """
-    cn = _conn()
-    df = pd.read_sql(q, cn, params=[centroope, id_ruta])
-    cn.close()
-    return None if df.empty else str(df.iloc[0]['ruta'])
+    
+    try:
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=[centroope, id_ruta])
+        return None if df.empty else str(df.iloc[0]['ruta'])
+    except Exception as e:
+        logging.error(f"[BD] Error en nombre_ruta: {e}")
+        raise
 
 def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
@@ -312,8 +320,8 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
         return df
         
     except Exception as e:
-        logging.error(f"Error en eventos_con_coordenadas_por_ruta_y_rango: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en eventos_con_coordenadas_por_ruta_y_rango: {str(e)}")
+        raise
 
 def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
@@ -373,11 +381,10 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
             pe.id_vendedor ASC;
         """
         
-        cn = _conn()
-        df_ventas = pd.read_sql(q_ventas, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+        with _get_conn() as cn:
+            df_ventas = pd.read_sql(q_ventas, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
         
         if df_ventas.empty:
-            cn.close()
             logging.info("No se encontraron ventas en el rango especificado")
             return pd.DataFrame(columns=['id_pedido', 'id_contacto', 'id_consultor', 'apellido', 
                                        'lat', 'lon', 'fecha_factura', 'valor_conIVA', 'origen_coords'])
@@ -433,8 +440,8 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
             e.fecha_evento ASC;
         """
         
-        df_eventos = pd.read_sql(q_eventos, cn, params=[id_centroope, id_ruta, f_ini_expandido, f_fin_expandido])
-        cn.close()
+        with _get_conn() as cn:
+            df_eventos = pd.read_sql(q_eventos, cn, params=[id_centroope, id_ruta, f_ini_expandido, f_fin_expandido])
         
         if df_eventos.empty:
             logging.info("No se encontraron eventos con coordenadas para hacer matching")
@@ -526,8 +533,8 @@ def ventas_con_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_i
         return df_resultado
         
     except Exception as e:
-        logging.error(f"Error en ventas_con_coordenadas_por_ruta_y_rango: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en ventas_con_coordenadas_por_ruta_y_rango: {str(e)}")
+        raise
 
 def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
@@ -616,15 +623,14 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
     """
     
     try:
-        cn = _conn()
         # Parámetros simplificados: id_centroope, id_ruta, f_ini, f_fin para ambas subconsultas
         params = [
             id_centroope, id_ruta, f_ini, f_fin,  # Primera subconsulta (eagg)
             id_centroope, id_ruta, f_ini, f_fin   # Segunda subconsulta (v) - pedidos directos
         ]
         
-        df = pd.read_sql(q, cn, params=params)
-        cn.close()
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=params)
         
         # Asegurar tipos de datos correctos con COALESCE para valores nulos
         if not df.empty:
@@ -643,8 +649,8 @@ def consultores_metricas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini
         return df
         
     except Exception as e:
-        logging.error(f"Error en consultores_metricas_por_ruta_y_rango: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en consultores_metricas_por_ruta_y_rango: {str(e)}")
+        raise
 
 def ventas_totales_por_consultores(fi: str, ff: str, ids_consultor: list[int]) -> pd.DataFrame:
     """
@@ -691,11 +697,11 @@ def ventas_totales_por_consultores(fi: str, ff: str, ids_consultor: list[int]) -
     """
     
     try:
-        cn = _conn()
         # Parámetros: ids_consultor + fi + ff
         params = ids_consultor + [fi, ff]
-        df = pd.read_sql(q, cn, params=params)
-        cn.close()
+        
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=params)
         
         # Normalizar tipos de datos
         if not df.empty:
@@ -712,8 +718,8 @@ def ventas_totales_por_consultores(fi: str, ff: str, ids_consultor: list[int]) -
         return df
         
     except Exception as e:
-        logging.error(f"Error en ventas_totales_por_consultores: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en ventas_totales_por_consultores: {str(e)}")
+        raise
 
 def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
@@ -765,9 +771,8 @@ def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_i
     """
     
     try:
-        cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
-        cn.close()
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
         
         # Normalizar tipos de datos
         if not df.empty:
@@ -787,8 +792,8 @@ def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_i
         return df
         
     except Exception as e:
-        logging.error(f"Error en conteo_eventos_sin_coords_por_consultor: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en conteo_eventos_sin_coords_por_consultor: {str(e)}")
+        raise
 
 def eventos_tipo20_por_consultor(fi: str, ff: str, ids_consultor: list) -> pd.DataFrame:
     """
@@ -838,8 +843,8 @@ def eventos_tipo20_por_consultor(fi: str, ff: str, ids_consultor: list) -> pd.Da
     params = [fi, ff] + list(ids_consultor)
     
     try:
-        cn = _conn()
-        df = pd.read_sql(query, cn, params=params)
+        with _get_conn() as cn:
+            df = pd.read_sql(query, cn, params=params)
         
         if df.empty:
             logging.info("No se encontraron eventos tipo 20 para los consultores especificados")
@@ -849,7 +854,7 @@ def eventos_tipo20_por_consultor(fi: str, ff: str, ids_consultor: list) -> pd.Da
         return df
         
     except Exception as e:
-        logging.error(f"Error obteniendo eventos tipo 20 por consultor: {e}")
+        logging.error(f"[BD] Error obteniendo eventos tipo 20 por consultor: {e}")
         return pd.DataFrame()
 
 def eventos_sin_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
@@ -911,9 +916,8 @@ def eventos_sin_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
     """
     
     try:
-        cn = _conn()
-        df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
-        cn.close()
+        with _get_conn() as cn:
+            df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
         
         # Normalizar tipos de datos
         if not df.empty:
@@ -940,5 +944,65 @@ def eventos_sin_coordenadas_por_ruta_y_rango(id_centroope: int, id_ruta: int, f_
         return df
         
     except Exception as e:
-        logging.error(f"Error en eventos_sin_coordenadas_por_ruta_y_rango: {str(e)}")
-        raise e
+        logging.error(f"[BD] Error en eventos_sin_coordenadas_por_ruta_y_rango: {str(e)}")
+        raise
+
+def eventos_con_coordenadas_ciudad_y_rango(ciudad: str, f_ini: str, f_fin: str, id_ruta: int | None = None) -> pd.DataFrame:
+    """
+    Devuelve eventos con coordenadas para una ciudad y rango de fechas.
+    Si id_ruta es None → trae TODAS las rutas de la ciudad.
+    Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_evento_tipo, tipo_evento, apellido
+    """
+    co = get_co(_norm_city(ciudad))
+
+    q = f"""
+    SELECT
+        e.idEvento            AS id_evento,
+        e.id_contacto         AS id_contacto,
+        e.coordenada_latitud  AS lat,
+        e.coordenada_longitud AS lon,
+        e.fecha_evento        AS fecha_evento,
+        e.id_evento_tipo      AS id_evento_tipo,
+        e.tipo_evento         AS tipo_evento,
+        p.apellido            AS apellido
+    FROM fullclean_contactos.vwEventos e
+    JOIN fullclean_contactos.vwContactos c        ON c.id = e.id_contacto
+    JOIN fullclean_contactos.barrios b            ON b.Id = c.id_barrio
+    JOIN fullclean_contactos.rutas_cobro_zonas rc ON rc.id_barrio = b.Id
+    JOIN fullclean_contactos.rutas_cobro r        ON r.id = rc.id_ruta_cobro
+    JOIN fullclean_personal.personal p            ON p.id = e.id_autor
+    JOIN fullclean_personal.cargos ca             ON ca.Id_cargo = p.id_cargo
+    WHERE
+          c.estado = 1
+      AND c.estado_cxc IN (0,1)
+      AND r.id_centroope = :co
+      {"AND r.id = :id_ruta" if id_ruta is not None else ""}
+      AND e.fecha_evento BETWEEN :f_ini AND :f_fin
+      AND e.coordenada_latitud  IS NOT NULL
+      AND e.coordenada_longitud IS NOT NULL
+      AND e.coordenada_latitud  <> 0
+      AND e.coordenada_longitud <> 0
+      AND e.coordenada_latitud  BETWEEN -5  AND 13
+      AND e.coordenada_longitud BETWEEN -81 AND -66
+      AND ca.Id_cargo = 5
+      AND id_evento_tipo = 10 
+    ORDER BY e.fecha_evento ASC;
+    """
+
+    params = {"co": co, "f_ini": f_ini, "f_fin": f_fin}
+    if id_ruta is not None:
+        params["id_ruta"] = id_ruta
+
+    df = sql_read(q, params=params)
+
+    if not df.empty:
+        df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
+        df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
+        df['id_evento'] = pd.to_numeric(df['id_evento'], errors='coerce')
+        df['id_contacto'] = pd.to_numeric(df['id_contacto'], errors='coerce')
+        df['id_evento_tipo'] = pd.to_numeric(df['id_evento_tipo'], errors='coerce')
+        df['apellido'] = df['apellido'].fillna('').astype(str)
+        df = df.dropna(subset=['lat', 'lon', 'fecha_evento'])
+
+    return df
