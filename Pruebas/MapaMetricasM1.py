@@ -79,7 +79,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad (solo cambia esta línea para alternar)
-CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "CALI"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 if CIUDAD not in CIUDADES:
     raise ValueError(f"Ciudad inválida: {CIUDAD}. Disponibles: {list(CIUDADES)}")
 
@@ -89,7 +89,7 @@ CENTROOPE = _cfg["centroope"]
 
 FECHA_INICIO = "2025-01-01"
 FECHA_FIN    = "2025-12-31"
-promotor_num = 3
+promotor_num = 1
 MANUAL_k = False
 K_target = 4
 
@@ -1078,15 +1078,19 @@ def main():
                                 cll = np.array(_from_utm_to_lonlat(np.array([[cx, cy]]), transformer_audit))[0]
                                 folium.CircleMarker([float(cll[0]), float(cll[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(ma)
                             # leyenda
+                            # — Leyenda: mostrar área en km² con separador de miles (formato es-ES),
+                            # quitar 'cubiertos' y mantener pctl NN y β —
+                            _area_km2 = float(mets.get('area_m2', 0.0)) / 1_000_000.0
+                            area_km2_str = "{:,.3f}".format(_area_km2).replace(",", "X").replace(".", ",").replace("X", ".")
+                            perimetro_str = "{:,.0f}".format(float(mets.get('perimetro_m', 0.0))).replace(",", ".")
+
                             legend = f"""
                             <div style='position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;'>
                               <div style='font-weight:600; margin-bottom:6px;'>sub {sub_idx} · r={mets['r_m']:.1f} m</div>
-                              <div>área: {mets['area_m2']:.0f} m²</div>
-                              <div>perímetro: {mets['perimetro_m']:.0f} m</div>
-                              <div>cubiertos: {mets['pct_puntos_cubiertos']:.0%}</div>
+                              <div>área: {area_km2_str} km²</div>
+                              <div>perímetro: {perimetro_str} m</div>
                               <div>n usados: {mets['n_puntos_usados']}</div>
-                              <div>pctl NN: {RADIO_PCTL}</div>
-                              <div>β: {RADIO_BETA}</div>
+                             
                             </div>
                             """
                             ma.get_root().html.add_child(folium.Element(legend))

@@ -83,6 +83,11 @@ Pruebas/Resultados M1/**
 Pruebas/Resultados M1/*.html
 Pruebas/Resultados M1/*.csv
 
+Pruebas/Resultados M2/**
+Pruebas/Resultados M2/*.html
+Pruebas/Resultados M2/*.csv
+
+
 # ⚠️ No ignores todo *.html / *.pdf globalmente
 # Si necesitas ignorar PDFs de informes, hazlo por carpeta:
 # reports/**/*.pdf
