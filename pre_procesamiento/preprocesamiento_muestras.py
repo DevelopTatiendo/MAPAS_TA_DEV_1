@@ -155,16 +155,7 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
     Solo incluye autores que sean promotores (cargo = 39).
     Retorna un DataFrame.
     """
-    # Si se pasan promotores, filtrar solo los que sean cargo=39
-    if promotores is not None and len(promotores) > 0:
-        promotores = filtrar_ids_por_cargo(promotores, 39)
-        if not promotores:
-            # Si ninguno es promotor, retornar DataFrame vacío
-            return pd.DataFrame(columns=[
-                'id_muestra', 'id_contacto', 'fecha_evento', 'id_autor',
-                'coordenada_longitud', 'coordenada_latitud', 'medio_contacto',
-                'tipo_evento', 'tipo_categoria', 'id_barrio', 'apellido_autor'
-            ])
+    # (Refactor Fase 1) Eliminado pre-filtrado adicional por cargo; el JOIN ya restringe a promotores (id_cargo=39).
     
     # Construir consulta base con INNER JOIN a personal para filtrar cargo=39
     query = """

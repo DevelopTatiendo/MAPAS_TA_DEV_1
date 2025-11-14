@@ -582,21 +582,41 @@ def get_promotor_display_name(pid, df_filtrado, legend_name_map=None):
     
     return f"Promotor {pid_str}"
 
-def build_promotores_groups(df, parent_group, colores_promotores_map, legend_name_map=None, mapa=None):
-    """Construye subgrupos (FeatureGroupSubGroup) por promotor, ordenados desc.
+def build_promotores_groups(
+    df,
+    parent_group,
+    colores_promotores_map,
+    legend_name_map=None,
+    mapa=None,
+    grupos_por_promotor=None,
+):
+    """Construye subgrupos (FeatureGroupSubGroup) por promotor.
+    Permite reutilizar un dict precomputado {id_autor: df_sub} para evitar repetidos groupby.
     Devuelve lista de tuplas (nombre_promotor, subgrupo, count, color)."""
-    promotor_counts = df.groupby('id_autor').size().sort_values(ascending=False)
+    # Fuente de agrupación única
+    if grupos_por_promotor is None:
+        grupos_por_promotor = dict(tuple(df.groupby('id_autor')))
+
+    # Conteos derivados de grupos_por_promotor
+    promotor_counts = {pid: len(df_sub) for pid, df_sub in grupos_por_promotor.items()}
+    # Ordenar ids por cantidad desc (criterio original preservado)
+    orden_ids = sorted(promotor_counts.keys(), key=promotor_counts.get, reverse=True)
 
     grupos_promotores = []
-    for idx, (pid, count) in enumerate(promotor_counts.items()):
-        datos_promotor = df[df['id_autor'] == pid]
-        if datos_promotor.empty:
+    valores_colores = list(colores_promotores_map.values()) or ["#64748B"]
+    for idx, pid in enumerate(orden_ids):
+        datos_promotor = grupos_por_promotor.get(pid)
+        if datos_promotor is None or datos_promotor.empty:
             continue
+        count = promotor_counts.get(pid, len(datos_promotor))
 
         nombre_promotor = get_promotor_display_name(pid, df, legend_name_map)
-        color_promotor = colores_promotores_map.get(str(pid)) or colores_promotores_map.get(pid) or list(colores_promotores_map.values())[idx % max(1, len(colores_promotores_map))]
+        color_promotor = (
+            colores_promotores_map.get(str(pid))
+            or colores_promotores_map.get(pid)
+            or valores_colores[idx % len(valores_colores)]
+        )
 
-        # Subgrupo dentro de PROMOTORES (visible por defecto)
         sg = FeatureGroupSubGroup(parent_group, name=nombre_promotor, show=True)
         if mapa is not None:
             mapa.add_child(sg)
@@ -606,14 +626,12 @@ def build_promotores_groups(df, parent_group, colores_promotores_map, legend_nam
             lng = row.get('coordenada_longitud', row.get('longitud', None))
             if lat is None or lng is None:
                 continue
-
             popup_text = f"""
             <b>Promotor:</b> {nombre_promotor}<br>
             <b>ID:</b> {pid}<br>
-            <b>Barrio:</b> {row.get('barrio', '-')}<br>
+            <b>Barrio:</b> {row.get('barrio', '-') }<br>
             <b>Fecha:</b> {row.get('fecha_evento', row.get('fecha_muestra', '-'))}
             """
-
             folium.CircleMarker(
                 location=[lat, lng],
                 radius=5,
@@ -984,10 +1002,23 @@ def generar_mapa_muestras(
         # Modo PROMOTORES
         if color_mode == "Promotores":
             fg_promotores = folium.FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
-            promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
-            promotores_ordenados = [int(pid) for pid in promotor_counts.index]
+            # (Refactor Fase 1) Agrupación única por promotor reutilizable
+            grupos_por_promotor = dict(tuple(df_filtrado.groupby('id_autor')))
+            promotores_ordenados = sorted(
+                grupos_por_promotor.keys(),
+                key=lambda pid: len(grupos_por_promotor[pid]),
+                reverse=True,
+            )
+            promotores_ordenados = [int(pid) for pid in promotores_ordenados]
             colores_promotores_map = {str(pid): color_for_promotor(centroope, pid) for pid in promotores_ordenados}
-            grupos_promotores = build_promotores_groups(df_filtrado, fg_promotores, colores_promotores_map, legend_name_map, mapa)
+            grupos_promotores = build_promotores_groups(
+                df_filtrado,
+                parent_group=fg_promotores,
+                colores_promotores_map=colores_promotores_map,
+                legend_name_map=legend_name_map,
+                mapa=mapa,
+                grupos_por_promotor=grupos_por_promotor,
+            )
             # Control de capas
             if HAS_TREE_CONTROL:
                 TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
