@@ -327,34 +327,6 @@ with st.form(key="filtros_form"):
         # Opciones de visualización
         with st.expander("Opciones de visualización"):
             verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
-            enable_ism = st.checkbox("Activar ISM (modo legado)", value=False, key="muestras_enable_ism")
-            
-            # ISM Calibración
-            st.markdown("**🎯 Calibración ISM**")
-            st.caption("Overrides opcionales para ajustar el cálculo de ISM sin modificar la configuración base")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                pph_override = st.number_input(
-                    "Personas por hogar", 
-                    min_value=1.0, 
-                    max_value=10.0, 
-                    value=None,
-                    step=0.1,
-                    placeholder="Por defecto según ciudad",
-                    help="Override para personas por hogar (afecta densidad de hogares)"
-                )
-            with col2:
-                hogares_por_m2_override = st.number_input(
-                    "Hogares por m²", 
-                    min_value=0.0, 
-                    max_value=0.01, 
-                    value=None,
-                    step=0.0001,
-                    format="%.6f",
-                    placeholder="Por defecto según ciudad",
-                    help="Override directo para hogares por metro cuadrado"
-                )
         
         # Cuadrantes (opcional)
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -561,11 +533,10 @@ with st.form(key="filtros_form"):
     #         help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
     #     )
     
-    # Guardar overrides ISM en session state
-    if 'pph_override' in locals():
-        st.session_state["pph_override"] = pph_override if pph_override else None
-    if 'hogares_por_m2_override' in locals():
-        st.session_state["hogares_por_m2_override"] = hogares_por_m2_override if hogares_por_m2_override else None
+    # Limpieza de cualquier estado previo relacionado con ISM
+    st.session_state.pop("pph_override", None)
+    st.session_state.pop("hogares_por_m2_override", None)
+    st.session_state.pop("muestras_enable_ism", None)
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -749,68 +720,7 @@ elif tipo_mapa == "Muestras":
         )
         st.markdown('</div></div>', unsafe_allow_html=True)
 
-# 3. Descarga CSV ISM (métricas por cuadrante)
-if tipo_mapa == "Muestras":
-    df_ism_export = st.session_state.get("muestras_ism_df")
-    
-    if df_ism_export is not None and not df_ism_export.empty:
-        from datetime import datetime
-        import re
-        
-        def _fmt_yyyymmdd(x):
-            try:
-                if hasattr(x, 'strftime'):
-                    return x.strftime("%Y%m%d")
-                if isinstance(x, str) and x:
-                    cleaned = x.replace("-", "")
-                    if len(cleaned) >= 8 and cleaned[:8].isdigit():
-                        return cleaned[:8]
-            except Exception:
-                pass
-            return datetime.now().strftime("%Y%m%d")
-        
-        meta_ism = st.session_state.get("muestras_export_meta", {})
-        ciudad_ism = re.sub(r'[^A-Za-z0-9]', '', meta_ism.get("ciudad", ciudad).upper())
-        ciudad_ism = ciudad_ism.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
-        
-        fecha_inicio_ism = _fmt_yyyymmdd(meta_ism.get("fecha_inicio"))
-        fecha_fin_ism = _fmt_yyyymmdd(meta_ism.get("fecha_fin"))
-        
-        filename_ism = f"ISM_Muestras_{ciudad_ism}_{fecha_inicio_ism}_{fecha_fin_ism}.csv"
-        
-        csv_data_ism = df_ism_export.to_csv(index=False, decimal=',').encode('utf-8-sig')
-        
-        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-        st.download_button(
-            label="📥 Descargar CSV ISM (métricas por cuadrante)",
-            data=csv_data_ism,
-            file_name=filename_ism,
-            mime="text/csv",
-            type="secondary",
-            use_container_width=True,
-            help="Descarga métricas ISM por cuadrante"
-        )
-        st.markdown('</div></div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-        st.button(
-            "📥 Descargar CSV ISM (métricas por cuadrante)",
-            disabled=True,
-            type="secondary",
-            use_container_width=True,
-            help="Genere un mapa para habilitar esta descarga."
-        )
-        st.markdown('</div></div>', unsafe_allow_html=True)
-elif tipo_mapa == "Consultores":
-    st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-    st.button(
-        "📥 Descargar CSV ISM (métricas por cuadrante)",
-        disabled=True,
-        type="secondary",
-        use_container_width=True,
-        help="ISM no disponible para Consultores"
-    )
-    st.markdown('</div></div>', unsafe_allow_html=True)
+# 3. (Eliminado) Descarga CSV ISM
 
 # Cerrar card "Resultados y Descargas"
 st.markdown('</div>', unsafe_allow_html=True)
@@ -915,10 +825,7 @@ if submit_button:
         if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
-            # Obtener overrides ISM de los controles
-            pph_override = st.session_state.get("pph_override")
-            hogares_por_m2_override = st.session_state.get("hogares_por_m2_override")
-            
+
             resultado = manejar_error(
                 generar_mapa_muestras,
                 fecha_inicio,
@@ -929,26 +836,12 @@ if submit_button:
                 override_fc,
                 color_mode,
                 verificar_areas,
-                hogares_por_m2_override,
-                pph_override,
-                enable_ism=st.session_state.get("muestras_enable_ism", False)
             )
             if resultado:
-                # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)
-                if isinstance(resultado, tuple) and len(resultado) == 4:
-                    filename, n_puntos, df_csv, df_ism = resultado
-                    st.session_state["muestras_export_df"] = df_csv
-                    st.session_state["muestras_ism_df"] = df_ism  # Nuevo: ISM DataFrame
-                    st.session_state["muestras_export_meta"] = {
-                        "ciudad": ciudad, 
-                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
-                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
-                    }
-                elif isinstance(resultado, tuple) and len(resultado) == 3:
-                    # Compatibilidad con formato anterior (sin ISM)
+                # Formato final: (filename, n_puntos, df_csv)
+                if isinstance(resultado, tuple) and len(resultado) == 3:
                     filename, n_puntos, df_csv = resultado
                     st.session_state["muestras_export_df"] = df_csv
-                    st.session_state["muestras_ism_df"] = None
                     st.session_state["muestras_export_meta"] = {
                         "ciudad": ciudad, 
                         "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
@@ -957,7 +850,6 @@ if submit_button:
                 else:
                     filename, n_puntos = resultado
                     st.session_state["muestras_export_df"] = None
-                    st.session_state["muestras_ism_df"] = None
                     st.session_state["muestras_export_meta"] = None
                 # Guardar filename para el botón de descarga HTML
                 st.session_state["muestras_last_filename"] = filename
@@ -965,7 +857,6 @@ if submit_button:
                 filename, n_puntos = None, 0
                 st.session_state["muestras_last_filename"] = None
                 st.session_state["muestras_export_df"] = None
-                st.session_state["muestras_ism_df"] = None  # Nuevo: limpiar ISM
                 st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
