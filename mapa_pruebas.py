@@ -1,548 +1,335 @@
-# Version 12 - Última versión con todos los cambios
-import pandas as pd
-import folium
-from folium.plugins import MarkerCluster, HeatMap
-import json
-from datetime import datetime
-import numpy as np
-from pre_procesamiento.preprocesamiento_pedidos import crear_df
-import unicodedata
-from sklearn.cluster import DBSCAN
+"""
+Módulo "Pruebas" - Genera mapas con eventos sobre cuadrantes de rutas.
+Sin métricas, solo puntos con MarkerCluster sobre base GeoJSON de rutas.
+"""
+
 import os
+import json
+import unicodedata
+import time
 import logging
-from shapely.geometry import Point, Polygon, MultiPolygon
-# Configuración de logging
-logging.basicConfig(level=logging.INFO)
+from pathlib import Path
+from datetime import datetime
+import folium
+import pandas as pd
+
+from pre_procesamiento.preprocesamiento_consultores import (
+    eventos_con_coordenadas_ciudad_y_rango
+)
+
+# Configurar logging
 logger = logging.getLogger(__name__)
 
-# Configuraciones globales
-RUTAS_COORDENADAS = {
-    'CALI': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_CALI.csv",
-    'MEDELLIN': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_MEDELLIN.csv",
-    'MANIZALES': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_MANIZALES.csv",
-    'PEREIRA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_PEREIRA.csv",
-    'BOGOTA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BOGOTA.csv",
-    'BARRANQUILLA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BARRANQUILLA.csv",
-    'BUCARAMANGA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BUCARAMANGA.csv"
-}
+STATIC_MAPS = Path("static/maps")
 
+# --- Centros y fallback de GeoJSON por ciudad (provistos por Camilo) ---
 COORDENADAS_CIUDADES = {
-    'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
+    'CALI': ([3.4516, -76.5320], 'geojson/pap/cali_base.geojson'),
     'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-    'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
-    'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
+    'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),  # Usar archivo estándar
+    'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
     'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
     'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
     'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
 }
 
-CENTROOPES = {
-    'CALI': 2,
-    'MEDELLIN': 3,
-    'MANIZALES': 6,
-    'PEREIRA': 5,
-    'BOGOTA': 4,
-    'BARRANQUILLA': 8,
-    'BUCARAMANGA': 7
-}
+def _slug_ciudad(nombre: str) -> str:
+    """Convierte nombre de ciudad a slug (minúsculas, sin tildes)."""
+    s = ''.join(c for c in unicodedata.normalize('NFD', nombre) if unicodedata.category(c) != 'Mn')
+    return s.lower()
 
-def cargar_comunas_geojson(mapa, geojson_file_path):# se puede agregar el atributo de comuna por si se quire aplicar este filtro
+def _city_key(nombre: str) -> str:
+    """Normaliza a clave de diccionario (MAYÚSCULAS sin tildes)."""
+    s = ''.join(c for c in unicodedata.normalize('NFD', nombre) if unicodedata.category(c) != 'Mn')
+    return s.upper()
+
+def _city_center(ciudad: str, df: pd.DataFrame | None) -> list[float]:
+    """Centro del mapa: primero diccionario, si no existe usa bounding box de los datos."""
+    k = _city_key(ciudad)
+    if k in COORDENADAS_CIUDADES:
+        return COORDENADAS_CIUDADES[k][0]
+    if df is not None and not df.empty:
+        return [ (df["lat"].min() + df["lat"].max())/2, (df["lon"].min() + df["lon"].max())/2 ]
+    # fallback Colombia
+    return [4.65, -74.1]
+
+def _geojson_rutas_path(ciudad: str) -> Path:
+    """Retorna path al GeoJSON de rutas para la ciudad."""
+    slug = _slug_ciudad(ciudad)
+    return Path(f"geojson/rutas/{slug}/cuadrantes_rutas_{slug}.geojson")
+
+def _geojson_fallback_por_ciudad(ciudad: str) -> Path | None:
+    """Devuelve el GeoJSON de la tabla como fallback si existe; si no, None."""
+    k = _city_key(ciudad)
+    if k in COORDENADAS_CIUDADES:
+        p = Path(COORDENADAS_CIUDADES[k][1])
+        return p if p.exists() else None
+    return None
+
+def _style_cuadrante(feature):
+    """Estilo de cuadrantes usando colores del GeoJSON (igual que Consultores)."""
+    p = feature.get('properties', {}) or {}
+    return {
+        'fillColor': p.get('fillColor', '#ffd24d'),
+        'color': p.get('color', '#111111'),
+        'weight': p.get('weight', 1),
+        'fillOpacity': p.get('fillOpacity', 0.35),
+    }
+
+def _label_cuadrante_from_props(props: dict) -> str:
     """
-    Carga las comunas GeoJSON en el mapa como capas.
-    
-    Args:
-        mapa: Objeto folium.Map
-        ciudad: Nombre de la ciudad
+    Retorna el texto a mostrar en el tooltip del cuadrante.
+    Prioridad: texto opcional -> nombre/label/etiqueta -> codigo.
     """
-     
-    # Leer GeoJSON de las comunas y agregar polígonos al mapa
+    if not props:
+        return ""
+    for k in ("texto", "texto_opc", "texto_opcional", "nombre", "label", "etiqueta"):
+        v = (props.get(k) or "").strip()
+        if v:
+            return v
+    v = str(props.get("codigo", "")).strip()
+    return v or "N/D"
+
+def _color_evento(tipo):
+    """Retorna color para evento según tipo (verde para ventas 57/58, gris para resto)."""
     try:
-        with open(geojson_file_path, 'r', encoding='utf-8') as file:
-            comunas_geojson = json.load(file)
-        # Añadir la capa de límites de barrios usando el GeoJSON
-        for feature in comunas_geojson['features']:
-            comuna_name = feature['properties']['NOMBRE']
-            geom = feature['geometry']
-            popup_text = f"{comuna_name}"
-            folium.GeoJson(
-                data=geom,
-                name=comuna_name,
-                style_function=lambda feature: {
-                    'fillColor': '#ffff00',
-                    'color': 'black',
-                    'weight': 1,
-                    'fillOpacity': 0.1
-                },
-                popup=folium.Popup(popup_text, parse_html=True)
-            ).add_to(mapa)
+        t = int(tipo) if tipo is not None else None
+    except Exception:
+        t = None
+    if t in (57, 58):
+        return "#16a34a"   # verde (ventas en ruta)
+    return "#374151"       # gris oscuro
 
-
-    
-
-        logger.info("GeoJSON de comunas agregado al mapa .")
-
-    except Exception as e:
-        logger.error(f"Error al cargar GeoJSON de comunas: {e}")
-    return mapa
-def get_cluster_radius(zoom):
-    if zoom <= 11:
-        return 120  # Radio muy amplio para zoom inicial
-    elif zoom <= 12:
-        return 80   # Radio amplio para zoom nivel 2
-    elif zoom <= 13:
-        return 60   # Radio medio para zoom nivel 3
-    elif zoom <= 14:
-        return 40   # Radio pequeño para zoom más cercano
-    else:
-        return 30   # Valo
-
-def generar_mapa_pruebas(fecha_inicio, fecha_fin, ciudad, nom_ruta=None):
-    ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
-    print("Ciudad recibida en generar_mapa_pedidos:", ciudad)
-
-    # Convertir fechas a cadenas si es necesario
-    fecha_inicio = str(fecha_inicio)
-    fecha_fin = str(fecha_fin)
-
-    if ciudad in RUTAS_COORDENADAS:
-        centroope = CENTROOPES[ciudad]
-        ruta_coordenadas = RUTAS_COORDENADAS[ciudad]
-        location, geojson_file_path = COORDENADAS_CIUDADES[ciudad]
-
-        # Obtener el DataFrame combinado
-        df_pedidos = crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas)
-    else:
-        print(f"Ciudad no reconocida: {ciudad}")
-        return
-
-    # Cargar el archivo GeoJSON de comunas
-    print(geojson_file_path)
-    with open(geojson_file_path, 'r') as file:
-        barrios_geojson = json.load(file)
-
-    if nom_ruta:
-        df_pedidos['nom_ruta'] = df_pedidos['nom_ruta'].astype(str)
-        df_pedidos = df_pedidos[df_pedidos['nom_ruta'] == nom_ruta]
-
-    if df_pedidos.empty:
-        print("No hay datos para las fechas y ruta seleccionadas.")
-        return
-
-    # Agrupar los datos por latitud, longitud y barrios
-    df_agrupado = df_pedidos.groupby(['latitud', 'longitud', 'barrio', 'nom_ruta']).size().reset_index(name='cantidad')
-
-    # Crear el mapa centrado en la ciudad
-    mapa = folium.Map(location, zoom_start=12)
-
-    # Añadir la capa de límites de barrios usando el GeoJSON
-    for feature in barrios_geojson['features']:
-        barrio_name = feature['properties']['NOMBRE']
-        geom = feature['geometry']
-        popup_text = f"{barrio_name}"
-        folium.GeoJson(
-            data=geom,
-            name=barrio_name,
-            style_function=lambda feature: {
-                'fillColor': '#ffff00',
-                'color': 'black',
-                'weight': 1,
-                'fillOpacity': 0.1
-            },
-            popup=folium.Popup(popup_text, parse_html=True)
-        ).add_to(mapa)
-
-    # Script para los clusters
-    custom_cluster_script_ruta = """
-    function(cluster) {
-        var markers = cluster.getAllChildMarkers();
-        var ruta = markers[0].options.ruta;
-        var totalRuta = markers[0].options.totalRuta;
-        var zoom = cluster._map.getZoom();
-        var clusterCount = markers.length;
-        
-        // Verificar que todos los marcadores sean de la misma ruta
-        if (!markers.every(m => m.options.ruta === ruta)) {
-            return null;
-        }
-
-        var totalPedidos = markers.reduce((sum, m) => sum + (m.options.pedidoCount || 0), 0);
-        
-        // Ajustar el estilo basado en el zoom y el número de marcadores
-        var style = {
-            size: 60,
-            opacity: 0.9,
-            fontSize: '16px'
-        };
-
-        if (zoom <= 12) {
-            // Vista general: mostrar total por ruta
-            style = {
-                size: 60,
-                opacity: 0.9,
-                fontSize: '16px',
-                color: 'rgba(50, 50, 50, 0.9)'
-            };
-            totalPedidos = totalRuta;
-        } else if (zoom <= 13) {
-            // Nivel medio: clusters más grandes
-            style = {
-                size: Math.min(55, Math.max(45, clusterCount + 20)),
-                opacity: 0.85,
-                fontSize: '14px',
-                color: 'rgba(50, 50, 50, 0.85)'
-            };
-        } else if (zoom <= 14) {
-            // Nivel detallado: clusters más pequeños
-            style = {
-                size: Math.min(45, Math.max(35, clusterCount + 15)),
-                opacity: 0.8,
-                fontSize: '12px',
-                color: 'rgba(50, 50, 50, 0.8)'
-            };
-        } else {
-            // Nivel muy detallado: clusters mínimos
-            style = {
-                size: Math.min(35, Math.max(30, clusterCount + 10)),
-                opacity: 0.75,
-                fontSize: '11px',
-                color: 'rgba(50, 50, 50, 0.75)'
-            };
-        }
-
-        return L.divIcon({
-            html: `<div style="
-                background-color: ${style.color};
-                color: white;
-                border-radius: 50%;
-                width: ${style.size}px;
-                height: ${style.size}px;
-                line-height: ${style.size}px;
-                text-align: center;
-                font-size: ${style.fontSize};
-                box-shadow: 0 0 0 2px white;
-                font-family: Arial;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            ">${totalPedidos}</div>`,
-            className: 'marker-cluster-ruta',
-            iconSize: L.point(style.size, style.size)
-        });
-    }
-    """
-
-    # Inicializar el diccionario de clusters y calcular totales por ruta
-    marker_clusters = {}
-    totales_por_ruta = df_agrupado.groupby('nom_ruta')['cantidad'].sum().to_dict()
-
-    # Crear clusters por ruta
-    for ruta in df_agrupado['nom_ruta'].unique():
-        if pd.isna(ruta) or ruta in ['EMPLEADOS', 'TRANSPORTADORA']:
-            continue
-        
-        marker_clusters[ruta] = MarkerCluster(
-            name=f"Puntos de entrega {ruta}",
-            icon_create_function=custom_cluster_script_ruta,
-            disableClusteringAtZoom=15,
-            maxClusterRadius=80,  # Valor fijo que funciona bien para todos los zooms
-            spiderfyOnMaxZoom=True,
-            chunkedLoading=True,
-            zoomToBoundsOnClick=True,
-            animate=True,
-            animateAddingMarkers=True
-        ).add_to(mapa)
-
-    # Añadir los marcadores a sus respectivos clusters
-    for _, row in df_agrupado.iterrows():
-        if pd.isna(row['nom_ruta']) or row['nom_ruta'] in ['EMPLEADOS', 'TRANSPORTADORA']:
-            continue
-
-        popup_text = f"Ruta: {row['nom_ruta']}<br>{row['barrio']}: {row['cantidad']} pedidos"
-        marker = folium.Marker(
-            location=[row['latitud'], row['longitud']],
-            icon=folium.DivIcon(html=f"""<div style="background-color:rgba(50, 50, 50, 0.8); 
-                                            color:white; 
-                                            border-radius:50%; 
-                                            text-align:center; 
-                                            padding:5px; 
-                                            width:30px; 
-                                            height:30px; 
-                                            line-height:30px;">
-                                    {row['cantidad']}
-                                </div>"""),
-            popup=popup_text
-        )
-        
-        # Añadir información adicional al marcador
-        marker.options['pedidoCount'] = row['cantidad']
-        marker.options['ruta'] = row['nom_ruta']
-        marker.options['totalRuta'] = totales_por_ruta[row['nom_ruta']]
-        
-        try:
-            marker_clusters[row['nom_ruta']].add_child(marker)
-        except KeyError:
-            print(f"No se encontró cluster para la ruta: {row['nom_ruta']}")
-
-    # Calcular estadísticas
-    rango_dias = (pd.to_datetime(fecha_fin) - pd.to_datetime(fecha_inicio)).days + 1
-    cantidad_barrios = df_pedidos['barrio'].nunique()
-    total_cantidad = df_pedidos.shape[0]
-    promedio_pedidos = total_cantidad / rango_dias if rango_dias > 0 else 0
-    promedio_pedidos_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
-
-    # Preparar datos para las estadísticas
-    stats_data = {
-        'nom_ruta': nom_ruta if nom_ruta else "Todas",
-        'fecha_inicio': fecha_inicio,
-        'fecha_fin': fecha_fin,
-        'promedio_pedidos': promedio_pedidos,
-        'cantidad_barrios': cantidad_barrios,
-        'promedio_pedidos_barrios': promedio_pedidos_barrios,
-        'total_cantidad': total_cantidad
-    }
-
-    # Agregar el label flotante con estadísticas
-    html_content = f"""
+def _build_legend(ciudad: str, id_ruta: int | str, fi_str: str, ff_str: str, total: int) -> str:
+    """HTML de tarjeta fija arriba-izquierda con resumen."""
+    fi_d = (fi_str or "")[:10]
+    ff_d = (ff_str or "")[:10]
+    rango = fi_d if fi_d == ff_d else f"{fi_d} – {ff_d}"
+    return f"""
     <div style="
-        position: fixed;
-        top: 20px;
-        left: 20px;
-        background-color: white;
-        padding: 15px;
-        border-radius: 5px;
-        box-shadow: 0 0 10px rgba(0,0,0,0.2);
-        z-index: 1000;
-        font-family: Arial, sans-serif;
-        min-width: 250px;
-    ">
-        <h4 style="margin: 0 0 10px 0;">Resumen de Pedidos</h4>
-        <table style="width: 100%; border-collapse: collapse;">
-            <tr>
-                <td style="padding: 3px 0;">Ruta:</td>
-                <td style="padding: 3px 0;"><b>{stats_data['nom_ruta']}</b></td>
-            </tr>
-            <tr>
-                <td style="padding: 3px 0;">Fechas:</td>
-                <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
-            </tr>
-            <tr>
-                <td style="padding: 3px 0;">Pedidos/día:</td>
-                <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos']:.1f}</b></td>
-            </tr>
-            <tr>
-                <td style="padding: 3px 0;">Total barrios:</td>
-                <td style="padding: 3px 0;"><b>{stats_data['cantidad_barrios']}</b></td>
-            </tr>
-            <tr>
-                <td style="padding: 3px 0;">Pedidos/barrio:</td>
-                <td style="padding: 3px 0;"><b>{stats_data['promedio_pedidos_barrios']:.1f}</b></td>
-            </tr>
-            <tr style="border-top: 1px solid #eee;">
-                <td style="padding: 5px 0;"><b>Total pedidos:</b></td>
-                <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
-            </tr>
-        </table>
+      position: fixed; top: 12px; left: 12px; z-index: 9999;
+      background: rgba(255,255,255,0.95); border: 1px solid #e5e7eb;
+      border-radius: 8px; padding: 10px 12px; box-shadow: 0 1px 6px rgba(0,0,0,.15);
+      font: 13px/1.3 Arial, sans-serif; min-width: 220px;">
+      <div style="font-weight: 700; margin-bottom: 4px;">
+        Consultores — {str(ciudad).upper()}
+      </div>
+      <div><b>Ruta:</b> {id_ruta}</div>
+      <div><b>Fechas:</b> {rango}</div>
+      <div><b>Total puntos:</b> {total}</div>
     </div>
     """
-    
-    mapa.get_root().html.add_child(folium.Element(html_content))
 
-    # Crear el HeatMap
-    heat_data = df_agrupado[['latitud', 'longitud', 'cantidad']].values
-    heat_data[:, 2] = np.log1p(heat_data[:, 2])
-    HeatMap(heat_data, radius=13, blur=7).add_to(mapa)
-
-    # Añadir control de capas
-    folium.LayerControl().add_to(mapa)
-
-    # Guardar el mapa
-    filename = f"mapa_pruebas.html"
-    filepath = f"static/maps/{filename}"
-    mapa.save(filepath)
-    return filename
-
-def generar_mapa_pruebas_proyeccion(ciudad: str,
-                                    ruta_id_ui: int|None,
-                                    ruta_nombre_ui: str|None,
-                                    fecha_objetivo: str) -> str:
+def generar_mapa_pruebas(ciudad: str, id_ruta: int | None, fecha_inicio, fecha_fin) -> tuple[str, int]:
     """
-    1) Resolver id_ruta real (mismo flujo que Consultores).
-    2) Cargar GeoJSON único por ciudad (mismo flujo que Consultores).
-    3) Filtrar features de la ruta (padres/hijos).
-    4) Llamar al prepro de proyección para obtener contactos + coords robustas.
-    5) Pintar cuadrantes + puntos con popup (id_contacto, fecha_prox, eventos_usados, dispersion_m, confianza).
-    6) Fit bounds y devolver path del HTML generado (p.ej. 'mapa_pruebas_proyeccion.html').
+    Genera mapa Folium con eventos (consultores) sobre base GeoJSON de RUTAS de la ciudad.
+    
+    Características:
+    - Sin cálculo por cuadrante
+    - Sin comunas (solo rutas o basemap)
+    - Puntos individuales (sin MarkerCluster)
+    - Colores por tipo de evento
+    - Permite id_ruta=None para mostrar TODAS las rutas
+    
+    Args:
+        ciudad (str): Nombre de la ciudad (con acentos)
+        id_ruta (int | None): ID de la ruta de cobro, o None para todas las rutas
+        fecha_inicio (date): Fecha de inicio
+        fecha_fin (date): Fecha de fin
+    
+    Returns:
+        tuple[str, int]: (filename, n_puntos)
+        - filename: Nombre del archivo HTML generado
+        - n_puntos: Total de eventos renderizados
+    
+    Raises:
+        Exception: Si hay errores en la generación del mapa
     """
     try:
-        # Importar utilidades reutilizables de Consultores
-        from mapa_consultores import (
-            _cargar_geojson_ciudad_unico, filter_features_by_route, 
-            resolve_route_id, get_co, _style_cuadrante, _style_no_cuadrante,
-            _es_cuadrante, _coords_and_geojson, _norm_city
-        )
-        from pre_procesamiento.preprocesamiento_proyeccion_visitas import contactos_proyeccion_visitas
+        # Asegurar que existe el directorio de salida
+        STATIC_MAPS.mkdir(parents=True, exist_ok=True)
         
-        logging.info(f"Generando mapa proyección visitas - Ciudad: {ciudad}, ruta_id_ui: {ruta_id_ui}, ruta_nombre_ui: {ruta_nombre_ui}, fecha: {fecha_objetivo}")
+        # 1) Normalizar ciudad
+        ciudadN = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
         
-        # 1) Resolver id_ruta real (mismo flujo que Consultores)
-        ruta_result = resolve_route_id(ruta_id_ui, ruta_nombre_ui, ciudad)
-        if ruta_result is None:
-            logging.warning(f"No se pudo resolver ruta para: id_ui={ruta_id_ui}, nombre_ui={ruta_nombre_ui}")
-            raise ValueError("Ruta no resuelta")
-        
-        id_ruta_real, nombre_ruta_resuelto = ruta_result
-        
-        # 2) Cargar GeoJSON único por ciudad (mismo flujo que Consultores)
-        try:
-            geojson_completo = _cargar_geojson_ciudad_unico(ciudad)
-        except FileNotFoundError as e:
-            logging.warning(f"GeoJSON no encontrado para {ciudad}: {e}")
-            raise e
-        
-        # 3) Filtrar features de la ruta (padres/hijos)
-        padres_ruta, hijos_ruta, subset_fc = filter_features_by_route(
-            geojson_completo, id_ruta_real, mostrar_todos=False
-        )
-        
-        if not padres_ruta and not hijos_ruta:
-            logging.warning(f"No se encontraron cuadrantes para la ruta {id_ruta_real}")
-        
-        # 4) Llamar al prepro de proyección para obtener contactos + coords robustas
-        co = get_co(ciudad)
-        df_contactos = contactos_proyeccion_visitas(co, id_ruta_real, fecha_objetivo)
-        
-        total_contactos = len(df_contactos) if df_contactos is not None and not df_contactos.empty else 0
-        contactos_con_coords = 0
-        
-        if df_contactos is not None and not df_contactos.empty:
-            contactos_con_coords = len(df_contactos[
-                (df_contactos['lat'].notna()) & (df_contactos['lon'].notna())
-            ])
-        
-        logging.info(f"Contactos encontrados: {total_contactos}, con coordenadas: {contactos_con_coords}")
-        
-        # 5) Crear mapa base y configurar ubicación
-        ciudadN = _norm_city(ciudad)
-        centers = _coords_and_geojson()
-        location = centers.get(ciudadN, [4.6097, -74.0817])[0]  # Default Bogotá
-        
-        mapa = folium.Map(location=location, zoom_start=12)
-        
-        # 6) Pintar cuadrantes filtrados (mismo estilo/leyenda que Consultores)
-        if subset_fc.get('features'):
-            for feature in subset_fc['features']:
-                if _es_cuadrante(feature):
-                    # Es un cuadrante: aplicar estilo normal
-                    folium.GeoJson(
-                        data=feature,
-                        style_function=lambda f: _style_cuadrante(f),
-                        popup=folium.Popup(
-                            f"<b>Cuadrante:</b> {feature.get('properties', {}).get('codigo', 'Sin código')}",
-                            max_width=200
-                        )
-                    ).add_to(mapa)
-                else:
-                    # No es cuadrante: estilo transparente
-                    folium.GeoJson(
-                        data=feature,
-                        style_function=_style_no_cuadrante,
-                        popup=folium.Popup(
-                            f"Comuna: {feature.get('properties', {}).get('NOMBRE', 'Sin nombre')}",
-                            max_width=200
-                        )
-                    ).add_to(mapa)
-        
-        # 7) Pintar puntos (CircleMarker) por contacto con colores por confianza
-        if df_contactos is not None and not df_contactos.empty:
-            bounds_coords = []
+        # 2) Convertir fechas date → strings con horarios completos
+        if hasattr(fecha_inicio, 'strftime'):
+            fi = f"{fecha_inicio.strftime('%Y-%m-%d')} 00:00:00"
+        else:
+            fi = f"{fecha_inicio} 00:00:00"
             
-            for _, contacto in df_contactos.iterrows():
-                lat = contacto.get('lat')
-                lon = contacto.get('lon')
+        if hasattr(fecha_fin, 'strftime'):
+            ff = f"{fecha_fin.strftime('%Y-%m-%d')} 23:59:59"
+        else:
+            ff = f"{fecha_fin} 23:59:59"
+        
+        # 3) Consultar eventos con coordenadas
+        ruta_display = "TODOS" if id_ruta is None else str(id_ruta)
+        logger.info(f"[PRUEBAS] Consultando eventos - Ciudad:{ciudadN}, Ruta:{ruta_display}, Fechas:{fi} a {ff}")
+        df = eventos_con_coordenadas_ciudad_y_rango(ciudadN, fi, ff, id_ruta)
+        
+        # 4) Si no hay datos, generar mapa dummy
+        if df is None or df.empty:
+            logger.warning(f"[PRUEBAS] Sin datos para Ciudad:{ciudadN}, Ruta:{ruta_display}, Fechas:{fi}-{ff}")
+            # Centro usando diccionario o fallback
+            m_center = _city_center(ciudad, None)
+            m = folium.Map(location=m_center, zoom_start=12)
+            folium.Marker(
+                m_center, 
+                tooltip="Sin datos en el rango especificado",
+                icon=folium.Icon(color='gray', icon='info-sign')
+            ).add_to(m)
+            
+            # Agregar leyenda con total 0
+            m.get_root().html.add_child(folium.Element(_build_legend(ciudad, ruta_display, fi, ff, 0)))
+            
+            # Guardar
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ruta_slug = "todos" if id_ruta is None else str(id_ruta)
+            filename = f"pruebas_{_slug_ciudad(ciudad)}_{ruta_slug}_{ts}.html"
+            m.save(STATIC_MAPS / filename)
+            
+            logger.info(f"[PRUEBAS] Mapa generado (sin datos): {filename}")
+            return filename, 0
+        
+        # 5) Centro del mapa desde diccionario; si no, desde datos
+        m_center = _city_center(ciudad, df)
+        
+        # 6) Crear mapa base (OSM por defecto, como Consultores)
+        m = folium.Map(location=m_center, zoom_start=12)
+        
+        # 7) Cargar GeoJSON de RUTAS; si no existe, usar fallback por ciudad
+        gj_path = _geojson_rutas_path(ciudad)
+        geojson_loaded = False
+        
+        # 7.1 Intento 1: RUTAS
+        if gj_path.exists():
+            try:
+                with open(gj_path, "r", encoding="utf-8") as f:
+                    gj = json.load(f)
                 
-                if pd.notna(lat) and pd.notna(lon):
-                    bounds_coords.append([lat, lon])
+                # Crear FeatureGroup para las rutas
+                fg_rutas = folium.FeatureGroup(name="Cuadrantes de Rutas", show=True).add_to(m)
+                
+                # Iterar por cada feature para agregar tooltip personalizado
+                for feat in gj.get("features", []):
+                    props = feat.get("properties", {}) or {}
+                    label = _label_cuadrante_from_props(props)
                     
-                    # Colores por confianza: alta → verde, media → naranja, baja → rojo
-                    confianza = contacto.get('confianza', 'sin_datos')
-                    if confianza == 'alta':
-                        color = 'green'
-                    elif confianza == 'media':
-                        color = 'orange'
-                    else:  # baja o sin_datos
-                        color = 'red'
+                    folium.GeoJson(
+                        data=feat,
+                        style_function=_style_cuadrante,
+                        highlight_function=lambda x: {"weight": 2.0, "color": "#5B21B6"},
+                        tooltip=folium.Tooltip(f"<b>{label}</b>", sticky=True, direction="top")
+                    ).add_to(fg_rutas)
+                
+                logger.info(f"✓ GeoJSON de rutas cargado: {gj_path}")
+                geojson_loaded = True
+            except Exception as e:
+                logger.warning(f"⚠️ Error cargando rutas {gj_path}: {e}")
+        
+        # 7.2 Intento 2: Fallback por ciudad (pap/comunas que definiste)
+        if not geojson_loaded:
+            fb = _geojson_fallback_por_ciudad(ciudad)
+            if fb is not None:
+                try:
+                    with open(fb, "r", encoding="utf-8") as f:
+                        gj = json.load(f)
                     
-                    # Popup: id_contacto, fecha_prox_visita_venta, eventos_usados, dispersion_m (m), confianza_coord
-                    id_contacto = contacto.get('id_contacto', 'N/A')
-                    fecha_prox = contacto.get('fecha_prox_visita_venta', fecha_objetivo)
-                    eventos_usados = contacto.get('k_eventos_usados', 0)
-                    dispersion = contacto.get('dispersion_m')
-                    dispersion_str = f"{dispersion:.1f} m" if dispersion is not None else "N/A"
-                    nombre = contacto.get('nombre_contacto', 'Sin nombre')
-                    telefono = contacto.get('telefono', 'Sin teléfono')
+                    # Crear FeatureGroup para el fallback
+                    fg_fallback = folium.FeatureGroup(name="Base ciudad", show=True).add_to(m)
                     
-                    popup_text = f"""
-                    <b>ID Contacto:</b> {id_contacto}<br>
-                    <b>Nombre:</b> {nombre}<br>
-                    <b>Teléfono:</b> {telefono}<br>
-                    <b>Fecha próx visita:</b> {fecha_prox}<br>
-                    <b>Eventos usados:</b> {eventos_usados}<br>
-                    <b>Dispersión:</b> {dispersion_str}<br>
-                    <b>Confianza:</b> {confianza}
-                    """
+                    # Iterar por cada feature para agregar tooltip personalizado
+                    for feat in gj.get("features", []):
+                        props = feat.get("properties", {}) or {}
+                        label = _label_cuadrante_from_props(props)
+                        
+                        folium.GeoJson(
+                            data=feat,
+                            style_function=_style_cuadrante,
+                            highlight_function=lambda x: {"weight": 2.0, "color": "#5B21B6"},
+                            tooltip=folium.Tooltip(f"<b>{label}</b>", sticky=True, direction="top")
+                        ).add_to(fg_fallback)
                     
-                    folium.CircleMarker(
-                        location=[lat, lon],
-                        radius=7,
-                        color=color,
-                        fill=True,
-                        fillColor=color,
-                        fillOpacity=0.7,
-                        weight=2,
-                        popup=folium.Popup(popup_text, max_width=300)
-                    ).add_to(mapa)
-            
-            # Fit bounds compacto si hay puntos
-            if bounds_coords:
-                if len(bounds_coords) == 1:
-                    # Un solo punto: centrar con zoom moderado
-                    mapa.location = bounds_coords[0]
-                    mapa.zoom_start = 15
+                    logger.info(f"✓ GeoJSON fallback cargado: {fb}")
+                    geojson_loaded = True
+                except Exception as e:
+                    logger.warning(f"⚠️ Error cargando fallback {fb}: {e}")
+        
+        if not geojson_loaded:
+            logger.warning("⚠️ No se encontró base geográfica (rutas ni fallback); se mostrará solo basemap.")
+        
+        # 8) Renderizar puntos individuales (sin cluster)
+        n_puntos = 0
+        for _, r in df.iterrows():
+            try:
+                lat = float(r["lat"])
+                lon = float(r["lon"])
+                
+                # Determinar tipo de evento y color
+                tipo = r.get("id_evento_tipo")
+                color = _color_evento(tipo)
+                
+                # Determinar tipo de evento (texto + id si existe)
+                tipo_txt = r.get('tipo_evento')
+                tipo_id = r.get('id_evento_tipo')
+                if pd.notna(tipo_txt) and str(tipo_txt).strip():
+                    tipo_line = str(tipo_txt).strip()
+                    if pd.notna(tipo_id):
+                        tipo_line = f"{tipo_line} (#{int(tipo_id)})"
                 else:
-                    # Múltiples puntos: fit bounds
-                    mapa.fit_bounds(bounds_coords, padding=(20, 20))
+                    # Fallback: solo id o 'N/D'
+                    tipo_line = f"#{int(tipo_id)}" if pd.notna(tipo_id) else "N/D"
+                
+                # Formatear fecha
+                fecha_evento = r.get('fecha_evento', 'Sin fecha')
+                if pd.notna(fecha_evento) and hasattr(fecha_evento, 'strftime'):
+                    fecha_str = fecha_evento.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    fecha_str = str(fecha_evento)
+                
+                popup_html = f"""
+                <div style="font-family: Arial, sans-serif; font-size: 12px; min-width: 220px;">
+                  <b>Tipo:</b> {tipo_line}<br>
+                  <b>Fecha:</b> {fecha_str}<br>
+                  <b>Consultor:</b> {r.get('apellido', 'Sin nombre')}<br>
+                  <b>ID Contacto:</b> {int(r['id_contacto']) if pd.notna(r.get('id_contacto')) else 'N/A'}
+                </div>
+                """
+                
+                folium.CircleMarker(
+                    location=[lat, lon],
+                    radius=4,
+                    color=color,
+                    weight=1,
+                    fill=True,
+                    fillColor=color,
+                    fillOpacity=0.8,
+                    popup=folium.Popup(popup_html, max_width=320)
+                ).add_to(m)
+                
+                n_puntos += 1
+            except Exception as e:
+                logger.warning(f"Error procesando punto {n_puntos}: {e}")
+                continue
         
-        # 8) Banner si no hay puntos
-        mensaje_contactos = f"{contactos_con_coords} contactos" if contactos_con_coords > 0 else "Sin contactos para la fecha seleccionada"
+        # Añadir leyenda final con total de puntos renderizados
+        ruta_display = "TODOS" if id_ruta is None else str(id_ruta)
+        m.get_root().html.add_child(folium.Element(_build_legend(ciudad, ruta_display, fi, ff, n_puntos)))
         
-        # 9) Leyenda con información
-        nombre_ruta_display = nombre_ruta_resuelto or ruta_nombre_ui or f"Ruta {id_ruta_real}"
-        html_leyenda = f"""
-        <div style="position: fixed; top: 20px; left: 20px; background: white; padding: 15px; border-radius: 8px;
-                    box-shadow: 0 0 10px rgba(0,0,0,.15); z-index: 1000; font-family: Arial, sans-serif; min-width: 280px;">
-            <h4 style="margin: 0 0 10px 0; color: #2563eb;">Proyección Visitas - {nombre_ruta_display}</h4>
-            <p style="margin: 2px 0;"><b>Ciudad:</b> {ciudad}</p>
-            <p style="margin: 2px 0;"><b>Fecha objetivo:</b> {fecha_objetivo}</p>
-            <p style="margin: 2px 0;"><b>Contactos:</b> {mensaje_contactos}</p>
-            <hr style="margin: 8px 0;">
-            <p style="margin: 2px 0; font-size: 12px;"><span style="color: green;">●</span> Alta confianza</p>
-            <p style="margin: 2px 0; font-size: 12px;"><span style="color: orange;">●</span> Media confianza</p>
-            <p style="margin: 2px 0; font-size: 12px;"><span style="color: red;">●</span> Baja confianza</p>
-        </div>
-        """
-        mapa.get_root().html.add_child(folium.Element(html_leyenda))
+        # 9) Añadir control de capas
+        folium.LayerControl(collapsed=True).add_to(m)
         
-        # 10) Guardar con filename único y limpio
-        filename = "mapa_pruebas_proyeccion.html"
-        filepath = f"static/maps/{filename}"
-        mapa.save(filepath)
+        # 10) Guardar HTML
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ruta_slug = "todos" if id_ruta is None else str(id_ruta)
+        filename = f"pruebas_{_slug_ciudad(ciudad)}_{ruta_slug}_{ts}.html"
+        m.save(STATIC_MAPS / filename)
         
-        logging.info(f"Mapa proyección visitas generado: {filename} con {contactos_con_coords} contactos")
-        return filename
+        logger.info(f"✓ Mapa Pruebas generado: {filename} con {n_puntos} puntos")
         
-    except ValueError as e:
-        logging.error(f"Error de parámetros en mapa proyección visitas: {str(e)}")
-        raise e
+        return filename, n_puntos
+        
     except Exception as e:
-        logging.error(f"Error generando mapa proyección visitas: {str(e)}")
-        raise e
+        logger.error(f"[PRUEBAS] Error generando mapa: {str(e)}")
+        raise

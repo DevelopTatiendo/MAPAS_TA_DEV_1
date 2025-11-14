@@ -190,9 +190,20 @@
     <!-- Compact Toolbar -->
     <div id="toolbar" class="toolbar">
         <div id="toolbar-primary" class="toolbar-primary">
+            <div id="sistema-toggle" class="mode-toggle">
+                <label class="mode-option">
+                    <input type="radio" name="sistema" value="RUTA" checked>
+                    Rutas
+                </label>
+                <label class="mode-option">
+                    <input type="radio" name="sistema" value="PAP">
+                    PAP
+                </label>
+            </div>
             <button id="btn-crear-padre" class="btn btn-primary">➕ Crear cuadrante (padre)</button>
             <button id="btn-crear-hijo" class="btn btn-primary" disabled>➕ Crear subcuadrantes (hijos)</button>
             <button id="btn-editar-padre" class="btn btn-outline" disabled>✏️ Editar padre</button>
+            <button id="btn-editar-codigo" class="btn btn-outline" disabled>✏️ Editar código</button>
             <button id="btn-editar-hijo" class="btn btn-outline" disabled>✏️ Editar hijos</button>
             <button id="btn-aislar" class="btn btn-outline">🔍 Aislar cuadrante</button>
             <button id="btn-delete-child" class="btn btn-danger" disabled>🗑️ Eliminar hijo</button>

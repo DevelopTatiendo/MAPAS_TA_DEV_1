@@ -101,13 +101,21 @@ def eventos_visitas_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_f
     Columnas: id_evento, id_contacto, lat, lon, fecha_evento, id_cargo, cargo
     """
     q = """
+  
+
     SELECT  e.idEvento            AS id_evento,
             e.id_contacto         AS id_contacto,
             e.coordenada_latitud  AS lat,
             e.coordenada_longitud AS lon,
             e.fecha_evento,
+            e.id_autor,
+            p.apellido AS nomnbre,
             p.id_cargo            AS id_cargo,
-            ca.cargo              AS cargo
+            ca.cargo              AS cargo,
+            id_evento_tipo,
+            tipo_evento
+            
+            
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
@@ -116,8 +124,8 @@ def eventos_visitas_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_f
     JOIN fullclean_personal.personal p               ON p.id = e.id_autor
     JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
     WHERE c.estado = 1
-      AND c.estado_cxc IN (0,1)
-      AND r.id_centroope = %s
+    AND c.estado_cxc IN (0,1)
+    AND r.id_centroope = %s
       AND r.id = %s
       AND e.fecha_evento BETWEEN %s AND %s
       AND e.coordenada_latitud  IS NOT NULL
@@ -126,9 +134,12 @@ def eventos_visitas_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_f
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 181
-      -- AND ca.Id_cargo in (181, 5)
+       AND ca.Id_cargo = 5
+	AND id_evento_tipo in 
+(3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,76,77,78)
+      
     ORDER BY e.fecha_evento ASC;
+    
     """
     cn = _conn()
     df = pd.read_sql(q, cn, params=[centroope, id_ruta, f_ini, f_fin])

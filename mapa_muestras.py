@@ -9,7 +9,14 @@ import streamlit as st
 from folium import FeatureGroup
 from folium.plugins import FeatureGroupSubGroup
 from matplotlib import colors
-from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_metricas_pedidos_por_promotores, compute_ism_metrics_por_cuadrante
+from hashlib import md5
+from pre_procesamiento.preprocesamiento_muestras import (
+    crear_df,
+    obtener_metricas_pedidos_por_promotores,  # usado aún en modo Temporalidad (mes)
+    compute_ism_metrics_por_cuadrante,
+    resolver_nombre_ruta,
+    prepo_metricas_promotores_muestras      # nueva API métricas por promotor (muestras)
+)
 import unicodedata
 from utils.gestor_mapas import guardar_mapa_controlado
 
@@ -40,123 +47,102 @@ PALETA_MESES = {
 
 # Importar control de capas disponibles
 from folium.plugins import GroupedLayerControl
+
+# Intentar usar control de árbol de capas si está disponible en folium
 try:
     from folium.plugins import TreeLayerControl
     HAS_TREE_CONTROL = True
-except ImportError:
+except Exception:
     HAS_TREE_CONTROL = False
 
 
-# Configuración de logs
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+def __fmt_es(valor, decimales=0, miles=True):
+    """Formatea números con estilo ES-CO: separador de miles con punto y decimal con coma.
+    - valor: int|float
+    - decimales: cantidad de cifras decimales
+    - miles: si True, usa separador de miles
+    """
+    try:
+        if valor is None or (isinstance(valor, float) and math.isnan(valor)):
+            return "0" if decimales == 0 else ("0," + ("0" * decimales))
+        if decimales > 0:
+            s = f"{float(valor):,.{decimales}f}"
+        else:
+            s = f"{float(valor):,.0f}"
+        # Cambiar formato US a ES (coma a punto en miles y punto a coma en decimal)
+        s = s.replace(",", "_").replace(".", ",").replace("_", ".")
+        if not miles:
+            # eliminar separador de miles
+            if "," in s:
+                entier, frac = s.split(",", 1)
+                entier = entier.replace(".", "")
+                return f"{entier},{frac}"
+            return s.replace(".", "")
+        return s
+    except Exception:
+        return str(valor)
 
-# === FUNCIONES UTILITARIAS PARA POPUPS DE CUADRANTES ===
-
-# Calculadora geodésica para áreas exactas
-_GEOD = Geod(ellps="WGS84")
 
 def area_m2_geodesic(geom_geojson: dict) -> float:
-    """Calcula área geodésica exacta en m² usando WGS84."""
+    """Calcula el área geodésica en m² de una geometría GeoJSON (Polygon/MultiPolygon)."""
+    g = Geod(ellps="WGS84")
     geom = shape(geom_geojson)
-    area, _ = _GEOD.geometry_area_perimeter(geom)  # m² (puede ser negativa por orientación)
-    return abs(area)
+    area = 0.0
+    try:
+        if geom.geom_type == 'Polygon':
+            lons, lats = geom.exterior.coords.xy
+            area_poly, _ = g.polygon_area_perimeter(lons, lats)
+            area += abs(area_poly)
+            for interior in geom.interiors:
+                lons, lats = interior.coords.xy
+                hole_area, _ = g.polygon_area_perimeter(lons, lats)
+                area -= abs(hole_area)
+        elif geom.geom_type == 'MultiPolygon':
+            for poly in geom.geoms:
+                lons, lats = poly.exterior.coords.xy
+                area_poly, _ = g.polygon_area_perimeter(lons, lats)
+                area += abs(area_poly)
+                for interior in poly.interiors:
+                    lons, lats = interior.coords.xy
+                    hole_area, _ = g.polygon_area_perimeter(lons, lats)
+                    area -= abs(hole_area)
+        else:
+            return 0.0
+        return float(area)
+    except Exception:
+        return 0.0
 
-# === FUNCIONES DE FORMATEO ES-CO ===
 
-def fmt_int_miles(n: float) -> str:
-    """Formateo entero con punto como separador de miles (ES-CO): 501331 -> '501.331'"""
-    return f"{int(round(n)):,}".replace(",", ".")
-
-def fmt_dec_es(n: float, nd: int = 2) -> str:
-    """Formateo decimal con coma (ES-CO): 0.5 -> '0,50'"""
-    return f"{n:.{nd}f}".replace(".", ",")
-
-def fmt_densidad_es(densidad_m2: float, nd: int = 6) -> str:
-    """Formateo densidad con coma decimal (ES-CO): 0.000471 -> '0,000471'"""
-    return f"{densidad_m2:.{nd}f}".replace(".", ",")
-
-def __fmt_es(value: float, dec: int = 0, miles: bool = True) -> str:
+def _asignar_cuadrante_a_puntos(df_pts: pd.DataFrame, features: list) -> pd.Series:
+    """Asigna a cada punto el código de cuadrante cuyo polígono lo contiene.
+    Retorna una Serie indexada igual que df_pts con el código o None.
+    Requiere columnas 'lat' y 'lon' en df_pts.
     """
-    Helper local de formato numérico estilo es-CO.
-    
-    Args:
-        value: Valor numérico a formatear
-        dec: Número de decimales
-        miles: Si True, agrupa miles con punto
-        
-    Returns:
-        str: Número formateado (ejemplo: 838.039 o 8,75)
-    """
-    formatted = f"{value:.{dec}f}"
-    
-    # Separar parte entera y decimal
-    if '.' in formatted:
-        parte_entera, parte_decimal = formatted.split('.')
-    else:
-        parte_entera, parte_decimal = formatted, ""
-    
-    # Aplicar separador de miles si está habilitado
-    if miles and len(parte_entera) > 3:
-        # Agrupar de derecha a izquierda cada 3 dígitos
-        grupos = []
-        for i in range(len(parte_entera), 0, -3):
-            start = max(0, i-3)
-            grupos.append(parte_entera[start:i])
-        parte_entera = '.'.join(reversed(grupos))
-    
-    # Combinar con coma decimal si hay parte decimal
-    if parte_decimal:
-        return f"{parte_entera},{parte_decimal}"
-    else:
-        return parte_entera
-
-def _asignar_cuadrante_a_puntos(df_pts, features_cuadrantes):
-    """
-    Retorna una Serie (index=df_pts.index) con el 'codigo' del cuadrante que contiene cada punto.
-    - No usa geopandas ni reconsulta BD.
-    - Optimiza con: bounds pre-check + shapely.prep.
-    """
-    if df_pts.empty or not features_cuadrantes:
-        return pd.Series([None]*len(df_pts), index=df_pts.index, name="cod_cuadrante")
-
-    # Normalizar columnas de coordenadas
-    work = df_pts.copy()
-    work["lat"] = work.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
-    work["lon"] = work.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
-    work = work.dropna(subset=["lat", "lon"])
-
-    # Precomputar polígonos y cajas
-    polys = []
-    for f in features_cuadrantes:
-        codigo = f.get("properties", {}).get("codigo", "")
+    if df_pts.empty:
+        return pd.Series([None] * 0, name="cod_cuadrante")
+    puntos = []
+    for _, r in df_pts.iterrows():
+        try:
+            puntos.append(Point(float(r['lon']), float(r['lat'])))
+        except Exception:
+            puntos.append(None)
+    res = [None] * len(df_pts)
+    for feat in features:
+        props = feat.get('properties', {})
+        codigo = props.get('codigo') or props.get('CODIGO') or props.get('code') or ''
         if not codigo:
             continue
         try:
-            geom = shape(f.get("geometry", {}))
-            polys.append((codigo, prep(geom), geom.bounds))  # (minx, miny, maxx, maxy)
-        except Exception as e:
-            logging.warning(f"Error procesando geometría del cuadrante {codigo}: {e}")
+            geom = shape(feat.get('geometry', {}))
+            pgeom = prep(geom)
+            for i, p in enumerate(puntos):
+                if p is None:
+                    continue
+                if res[i] is None and pgeom.contains(p):
+                    res[i] = codigo
+        except Exception:
             continue
-
-    result = pd.Series([None]*len(work), index=work.index, name="cod_cuadrante")
-    
-    # Chequeo bbox → contains
-    for idx, row in work.iterrows():
-        try:
-            x, y = float(row["lon"]), float(row["lat"])
-            p = Point(x, y)
-            for codigo, pprep, (minx, miny, maxx, maxy) in polys:
-                if (minx <= x <= maxx) and (miny <= y <= maxy) and pprep.contains(p):
-                    result.at[idx] = codigo
-                    break
-        except Exception as e:
-            logging.warning(f"Error procesando punto en índice {idx}: {e}")
-            continue
-    
-    # Reinsertar a índice original
-    full = pd.Series([None]*len(df_pts), index=df_pts.index, name="cod_cuadrante")
-    full.loc[result.index] = result
-    return full
+    return pd.Series(res, index=df_pts.index, name="cod_cuadrante")
 
 def _conteo_muestras_por_poligono(df_pts, features):
     """
@@ -394,8 +380,7 @@ def _popup_cuadrante_ism(code: str, area_m2: float, m: dict, ciudad: str = None,
         e_raw_fmt = __fmt_es(e_raw, 2, False)
         
         debug_block = f"""
-        <div style="margin-top:8px;padding:6px;background:#f8fafc;border-radius:4px;font-family:monospace;font-size:11px;line-height:1.3;">
-            <div style="font-weight:600;margin-bottom:3px;color:#374151;">Debug técnico:</div>
+        <div style=\"margin-top:8px;padding:6px;background:#f8fafc;border-radius:4px;font-family:monospace;font-size:11px;line-height:1.3;\">
             <div>H_est: {h_est_fmt} · λ_q: {lambda_q_fmt}</div>
             <div>D: {d} · N: {n}</div>
             <div>C_raw: {c_raw_fmt} · E_raw: {e_raw_fmt}</div>
@@ -531,7 +516,7 @@ def _style_cuadrante_padre(feat):
     Estilo más tenue para cuadrantes padre (debajo de los hijos).
     """
     base = _style_cuadrante(feat)
-    base.update({'fillOpacity': 0.15, 'weight': 1.5})  # más tenue que los hijos
+    base.update({'fillOpacity': 0.5, 'weight': 1.5})  # más tenue que los hijos
     return base
 
 def _verificar_area_draw_vs_cache(feature: dict, area_cache: float, tipo_capa: str) -> dict:
@@ -601,6 +586,120 @@ def generate_hsv_colors(n):
     hues = np.linspace(0, 1, n, endpoint=False)
     return [colors.rgb2hex(colors.hsv_to_rgb((hue, 1.0, 1.0))) for hue in hues]
 
+# Paleta determinista (20 colores) para promotores
+PALETTE_PROMOTORES = [
+    "#2563EB", "#DC2626", "#059669", "#D97706", "#7C3AED",
+    "#DB2777", "#0D9488", "#1D4ED8", "#B45309", "#065F46",
+    "#9333EA", "#EA580C", "#047857", "#9D174D", "#4F46E5",
+    "#BE123C", "#0EA5E9", "#6D28D9", "#16A34A", "#B91C1C"
+]
+
+def color_for_promotor(centroope: int, id_autor: int) -> str:
+    """Color estable por (centroope, id_autor) usando hash md5."""
+    try:
+        h = md5(f"{centroope}-{int(id_autor)}".encode()).hexdigest()
+        idx = int(h, 16) % len(PALETTE_PROMOTORES)
+        return PALETTE_PROMOTORES[idx]
+    except Exception:
+        return "#64748B"
+
+# === PALETA DETERMINISTA PARA PROMOTORES (COLORES ESTABLES) ===
+PALETTE_PROMOTORES = [
+    "#2563EB", "#DC2626", "#059669", "#D97706", "#7C3AED",
+    "#DB2777", "#0D9488", "#1D4ED8", "#B45309", "#065F46",
+    "#9333EA", "#EA580C", "#047857", "#9D174D", "#4F46E5",
+    "#BE123C", "#0EA5E9", "#6D28D9", "#16A34A", "#B91C1C"
+]
+
+def color_for_promotor(centroope: int, id_autor: int) -> str:
+    """Devuelve un color determinista estable para un promotor dado un centroope.
+    Usa hash md5(centroope-id_autor) mod len(PALETTE_PROMOTORES).
+    """
+    try:
+        key = f"{centroope}-{int(id_autor)}".encode()
+        h = md5(key).hexdigest()
+        idx = int(h, 16) % len(PALETTE_PROMOTORES)
+        return PALETTE_PROMOTORES[idx]
+    except Exception:
+        return "#64748B"  # Gris fallback
+
+# === Assets para tablas ordenables en leyendas ===
+_TA_SORTABLE_ASSETS_ADDED = False
+
+def inject_sort_assets(mapa):
+        """Inserta CSS y JS para ordenar tablas (idempotente por proceso)."""
+        global _TA_SORTABLE_ASSETS_ADDED
+        if _TA_SORTABLE_ASSETS_ADDED:
+                return
+        css_block = """
+        <style id="ta-sortable-css">
+        .ta-sortable th { cursor:pointer; white-space:nowrap; }
+        .ta-sortable th .ta-sort-arrow { margin-left:6px; opacity:.5; }
+        .ta-sortable th.ta-sort-asc  .ta-sort-arrow::after { content:"▲"; opacity:1; }
+        .ta-sortable th.ta-sort-desc .ta-sort-arrow::after { content:"▼"; opacity:1; }
+        </style>
+        """
+        js_block = """
+        <script id="ta-sortable-js">
+        (function(){
+            if (window.TASortable) return; // idempotencia
+            function normNum(s){
+                if (s==null) return NaN;
+                s = String(s).trim().toLowerCase();
+                if (s==="—" || s==="" || s==="na" || s==="n/d") return NaN;
+                s = s.replace(/\s/g,"");
+                s = s.replace(/[%,$€]/g,"");
+                s = s.replace(/\./g,"");         // quita miles con punto
+                s = s.replace(/,/g,".");         // coma -> punto (por si acaso)
+                var v = parseFloat(s);
+                return isNaN(v) ? NaN : v;
+            }
+            function getCellVal(td, type){
+                const txt = td?.textContent ?? "";
+                if (type==="num" || type==="percent" || type==="money") return normNum(txt);
+                if (type==="date") return new Date(txt).getTime() || 0;
+                return txt.toString().toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu,"");
+            }
+            function sortTable(tbl, colIdx, type, dir){
+                const tbody = tbl.tBodies[0];
+                const rows = Array.from(tbody.rows);
+                rows.sort((a,b)=>{
+                    const va = getCellVal(a.cells[colIdx], type);
+                    const vb = getCellVal(b.cells[colIdx], type);
+                    if (isNaN(va) && isNaN(vb)) return 0;
+                    if (isNaN(va)) return  1;
+                    if (isNaN(vb)) return -1;
+                    return (va<vb?-1:va>vb?1:0) * (dir==="asc"?1:-1);
+                });
+                rows.forEach(r=>tbody.appendChild(r));
+            }
+            function attach(table){
+                if (!table || table.__taSortable) return;
+                table.__taSortable = true;
+                const ths = table.tHead ? Array.from(table.tHead.rows[0].cells) : [];
+                ths.forEach((th, i)=>{
+                    const type = th.dataset.type || "text";
+                    const span = document.createElement("span"); span.className="ta-sort-arrow"; th.appendChild(span);
+                    th.addEventListener("click", ()=>{
+                        const cur = th.classList.contains("ta-sort-asc") ? "asc" : th.classList.contains("ta-sort-desc") ? "desc" : "";
+                        ths.forEach(h=>h.classList.remove("ta-sort-asc","ta-sort-desc"));
+                        const dir = (cur==="" || cur==="desc") ? "asc" : "desc";
+                        th.classList.add(dir==="asc"?"ta-sort-asc":"ta-sort-desc");
+                        sortTable(table, i, type, dir);
+                    });
+                });
+            }
+            window.TASortable = { initAll: function(){ document.querySelectorAll("table.ta-sortable").forEach(attach); }, attach };
+        })();
+        </script>
+        """
+        try:
+                mapa.get_root().html.add_child(folium.Element(css_block))
+                mapa.get_root().html.add_child(folium.Element(js_block))
+                _TA_SORTABLE_ASSETS_ADDED = True
+        except Exception:
+                pass
+
 def get_promotor_display_name(pid, df_filtrado, legend_name_map=None):
     """Función centralizada para obtener el nombre visible del promotor."""
     pid_str = str(pid)
@@ -664,7 +763,7 @@ def build_promotores_groups(df, parent_group, colores_promotores_map, legend_nam
                 color=color_promotor,
                 fill=True,
                 fillColor=color_promotor,
-                fillOpacity=0.7,
+                fillOpacity=0.9,
                 popup=folium.Popup(popup_text, max_width=320),
             ).add_to(sg)
 
@@ -711,7 +810,7 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
                 color=color_barrio,
                 fill=True,
                 fillColor=color_barrio,
-                fillOpacity=0.55,
+                fillOpacity=0.9,
                 popup=folium.Popup(popup_text, max_width=320),
             ).add_to(sg)
 
@@ -719,49 +818,51 @@ def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
 
     return grupos_barrios
 
-def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promotores=None, override_fc=None, color_mode="Promotores", verificar_areas=False, hogares_por_m2_override=None, pph_override=None):
+def generar_mapa_muestras(
+    fecha_inicio,
+    fecha_fin,
+    ciudad,
+    barrios=None,
+    promotores=None,
+    override_fc=None,
+    color_mode="Promotores",
+    verificar_areas=False,
+    hogares_por_m2_override=None,
+    pph_override=None,
+    enable_ism: bool = False,
+):
     try:
-        # Activar DEBUG_AREAS si está en modo verificación
+        # Toggle debug areas
         global DEBUG_AREAS
         DEBUG_AREAS_ORIGINAL = DEBUG_AREAS
         if verificar_areas:
             DEBUG_AREAS = True
-            
-        ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
-        logging.info(f"Generando mapa para la ciudad: {ciudad}")
 
-        # Convertir fechas a cadenas si es necesario
+        # Normalizar ciudad y fechas
+        ciudad = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
         fecha_inicio = str(fecha_inicio)
         fecha_fin = str(fecha_fin)
-        
+
         # Validación de año único para modo Temporalidad
         if color_mode == "Temporalidad (mes)":
+            from datetime import datetime
             try:
-                from datetime import datetime
                 dt_inicio = datetime.strptime(fecha_inicio, "%Y-%m-%d")
                 dt_fin = datetime.strptime(fecha_fin, "%Y-%m-%d")
                 if dt_inicio.year != dt_fin.year:
                     st.error("❌ Error: El modo 'Temporalidad (mes)' requiere que ambas fechas estén en el mismo año.")
-                    # Retornar mapa vacío
                     mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                     filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                    # DataFrame ISM vacío con esquema
-                    schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                                  'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
-                    df_ism_empty = pd.DataFrame(columns=schema_ism)
-                    return filename, 0, None, df_ism_empty
+                    schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
+                    return filename, 0, None, pd.DataFrame(columns=schema_ism)
             except ValueError:
                 st.error("❌ Error: Formato de fecha inválido para el modo 'Temporalidad (mes)'.")
-                # Retornar mapa vacío
                 mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
                 filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-                # DataFrame ISM vacío con esquema
-                schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                              'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
-                df_ism_empty = pd.DataFrame(columns=schema_ism)
-                return filename, 0, None, df_ism_empty
+                schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
+                return filename, 0, None, pd.DataFrame(columns=schema_ism)
 
-        # Ruta de coordenadas para cada ciudad
+        # Configuración por ciudad
         rutas_coordenadas = {
             'CALI': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_CALI.csv",
             'MEDELLIN': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_MEDELLIN.csv",
@@ -769,732 +870,434 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
             'PEREIRA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_PEREIRA.csv",
             'BOGOTA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BOGOTA.csv",
             'BARRANQUILLA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BARRANQUILLA.csv",
-            'BUCARAMANGA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BUCARAMANGA.csv"
+            'BUCARAMANGA': "pre_procesamiento/data/BARRIOS_COORDENADAS_RUTAS_COMPLETO_BUCARAMANGA.csv",
         }
-
-        # Coordenadas para el centro del mapa y archivo GeoJSON
         coordenadas_ciudades = {
-            'CALI': ([3.4516, -76.5320], 'geojson/pap/cali_base.geojson'),
-            'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
-            'MANIZALES': ([5.0672, -75.5174], 'geojson/pap/manizales_base.geojson'),  # Usar archivo estándar
-            'PEREIRA': ([4.8087, -75.6906], 'geojson/pap/pereira_base.geojson'),
-            'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
-            'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
-            'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson')
+            'CALI': ([3.4516, -76.5320], 'geojson/rutas/cali/cuadrantes_rutas_cali.geojson'),
+            'MEDELLIN': ([6.2442, -75.5812], 'geojson/rutas/medellin/cuadrantes_rutas_medellin.geojson'),
+            'MANIZALES': ([5.0672, -75.5174], 'geojson/rutas/manizales/cuadrantes_rutas_manizales.geojson'),
+            'PEREIRA': ([4.8087, -75.6906], 'geojson/rutas/pereira/cuadrantes_rutas_pereira.geojson'),
+            'BOGOTA': ([4.7110, -74.0721], 'geojson/rutas/bogota/cuadrantes_rutas_bogota.geojson'),
+            'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/rutas/barranquilla/cuadrantes_rutas_barranquilla.geojson'),
+            'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/rutas/bucaramanga/cuadrantes_rutas_bucaramanga.geojson'),
         }
-
-        # Centroope asociado a cada ciudad
-        centroopes = {
-            'CALI': 2,
-            'MEDELLIN': 3,
-            'MANIZALES': 6,
-            'PEREIRA': 5,
-            'BOGOTA': 4,
-            'BARRANQUILLA': 8,
-            'BUCARAMANGA': 7
-        }
+        centroopes = {'CALI': 2, 'MEDELLIN': 3, 'MANIZALES': 6, 'PEREIRA': 5, 'BOGOTA': 4, 'BARRANQUILLA': 8, 'BUCARAMANGA': 7}
         if ciudad not in rutas_coordenadas:
             logging.error(f"Ciudad no reconocida: {ciudad}")
-            return None
-    
+            mapa = folium.Map(location=[4.7110, -74.0721], zoom_start=12)
+            filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
+            schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
+            return filename, 0, None, pd.DataFrame(columns=schema_ism)
+
         centroope = centroopes[ciudad]
         ruta_coordenadas = rutas_coordenadas[ciudad]
         location, geojson_file_path = coordenadas_ciudades[ciudad]
 
-        # Obtener el DataFrame combinado
+        # Construir DF base
         df = crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=promotores)
-
         if df.empty:
             logging.warning(f"No hay datos para las fechas {fecha_inicio} - {fecha_fin}")
-            # Crear mapa vacío y retornar con 0 puntos
             mapa = folium.Map(location=location, zoom_start=12)
             filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-            filepath = f"static/maps/{filename}"
-            mapa.save(filepath)
-            # DataFrame ISM vacío con esquema
-            schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                          'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
-            df_ism_empty = pd.DataFrame(columns=schema_ism)
-            return filename, 0, None, df_ism_empty
-   
-        # Selección de base geográfica
-        if override_fc is not None:
-            # Usar FeatureCollection personalizado
-            barrios_geojson = override_fc
-            logging.info("Usando GeoJSON personalizado como base")
-        else:
-            # Cargar archivo GeoJSON por defecto de la ciudad
-            try:
-                with open(geojson_file_path, 'r') as file:
-                    barrios_geojson = json.load(file)
-                logging.info(f"Usando GeoJSON por defecto: {geojson_file_path}")
-                
-                # Logging específico para ciudades usando archivo estándar
-                if ciudad == 'MANIZALES' and 'pap/manizales_base.geojson' in geojson_file_path:
-                    logging.info("[MANIZALES] Usando archivo estándar del standardizer (formato PADRE)")
-                elif ciudad == 'CALI' and 'pap/cali_base.geojson' in geojson_file_path:
-                    logging.info("[CALI] Usando archivo estándar del standardizer (formato PADRE)")
-                    
-            except (FileNotFoundError, json.JSONDecodeError) as e:
-                logging.error(f"Error al cargar GeoJSON: {e}")
-                # Fallback para ciudades si el archivo estándar no existe
-                if ciudad == 'MANIZALES' and 'manizales_base.geojson' in geojson_file_path:
-                    fallback_path = 'geojson/comunas_manizales.geojson'
-                    try:
-                        with open(fallback_path, 'r') as file:
-                            barrios_geojson = json.load(file)
-                        logging.warning(f"[MANIZALES] Fallback a archivo legacy: {fallback_path}")
-                    except:
-                        logging.error(f"[MANIZALES] Error también en fallback: {fallback_path}")
-                        return None
-                elif ciudad == 'CALI' and 'cali_base.geojson' in geojson_file_path:
-                    fallback_path = 'geojson/comunas_cali.geojson'
-                    try:
-                        with open(fallback_path, 'r') as file:
-                            barrios_geojson = json.load(file)
-                        logging.warning(f"[CALI] Fallback a archivo legacy: {fallback_path}")
-                    except:
-                        logging.error(f"[CALI] Error también en fallback: {fallback_path}")
-                        return None
-                else:
-                    return None
+            schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
+            return filename, 0, None, pd.DataFrame(columns=schema_ism)
 
-        # Filtrar por fechas
-        df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
-        # Día (sin hora) para conteos por día
+        # Preparar columnas de fecha y filtrado
+        df['fecha_evento'] = pd.to_datetime(df.get('fecha_evento', df.get('fecha')), errors='coerce')
         df['fecha_dia'] = df['fecha_evento'].dt.date
-        df_filtrado = df #[(df['fecha_evento'] >= fecha_inicio) & (df['fecha_evento'] <= fecha_fin)]
-
-        if df_filtrado.empty:
-            logging.warning("No hay datos después del filtrado por fecha.")
-            # Crear mapa vacío y retornar con 0 puntos
-            mapa = folium.Map(location=location, zoom_start=12)
-            filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-            filepath = f"static/maps/{filename}"
-            mapa.save(filepath)
-            # DataFrame ISM vacío con esquema
-            schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                          'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
-            df_ism_empty = pd.DataFrame(columns=schema_ism)
-            return filename, 0, None, df_ism_empty
-
-        # Si se selecciona una ruta, filtrar también por ruta
+        df_filtrado = df.copy()
         if barrios:
-            df_filtrado = df_filtrado[df_filtrado['barrio'].isin(barrios)]
-            # print(barrios)
+            if 'barrio' in df_filtrado.columns:
+                df_filtrado = df_filtrado[df_filtrado['barrio'].isin(barrios)]
 
-          # Crear mapa
-        mapa = folium.Map(location=location, zoom_start=12)
-
-        # === Z-INDEX CSS PARA ORDENAR CUADRANTES ===
-        # Aplicar CSS para controlar la superposición: hijos encima de padres
-        zindex_css = '''
-        <style>
-        /* Asegurar que los cuadrantes hijos aparezcan encima de los padres */
-        .leaflet-interactive[style*="stroke-width: 3"] {
-            z-index: 630 !important; /* Hijos con borde más grueso */
-        }
-        .leaflet-interactive[style*="stroke-width: 2"] {
-            z-index: 620 !important; /* Padres con borde normal */
-        }
-        /* Fallback: todos los elementos interactivos con z-index apropiado */
-        .leaflet-overlay-pane .leaflet-interactive {
-            position: relative;
-        }
-        </style>
-        '''
-        mapa.get_root().html.add_child(folium.Element(zindex_css))
-
-        # === GRUPOS SEPARADOS PARA STACKING CORRECTO ===
-        # Grupos separados para togglear si se desea
-        cuadrantes_padres_group = folium.FeatureGroup(name="Cuadrantes (Padres)", show=True).add_to(mapa)
-        cuadrantes_hijos_group  = folium.FeatureGroup(name="Cuadrantes (Hijos)",  show=True).add_to(mapa)
-
-            # Calcular estadísticas
-        #print(df_filtrado.head(4))
+        # Estadísticas para resumen
         dias_activos_global = _dias_activos_global(df_filtrado)
-        cantidad_barrios = df_filtrado['barrio'].nunique()
+        cantidad_barrios = df_filtrado['barrio'].nunique() if 'barrio' in df_filtrado.columns else 0
         total_cantidad = df_filtrado.shape[0]
         promedio_muestras = (total_cantidad / dias_activos_global) if dias_activos_global > 0 else 0.0
-        promedio_muestras_barrios = total_cantidad / cantidad_barrios if cantidad_barrios > 0 else 0
-
-        # Preparar datos para las estadísticas
+        promedio_muestras_barrios = (total_cantidad / cantidad_barrios) if cantidad_barrios > 0 else 0.0
         stats_data = {
-            'barrios': barrios if barrios else "Todos",
+            'barrios': barrios if barrios else 'Todos',
             'fecha_inicio': fecha_inicio,
             'fecha_fin': fecha_fin,
             'promedio_muestras': promedio_muestras,
             'cantidad_barrios': cantidad_barrios,
             'promedio_muestras_barrios': promedio_muestras_barrios,
-            'total_cantidad': total_cantidad
+            'total_cantidad': total_cantidad,
         }
 
-        # Agregar el cuadro fijo de estadísticas en la parte superior izquierda (colapsable)
-        html_content = f"""
-            <div id="legend-resumen" class="legend-box" style="
-                position: fixed;
-                top: 20px;
-                left: 20px;
-                background-color: white;
-                padding: 15px;
-                border-radius: 5px;
-                box-shadow: 0 0 10px rgba(0,0,0,0.2);
-                z-index: 1000;
-                font-family: Arial, sans-serif;
-                min-width: 250px;
-            ">
-                <div class="legend-header" onclick="toggleLegend('legend-resumen')" style="
-                    cursor: pointer; display: flex; justify-content: space-between; align-items: center; 
-                    margin: 0 0 10px 0;">
-                    <h4 style="margin: 0; color: #111;">Resumen de Muestras</h4>
-                    <span id="legend-resumen-toggle" class="toggle-icon" style="
-                        margin-left: 10px; transition: transform 0.3s ease; font-size: 12px; color: #6b7280;">▼</span>
-                </div>
-                <div id="legend-resumen-body" class="legend-body">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr>
-                            <td style="padding: 3px 0;">Fechas:</td>
-                            <td style="padding: 3px 0;"><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 3px 0;">Muestras/día:</td>
-                            <td style="padding: 3px 0;"><b>{stats_data['promedio_muestras']:.1f}</b></td>
-                        </tr>
-                        <tr style="border-top: 1px solid #eee;">
-                            <td style="padding: 5px 0;"><b>Total muestras:</b></td>
-                            <td style="padding: 5px 0;"><b>{stats_data['total_cantidad']}</b></td>
-                        </tr>
-                    </table>
-                </div>
+        # Crear mapa base
+        mapa = folium.Map(location=location, zoom_start=12)
+
+        # CSS de z-index para stacking
+        zindex_css = """
+        <style>
+        .leaflet-interactive[style*='stroke-width: 3'] { z-index: 630 !important; }
+        .leaflet-interactive[style*='stroke-width: 2'] { z-index: 620 !important; }
+        .leaflet-overlay-pane .leaflet-interactive { position: relative; }
+        </style>
+        """
+        mapa.get_root().html.add_child(folium.Element(zindex_css))
+
+        # Grupos base
+        comunas_group = folium.FeatureGroup(name="Comunas", show=True).add_to(mapa)
+        cuadrantes_padres_group = folium.FeatureGroup(name="Cuadrantes (Padres)", show=True).add_to(mapa)
+        cuadrantes_hijos_group = folium.FeatureGroup(name="Cuadrantes (Hijos)", show=True).add_to(mapa)
+
+        # Cargar base geográfica
+        if override_fc is not None:
+            barrios_geojson = override_fc
+        else:
+            with open(geojson_file_path, 'r') as f:
+                barrios_geojson = json.load(f)
+
+        # Enriquecer y separar features
+        features_comunas = []
+        features_cuadrantes = []
+        for feature in barrios_geojson.get('features', []):
+            props = feature.get('properties', {})
+            codigo_val = (props.get('codigo') or props.get('CODIGO') or props.get('code') or '').strip()
+            props['display_name'] = resolver_nombre_ruta(ciudad, codigo_val, props)
+            # Heurística: si tiene 'codigo' => cuadrante, si no => comuna
+            if codigo_val:
+                if _es_cuadrante_padre(feature) or _es_cuadrante_hijo(feature):
+                    features_cuadrantes.append(feature)
+                else:
+                    features_comunas.append(feature)
+            else:
+                features_comunas.append(feature)
+
+        # Dibujar comunas
+        for feature in features_comunas:
+            folium.GeoJson(
+                data=feature,
+                style_function=lambda x: {'fillColor': 'transparent', 'color': '#000000', 'weight': 1.5, 'fillOpacity': 0.0}
+            ).add_to(comunas_group)
+
+        # Preparar DF conteo
+        df_for_conteo = df_filtrado.copy()
+        df_for_conteo['lat'] = df_for_conteo.apply(lambda r: r.get('coordenada_latitud', r.get('latitud', None)), axis=1)
+        df_for_conteo['lon'] = df_for_conteo.apply(lambda r: r.get('coordenada_longitud', r.get('longitud', None)), axis=1)
+        df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
+        df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
+
+        # ISM
+        df_ism = None
+        metrics_by_code = {}
+        try:
+            df_ism = compute_ism_metrics_por_cuadrante(
+                df_for_conteo,
+                features_cuadrantes,
+                ciudad,
+                codigo_key='codigo',
+                tz='America/Bogota',
+                hogares_por_m2_override=hogares_por_m2_override,
+                pph_override=pph_override,
+            )
+            if df_ism is not None and not df_ism.empty:
+                metrics_by_code = {str(r['codigo_cuadrante']): r for _, r in df_ism.iterrows()}
+        except Exception as e:
+            logging.warning(f"ISM no disponible: {e}")
+
+        # Métricas por cuadrante
+        features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
+        features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
+        metricas_cache = {}
+        area_map = {}
+        for fh in features_hijos:
+            met = _calcular_metricas_hijo(fh, df_for_conteo)
+            metricas_cache[('HIJO', met['codigo'])] = met
+            area_map[met['codigo']] = met['area_m2']
+        for fp in features_padres:
+            met = _calcular_metricas_padre(fp, features_hijos, metricas_cache, df_for_conteo)
+            metricas_cache[('PADRE', met['codigo'])] = met
+            area_map[met['codigo']] = met['area_m2']
+
+        # Índice helper (cuando enable_ism=False)
+        def _calc_indice(met: dict):
+            area = met.get('area_m2')
+            mloc = met.get('muestras_local', met.get('total_muestras', 0))
+            if not area or area <= 0:
+                return None
+            try:
+                return (float(mloc) / float(area)) * 1000.0
+            except Exception:
+                return None
+
+        def _popup_cuadrante_indice(props: dict, met: dict):
+            nombre = props.get('display_name') or props.get('nombre') or props.get('codigo', 'Sin nombre')
+            muestras = int(met.get('muestras_local', met.get('total_muestras', 0)) or 0)
+            dias = int(met.get('dias_operacion', met.get('dias_activos', 0)) or 0)
+            prom = int(met.get('n_promotores', met.get('promotores', 0)) or 0)
+            tasa = float(met.get('lambda_q', met.get('tasa', 0)) or 0)
+            area = met.get('area_m2')
+            indice = met.get('indice')
+            if area and area > 0:
+                area_m2_txt = f"{area:,.0f} m²".replace(',', '.')
+                area_km_txt = f"{area/1e6:,.2f} km²".replace(',', '.')
+                area_txt = f"{area_m2_txt} · ({area_km_txt})"
+            else:
+                area_txt = 'N/D'
+            indice_txt = 'N/D' if indice is None else f"{indice:.2f}"
+            return f"""
+            <div style='font-family: Inter,system-ui,Arial;'>
+              <div style='font-weight:700;font-size:18px;margin:2px 0 6px 0;'>{nombre}</div>
+              <div style='font-size:13px;font-weight:700;margin-bottom:10px;'>Índice: {indice_txt}</div>
+              <div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>
+                <span class='chip chip-cobertura'><b>Muestras (local): {muestras}</b></span>
+                <span class='chip chip-efectividad'><b>Área: {area_txt}</b></span>
+              </div>
+              <div style='font-size:13px;line-height:1.45;'>
+                <div><b>Días de operación:</b> {dias}</div>
+                <div><b>Promotores:</b> {prom}</div>
+                <div><b>Tasa:</b> {tasa:.2f}</div>
+              </div>
             </div>
-            
-            <style>
-              .legend-box.collapsed .legend-body {{
-                display: none;
-              }}
-              .legend-box.collapsed .toggle-icon {{
-                transform: rotate(-90deg);
-              }}
-              .legend-header:hover {{
-                background-color: #f9fafb;
-                border-radius: 4px;
-                padding: 2px;
-              }}
-              .toggle-icon {{
-                font-size: 12px;
-                color: #6b7280;
-              }}
-            </style>
-            
-            <script>
-              function toggleLegend(legendId) {{
-                const legend = document.getElementById(legendId);
-                const toggle = document.getElementById(legendId + '-toggle');
-                const body = document.getElementById(legendId + '-body');
-                
-                if (legend.classList.contains('collapsed')) {{
-                  legend.classList.remove('collapsed');
-                  toggle.style.transform = 'rotate(0deg)';
-                  body.style.display = 'block';
-                }} else {{
-                  legend.classList.add('collapsed');
-                  toggle.style.transform = 'rotate(-90deg)';
-                  body.style.display = 'none';
-                }}
-                
-                // Reposition zoom controls based on legend state
-                setTimeout(repositionZoomControls, 100);
-              }}
-              
-              function repositionZoomControls() {{
-                const resumenLegend = document.getElementById('legend-resumen');
-                const promotoresLegend = document.getElementById('legend-promotores');
-                const zoomControl = document.querySelector('.leaflet-control-zoom');
-                
-                if (zoomControl && resumenLegend) {{
-                  const resumenCollapsed = resumenLegend.classList.contains('collapsed');
-                  const resumenRect = resumenLegend.getBoundingClientRect();
-                  
-                  if (resumenCollapsed) {{
-                    // Position zoom control closer to collapsed legend
-                    const topPosition = resumenRect.bottom + 10;
-                    zoomControl.style.top = topPosition + 'px';
-                    zoomControl.style.left = '20px';
-                    zoomControl.style.position = 'fixed';
-                  }} else {{
-                    // Position zoom control below expanded legend
-                    const topPosition = resumenRect.bottom + 10;
-                    zoomControl.style.top = topPosition + 'px';
-                    zoomControl.style.left = '20px';
-                    zoomControl.style.position = 'fixed';
-                  }}
-                }}
-              }}
-              
-              // Initialize zoom control positioning after page load
-              document.addEventListener('DOMContentLoaded', function() {{
-                setTimeout(repositionZoomControls, 500);
-              }});
-              
-              // Also try with window load event as backup
-              window.addEventListener('load', function() {{
-                setTimeout(repositionZoomControls, 1000);
-              }});
-            </script>
             """
 
-        mapa.get_root().html.add_child(folium.Element(html_content))
+        # Dibujar PADRES
+        for feature_padre in features_padres:
+            props = feature_padre.get('properties', {})
+            codigo = str(props.get('codigo', ''))
+            nombre_display = props.get('display_name', codigo)
+            m = metricas_cache.get(('PADRE', codigo))
+            if not m:
+                continue
+            metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+            verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE') if verificar_areas else None
+            if enable_ism and codigo in metrics_by_code:
+                row_ism = metrics_by_code[codigo]
+                popup_html = _popup_cuadrante_ism(nombre_display, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+            else:
+                met_idx = {
+                    'area_m2': m['area_m2'],
+                    'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
+                    'dias_operacion': m.get('dias_activos', 0),
+                    'n_promotores': 0,
+                    'lambda_q': 0.0,
+                }
+                if codigo in metrics_by_code:
+                    row_ism = metrics_by_code[codigo]
+                    met_idx.update({
+                        'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
+                        'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
+                        'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
+                        'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q']),
+                    })
+                met_idx['indice'] = _calc_indice(met_idx)
+                popup_html = _popup_cuadrante_indice(props, met_idx)
+            layer_padre = folium.GeoJson(
+                data=feature_padre,
+                style_function=_style_cuadrante_padre,
+                popup=folium.Popup(popup_html, max_width=500),
+                tooltip=folium.Tooltip(f"<b>{nombre_display}</b>"),
+            )
+            layer_padre.add_to(cuadrantes_padres_group)
 
-        # 1) Preparar etiquetas de promotor
-        def _label_promotor(row):
-            for k in ["apellido_autor", "promotor_nombre", "nombre_autor"]:
-                if k in row and pd.notna(row[k]) and str(row[k]).strip():
-                    return f"{row[k]} · {row['id_autor']}"
-            return f"ID {row['id_autor']}"
+        # Dibujar HIJOS
+        for feature_hijo in features_hijos:
+            props = feature_hijo.get('properties', {})
+            codigo = str(props.get('codigo', ''))
+            nombre_display = props.get('display_name', codigo)
+            m = metricas_cache.get(('HIJO', codigo))
+            if not m:
+                continue
+            metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
+            verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO') if verificar_areas else None
+            if enable_ism and codigo in metrics_by_code:
+                row_ism = metrics_by_code[codigo]
+                popup_html = _popup_cuadrante_ism(nombre_display, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
+            else:
+                met_idx = {
+                    'area_m2': m['area_m2'],
+                    'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
+                    'dias_operacion': m.get('dias_activos', 0),
+                    'n_promotores': 0,
+                    'lambda_q': 0.0,
+                }
+                if codigo in metrics_by_code:
+                    row_ism = metrics_by_code[codigo]
+                    met_idx.update({
+                        'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
+                        'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
+                        'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
+                        'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q']),
+                    })
+                met_idx['indice'] = _calc_indice(met_idx)
+                popup_html = _popup_cuadrante_indice(props, met_idx)
+            layer_hijo = folium.GeoJson(
+                data=feature_hijo,
+                style_function=_style_cuadrante,
+                popup=folium.Popup(popup_html, max_width=500),
+                tooltip=folium.Tooltip(f"<b>{nombre_display}</b>"),
+            )
+            layer_hijo.add_to(cuadrantes_hijos_group)
 
-        df_filtrado["id_autor_str"] = df_filtrado["id_autor"].astype(str)
-        label_map = df_filtrado.drop_duplicates("id_autor_str").set_index("id_autor_str").apply(_label_promotor, axis=1).to_dict()
-
-        # 2) Generar colores por promotor (no por barrio)
-        promotores_unicos = df_filtrado["id_autor_str"].unique()
-        promotor_colors = {pid: col for pid, col in zip(promotores_unicos, generate_hsv_colors(len(promotores_unicos)))}
-
-        # Construir nombres compactados solo para la leyenda
-        # 1) intentar tomar el nombre completo desde el DF (si ya viene)
-        nombre_col_candidates = ["nombre_completo_autor", "apellido_autor", "apellido"]  # en ese orden
-        nombre_col = next((c for c in nombre_col_candidates if c in df_filtrado.columns), None)
-
+        # Construir nombres de promotor para legendas
         legend_name_map = {}
+        nombre_col_candidates = ["nombre_completo_autor", "apellido_autor", "apellido"]
+        nombre_col = next((c for c in nombre_col_candidates if c in df_filtrado.columns), None)
         if nombre_col:
-            tmp = (df_filtrado[["id_autor", nombre_col]]
-                   .dropna(subset=[nombre_col])
-                   .drop_duplicates(subset=["id_autor"]))
-            for _, row in tmp.iterrows():
-                pid = str(row["id_autor"])
-                legend_name_map[pid] = compactar_dos_palabras(row[nombre_col], pid)
-
-        # 2) si faltan algunos ids o no existe la columna, consultar solo los pendientes
-        faltantes = [pid for pid in map(str, promotores_unicos) if pid not in legend_name_map]
+            tmp = df_filtrado[["id_autor", nombre_col]].dropna(subset=[nombre_col]).drop_duplicates("id_autor")
+            for _, r in tmp.iterrows():
+                pid = str(r['id_autor'])
+                legend_name_map[pid] = compactar_dos_palabras(r[nombre_col], pid)
+        faltantes = [str(pid) for pid in df_filtrado['id_autor'].dropna().unique().tolist() if str(pid) not in legend_name_map]
         if faltantes:
             try:
                 from pre_procesamiento.preprocesamiento_muestras import obtener_promotores_por_ids
                 fetched = obtener_promotores_por_ids(faltantes) or {}
                 for pid in faltantes:
-                    full = fetched.get(pid)
-                    legend_name_map[pid] = compactar_dos_palabras(full, pid)
+                    legend_name_map[pid] = compactar_dos_palabras(fetched.get(pid), pid)
             except Exception:
-                # Fallback duro a id si no se pudo consultar
                 for pid in faltantes:
                     legend_name_map[pid] = f"id {pid}"
 
-        # Crear FeatureGroups para capas base
-        comunas_group = FeatureGroup(name="Comunas").add_to(mapa)
-        # cuadrantes_group = FeatureGroup(name="Cuadrantes").add_to(mapa)  # REMOVIDO: usamos grupos separados
-
-        # === DETECCIÓN Y POPUPS DE CUADRANTES ===
-        
-        # Preparar DataFrame con columnas lat/lon para conteo de muestras por polígono
-        df_for_conteo = df_filtrado.copy()
-        df_for_conteo['lat'] = df_for_conteo.apply(
-            lambda row: row.get('coordenada_latitud', row.get('latitud', None)), axis=1
-        )
-        df_for_conteo['lon'] = df_for_conteo.apply(
-            lambda row: row.get('coordenada_longitud', row.get('longitud', None)), axis=1
-        )
-        # Asegurar que fecha_dia está presente
-        df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
-        # Filtrar puntos válidos
-        df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
-        
-        # Separar features en comunas y cuadrantes
-        features_comunas = []
-        features_cuadrantes = []
-        
-        for feature in barrios_geojson['features']:
-            props = feature.get('properties', {})
-            
-            # Detectar si es comuna usando heurística original
-            is_comuna = any(
-                key.lower() in ['nombre', 'barrio'] 
-                for key in props.keys()
-            )
-            
-            if is_comuna:
-                features_comunas.append(feature)
-            else:
-                # Verificar si es cuadrante válido (padre o hijo)
-                if _es_cuadrante_padre(feature) or _es_cuadrante_hijo(feature):
-                    features_cuadrantes.append(feature)
-                else:
-                    # Si no es cuadrante reconocido, tratarlo como comuna
-                    features_comunas.append(feature)
-        
-        # Dibujar comunas (sin popup)
-        for feature in features_comunas:
-            folium.GeoJson(
-                data=feature,
-                style_function=lambda x: {
-                    'fillColor': 'transparent',
-                    'color': '#000000',
-                    'weight': 1.5,
-                    'fillOpacity': 0.0
-                }
-            ).add_to(comunas_group)
-        
-        # === CÁLCULO DE MÉTRICAS ISM (FASE 4) ===
-        df_ism = None
-        metrics_by_code = {}
-        
-        try:
-            # Calcular métricas ISM usando la función de FASE 3
-            df_ism = compute_ism_metrics_por_cuadrante(
-                df_for_conteo, 
-                features_cuadrantes, 
-                ciudad, 
-                codigo_key='codigo', 
-                tz='America/Bogota',
-                hogares_por_m2_override=hogares_por_m2_override,
-                pph_override=pph_override
-            )
-            
-            # Construir índice rápido por código (asegurar tipo str)
-            if not df_ism.empty:
-                metrics_by_code = {str(row['codigo_cuadrante']): row for _, row in df_ism.iterrows()}
-                logging.info(f"ISM calculado para {len(metrics_by_code)} cuadrantes con actividad")
-            else:
-                logging.info("No hay cuadrantes con actividad para cálculo ISM")
-                
-        except ValueError as e:
-            # Error esperado: densidad no definida para la ciudad
-            st.error(f"⚠️ Para habilitar ISM: {e}")
-            logging.warning(f"ISM no disponible: {e}")
-        except Exception as e:
-            # Error inesperado
-            st.error(f"❌ Error calculando ISM: {e}")
-            logging.error(f"Error inesperado en ISM: {e}")
-        
-        # === CÁLCULO DE MÉTRICAS POR CUADRANTE ===
-        
-        # Separar padres e hijos
-        features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
-        features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
-        
-        # Cache de métricas para evitar recálculos - clave: (tipo, codigo)
-        metricas_cache = {}
-        
-        # Mapeo de área para CSV - clave: codigo cuadrante, valor: area_m2
-        area_map = {}
-        
-        # 1. Calcular métricas para hijos
-        for feature_hijo in features_hijos:
-            metricas = _calcular_metricas_hijo(feature_hijo, df_for_conteo)
-            metricas_cache[('HIJO', metricas['codigo'])] = metricas
-            # Guardar área para CSV
-            area_map[metricas['codigo']] = metricas['area_m2']
-        
-        # 2. Calcular métricas para padres (cálculo directo)
-        for feature_padre in features_padres:
-            metricas = _calcular_metricas_padre(feature_padre, features_hijos, metricas_cache, df_for_conteo)
-            metricas_cache[('PADRE', metricas['codigo'])] = metricas
-            # Guardar área para CSV
-            area_map[metricas['codigo']] = metricas['area_m2']
-        
-        # Logging informativo para el caso PADRE-only (estándar del standardizer)
-        if len(features_hijos) == 0 and len(features_padres) > 0:
-            logging.info(f"[PADRE-ONLY] Formato estándar detectado: {len(features_padres)} cuadrantes padre sin hijos")
-        
-        logging.info(f"Métricas calculadas para {len(metricas_cache)} cuadrantes ({len(features_hijos)} hijos, {len(features_padres)} padres)")
-        
-        # === DIBUJAR CUADRANTES CON POPUPS Y STACKING CORRECTO ===
-        
-        # --- PADRES (debajo) ---
-        for feature_padre in features_padres:
-            props  = feature_padre.get('properties', {})
-            codigo = str(props.get('codigo', ''))  # Asegurar tipo str
-            cache_key = ('PADRE', codigo)
-            if cache_key in metricas_cache:
-                m = metricas_cache[cache_key]
-                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
-                
-                # Verificación de área si está en modo debug
-                verificacion_info = None
-                if verificar_areas:
-                    verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE')
-                
-                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
-                if codigo in metrics_by_code:
-                    row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
-                else:
-                    # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'PADRE', verificacion_info, ciudad)
-                    # Solo añadir mensaje si NO hay muestras en el polígono
-                    if m['total_muestras'] == 0:
-                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
-                
-                layer_padre = folium.GeoJson(
-                    data=feature_padre,
-                    style_function=_style_cuadrante_padre,
-                    popup=folium.Popup(popup_html, max_width=500),
-                    tooltip=folium.Tooltip(f"<b>{codigo}</b>"),
-                )
-                layer_padre.add_to(cuadrantes_padres_group)
-
-        # --- HIJOS (encima) ---
-        for feature_hijo in features_hijos:
-            props  = feature_hijo.get('properties', {})
-            codigo = str(props.get('codigo', ''))  # Asegurar tipo str
-            cache_key = ('HIJO', codigo)
-            if cache_key in metricas_cache:
-                m = metricas_cache[cache_key]
-                metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
-                
-                # Verificación de área si está en modo debug
-                verificacion_info = None
-                if verificar_areas:
-                    verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO')
-                
-                # Lógica ISM: usar popup ISM si hay actividad, sino fallback
-                if codigo in metrics_by_code:
-                    row_ism = metrics_by_code[codigo]
-                    popup_html = _popup_cuadrante_ism(codigo, m['area_m2'], row_ism, ciudad, debug=DEBUG_ISM)
-                else:
-                    # Sin actividad ISM en rango: usar popup tradicional
-                    popup_html = _popup_cuadrante_muestras(codigo, m['area_m2'], m['total_muestras'], m['dias_activos'], metodo_area, 'HIJO', verificacion_info, ciudad)
-                    # Solo añadir mensaje si NO hay muestras en el polígono
-                    if m['total_muestras'] == 0:
-                        popup_html = popup_html.replace('</div>', '<div style="margin-top:8px;font-size:12px;color:#ef4444;">Sin actividad en rango de fechas</div></div>', 1)
-                
-                layer_hijo = folium.GeoJson(
-                    data=feature_hijo,
-                    style_function=_style_cuadrante,
-                    popup=folium.Popup(popup_html, max_width=500),
-                    tooltip=folium.Tooltip(f"<b>{codigo}</b>"),
-                )
-                layer_hijo.add_to(cuadrantes_hijos_group)
-
-        # 3) Crear carpetas (padres) y subgrupos ordenados según color_mode
+        legend_html = ""
+        # Modo PROMOTORES
         if color_mode == "Promotores":
-            # Carpeta PROMOTORES (ON por defecto) - SOLO PROMOTORES EN EL CONTROL
-            fg_promotores = FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
-
-            # Definir colores por promotor en el orden de conteo
+            fg_promotores = folium.FeatureGroup(name="PROMOTORES", show=True).add_to(mapa)
             promotor_counts = df_filtrado.groupby('id_autor').size().sort_values(ascending=False)
             promotores_ordenados = [int(pid) for pid in promotor_counts.index]
-            palette = generate_hsv_colors(len(promotores_ordenados))
-            colores_promotores_map = {str(pid): palette[i] for i, pid in enumerate(promotores_ordenados)}
-
-            # Construir subgrupos SOLO para promotores
-            grupos_promotores = build_promotores_groups(
-                df_filtrado, parent_group=fg_promotores, colores_promotores_map=colores_promotores_map,
-                legend_name_map=legend_name_map, mapa=mapa
-            )
-
-            # --- CONTROL DE CAPAS (ÁRBOL) - PROMOTORES, COMUNAS, CUADRANTES ---
+            colores_promotores_map = {str(pid): color_for_promotor(centroope, pid) for pid in promotores_ordenados}
+            grupos_promotores = build_promotores_groups(df_filtrado, fg_promotores, colores_promotores_map, legend_name_map, mapa)
+            # Control de capas
             if HAS_TREE_CONTROL:
                 TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
             else:
                 folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
-
-            # 5) Obtener métricas de ventas y construir leyenda tabular
-            df_metrics = obtener_metricas_pedidos_por_promotores(
-                centroope=centroope,
-                fecha_inicio=fecha_inicio,
-                fecha_fin=fecha_fin,
-                ids_promotores=promotores_ordenados
-            )
-            
-            # Log métricas calculadas
-            total_pedidos = df_metrics['cant_pedidos'].sum() if not df_metrics.empty else 0
-            total_adq_recu = df_metrics['venta_adq_recu'].sum() if not df_metrics.empty else 0
-            logging.info(f"Métricas N/Recu calculadas - Ciudad: {ciudad}, Centroope: {centroope}, "
-                        f"Fechas: {fecha_inicio} - {fecha_fin}, Promotores: {len(promotores_ordenados)}, "
-                        f"Total pedidos: {total_pedidos}, Pedidos N/Recu: {total_adq_recu}")
-
-            # Mapear: id_vendedor -> (cant_pedidos, valor_conIVA, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles)
-            metrics_map = {
-                int(r["id_vendedor"]): (
-                    int(r["cant_pedidos"]), 
-                    float(r.get("valor_conIVA", 0.0)),
-                    int(r.get("venta_adq_recu", 0)),
-                    int(r.get("venta_fieles", 0)),
-                    float(r.get("pct_nrecu", 0.0)),
-                    float(r.get("pct_fieles", 0.0))
-                )
-                for _, r in df_metrics.iterrows()
-            }
-
-            def fmt_cop(valor):
-                try:
-                    return "$" + f"{valor:,.0f}".replace(",", ".")
-                except Exception:
-                    return "$0"
-
-            # Construir lista de datos por promotor fusionando todas las fuentes
-            promotor_data = []
-            
-            for (nombre, _sg, _count_muestras, color) in grupos_promotores:
+            # Métricas por promotor (muestras)
+            try:
+                df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados)
+            except Exception as e:
+                logging.error(f"Error métricas promotores muestras: {e}")
+                df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2'])
+            prom_metrics = {int(r['id_autor']): r for _, r in df_prom.iterrows()} if not df_prom.empty else {}
+            legend_rows = []
+            for (nombre_compacto, _sg, count_muestras, color_hex) in grupos_promotores:
                 pid_match = None
                 for pid_str, disp_name in legend_name_map.items():
-                    if disp_name == nombre:
+                    if disp_name == nombre_compacto:
                         pid_match = int(pid_str)
                         break
-
-                muestras = _count_muestras
-                cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = (0, 0.0, 0, 0, 0.0, 0.0)
-                if pid_match is not None and pid_match in metrics_map:
-                    cant_ped, valor_ped, venta_adq_recu, venta_fieles, pct_nrecu, pct_fieles = metrics_map[pid_match]
-                
-                efectividad = (cant_ped / muestras * 100) if muestras > 0 else 0.0
-                
-                promotor_data.append({
-                    'id': pid_match,
-                    'nombre': nombre,
-                    'color': color,
-                    'muestras': muestras,
-                    'pedidos': cant_ped,
-                    'valor': valor_ped,
-                    'efectividad': efectividad,
-                    'venta_adq_recu': venta_adq_recu,
-                    'venta_fieles': venta_fieles,
-                    'pct_nrecu': pct_nrecu,
-                    'pct_fieles': pct_fieles
-                })
-            
-            # Ordenar por pedidos descendente
-            promotor_data.sort(key=lambda x: x['pedidos'], reverse=True)
-            
-            # Construir filas HTML con el nuevo orden
-            rows_html = []
-            for data in promotor_data:
-                rows_html.append(f"""
-                    <tr>
-                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
-                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{data['color']};"></span>
-                            <span>{data['nombre']}</span>
-                        </td>
-                        <td style="padding:6px 8px;text-align:right;">{data['muestras']}</td>
-                        <td style="padding:6px 8px;text-align:right;">{data['pedidos']}</td>
-                        <td style="padding:6px 8px;text-align:right;">{data['pct_nrecu']:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{data['pct_fieles']:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{data['efectividad']:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(data['valor'])}</td>
-                    </tr>
+                if pid_match is None:
+                    try:
+                        pid_match = int(str(nombre_compacto).split()[-1])
+                    except Exception:
+                        continue
+                met = prom_metrics.get(pid_match, {})
+                muestras_total = int(met.get('muestras_total', count_muestras) or 0)
+                dias_habiles = int(met.get('dias_habiles', 0) or 0)
+                muestras_por_dia_habil = int(muestras_total / dias_habiles) if dias_habiles > 0 else 0
+                pct_no_fieles = float(met.get('pct_no_fieles', 0.0) or 0.0)
+                pct_contactables = float(met.get('pct_contactables', 0.0) or 0.0)
+                pct_contactables_nofieles = float(met.get('pct_contactables_nofieles', 0.0) or 0.0)
+                m1 = met.get('M1')
+                m2 = met.get('M2')
+                m3 = met.get('M3')
+                muestras_m2 = met.get('muestras_m2')
+                def _fmt_int(v):
+                    return f"{int(v):,}".replace(',', '.') if v is not None else '—'
+                def _fmt_pct(v):
+                    try:
+                        return f"{float(v):.1f}%"
+                    except Exception:
+                        return '—'
+                def _fmt_placeholder(v):
+                    return '—' if (v is None or (isinstance(v, float) and np.isnan(v))) else str(v)
+                legend_rows.append(f"""
+                <tr>
+                    <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
+                        <span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_hex};'></span>
+                        <span>{nombre_compacto}</span>
+                    </td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m1)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m2)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m3)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_placeholder(muestras_m2) if muestras_m2 is not None else '—'}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
+                </tr>
                 """)
-
             legend_html = f"""
-            <div id="legend-promotores" style="
+            <div id='legend-promotores' style='
                 position: fixed; bottom: 20px; left: 20px; z-index: 1000;
                 background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;'>
               <details open>
-                <summary style="cursor:pointer;font-weight:600;color:#111;">Pedidos por promotor (mismo rango)</summary>
-                <div style="margin-top:8px;">
-                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                <summary style='cursor:pointer;font-weight:600;color:#111;'>Métricas por promotor (muestras)</summary>
+                <div style='margin-top:8px;'>
+                  <table style='border-collapse:collapse; width:100%; font-size:12px;'>
                     <thead>
                       <tr>
-                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Promotor</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                        <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Promotor</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
+                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M1</th>
+                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M2</th>
+                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M3</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Muestras por m² (usando M1)'>Muestras/m² (M1)</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {''.join(rows_html)}
+                      {''.join(legend_rows)}
                     </tbody>
                   </table>
                 </div>
               </details>
             </div>
             """
-            
         elif color_mode == "Temporalidad (mes)":
-            # Carpeta TEMPORALIDAD (ON por defecto)
-            fg_mes = FeatureGroup(name="TEMPORALIDAD", show=True).add_to(mapa)
-            
-            # Añadir columnas de mes y año
-            df_filtrado["mes"] = df_filtrado["fecha_evento"].dt.month
-            df_filtrado["anyo"] = df_filtrado["fecha_evento"].dt.year
-            df_filtrado["mes_label"] = df_filtrado["fecha_evento"].dt.strftime("%b").str.title()
-            
-            # Obtener meses presentes ordenados cronológicamente
-            meses_presentes = df_filtrado.groupby(['anyo', 'mes', 'mes_label']).size().reset_index()
-            meses_presentes = meses_presentes.sort_values(['anyo', 'mes'])
-            
-            # Crear subgrupos por mes
-            for _, row in meses_presentes.iterrows():
-                mes = row['mes']
-                anyo = row['anyo']
-                mes_label = row['mes_label']
-                
-                # Color del mes
-                color_mes = PALETA_MESES[mes]
-                
-                # Crear subgrupo
+            fg_mes = folium.FeatureGroup(name="TEMPORALIDAD", show=True).add_to(mapa)
+            df_filtrado['mes'] = df_filtrado['fecha_evento'].dt.month
+            df_filtrado['anyo'] = df_filtrado['fecha_evento'].dt.year
+            df_filtrado['mes_label'] = df_filtrado['fecha_evento'].dt.strftime('%b').str.title()
+            meses_presentes = df_filtrado.groupby(['anyo','mes','mes_label']).size().reset_index().sort_values(['anyo','mes'])
+            for _, r in meses_presentes.iterrows():
+                mes = r['mes']; anyo = r['anyo']; mes_label = r['mes_label']
+                color_mes = PALETA_MESES.get(mes, '#999999')
                 sg_mes = FeatureGroupSubGroup(fg_mes, name=f"{mes_label} {anyo}", show=True)
                 sg_mes.add_to(mapa)
-                
-                # Filtrar datos del mes
-                datos_mes = df_filtrado[(df_filtrado['mes'] == mes) & (df_filtrado['anyo'] == anyo)]
-                
-                # Pintar puntos del mes
+                datos_mes = df_filtrado[(df_filtrado['mes']==mes)&(df_filtrado['anyo']==anyo)]
                 for _, punto in datos_mes.iterrows():
                     try:
                         lat = punto.get('coordenada_latitud', punto.get('latitud'))
                         lon = punto.get('coordenada_longitud', punto.get('longitud'))
-                        
                         if pd.notna(lat) and pd.notna(lon):
                             popup_content = f"""
-                            <div style="font-family: Arial, sans-serif; font-size: 12px;">
+                            <div style='font-family: Arial, sans-serif; font-size: 12px;'>
                                 <b>Muestra #{punto.get('id', 'N/A')}</b><br>
                                 Fecha: {punto.get('fecha_evento', 'N/A')}<br>
                                 Barrio: {punto.get('barrio', 'N/A')}<br>
                                 Promotor: {punto.get('id_autor', 'N/A')}
                             </div>
                             """
-                            
-                            folium.CircleMarker(
-                                location=[float(lat), float(lon)],
-                                radius=4,
-                                popup=folium.Popup(popup_content, max_width=300),
-                                color="white",
-                                weight=1,
-                                fillColor=color_mes,
-                                fillOpacity=0.8
-                            ).add_to(sg_mes)
+                            folium.CircleMarker(location=[float(lat), float(lon)], radius=4, popup=folium.Popup(popup_content, max_width=300), color='white', weight=1, fillColor=color_mes, fillOpacity=0.8).add_to(sg_mes)
                     except Exception:
                         continue
-            
-            # --- CONTROL DE CAPAS (ÁRBOL) - TEMPORALIDAD, COMUNAS, CUADRANTES ---
             if HAS_TREE_CONTROL:
                 TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
             else:
                 folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
-            
-            # Construir leyenda mensual
             def fmt_cop(valor):
                 try:
                     return "$" + f"{valor:,.0f}".replace(",", ".")
                 except Exception:
                     return "$0"
-            
             rows_html = []
-            for _, row in meses_presentes.iterrows():
-                mes = row['mes']
-                anyo = row['anyo']
-                mes_label = row['mes_label']
-                color_mes = PALETA_MESES[mes]
-                
-                # Calcular métricas del mes
-                mask_mes = (df_filtrado["mes"] == mes) & (df_filtrado["anyo"] == anyo)
-                muestras_mes = len(df_filtrado[mask_mes])
-                dias_hab_mes = df_filtrado.loc[mask_mes, "fecha_evento"].dt.date.nunique()
-                ids_mes = df_filtrado.loc[mask_mes, "id_autor"].dropna().unique().tolist()
-                
-                # Fechas del mes para la consulta
+            for _, r in meses_presentes.iterrows():
+                mes = r['mes']; anyo = r['anyo']; mes_label = r['mes_label']
+                color_mes = PALETA_MESES.get(mes, '#999999')
+                mask_mes = (df_filtrado['mes']==mes)&(df_filtrado['anyo']==anyo)
+                muestras_mes = int(mask_mes.sum())
+                dias_hab_mes = df_filtrado.loc[mask_mes, 'fecha_evento'].dt.date.nunique()
+                ids_mes = df_filtrado.loc[mask_mes, 'id_autor'].dropna().unique().tolist()
                 from datetime import datetime
                 primer_dia_mes = f"{anyo}-{mes:02d}-01"
                 if mes == 12:
@@ -1502,62 +1305,50 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
                 else:
                     next_month = datetime(anyo, mes + 1, 1)
                     ultimo_dia_mes = f"{anyo}-{mes:02d}-{(next_month - pd.Timedelta(days=1)).day}"
-                
-                # Obtener métricas de pedidos
                 try:
-                    df_metrics_mes = obtener_metricas_pedidos_por_promotores(
-                        centroope=centroope,
-                        fecha_inicio=primer_dia_mes,
-                        fecha_fin=ultimo_dia_mes,
-                        ids_promotores=ids_mes
-                    )
-                    
+                    df_metrics_mes = obtener_metricas_pedidos_por_promotores(centroope=centroope, fecha_inicio=primer_dia_mes, fecha_fin=ultimo_dia_mes, ids_promotores=ids_mes)
                     cant_ped_mes = df_metrics_mes['cant_pedidos'].sum() if not df_metrics_mes.empty else 0
                     valor_mes = df_metrics_mes['valor_conIVA'].sum() if not df_metrics_mes.empty else 0.0
                     adq_recu_mes = df_metrics_mes['venta_adq_recu'].sum() if not df_metrics_mes.empty else 0
-                    
                     pct_nrecu = (100 * adq_recu_mes / cant_ped_mes) if cant_ped_mes > 0 else 0.0
                     pct_fieles = 100 - pct_nrecu
                     efectividad = (100 * cant_ped_mes / muestras_mes) if muestras_mes > 0 else 0.0
-                    
                 except Exception:
                     cant_ped_mes = valor_mes = adq_recu_mes = pct_nrecu = pct_fieles = efectividad = 0
-                
                 rows_html.append(f"""
-                    <tr>
-                        <td style="padding:6px 8px;display:flex;align-items:center;gap:8px;">
-                            <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};"></span>
-                            <span>{mes_label} {anyo}</span>
-                        </td>
-                        <td style="padding:6px 8px;text-align:right;">{muestras_mes}</td>
-                        <td style="padding:6px 8px;text-align:right;">{dias_hab_mes}</td>
-                        <td style="padding:6px 8px;text-align:right;">{cant_ped_mes}</td>
-                        <td style="padding:6px 8px;text-align:right;">{pct_nrecu:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{pct_fieles:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{efectividad:.1f}%</td>
-                        <td style="padding:6px 8px;text-align:right;">{fmt_cop(valor_mes)}</td>
-                    </tr>
+                <tr>
+                    <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
+                        <span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};'></span>
+                        <span>{mes_label} {anyo}</span>
+                    </td>
+                    <td style='padding:6px 8px;text-align:right;'>{muestras_mes}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{dias_hab_mes}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{cant_ped_mes}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{pct_nrecu:.1f}%</td>
+                    <td style='padding:6px 8px;text-align:right;'>{pct_fieles:.1f}%</td>
+                    <td style='padding:6px 8px;text-align:right;'>{efectividad:.1f}%</td>
+                    <td style='padding:6px 8px;text-align:right;'>{fmt_cop(valor_mes)}</td>
+                </tr>
                 """)
-            
             legend_html = f"""
-            <div id="legend-promotores" style="
+            <div id='legend-promotores' style='
                 position: fixed; bottom: 20px; left: 20px; z-index: 1000;
                 background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;">
+                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;'>
               <details open>
-                <summary style="cursor:pointer;font-weight:600;color:#111;">Indicadores por mes (mismo rango)</summary>
-                <div style="margin-top:8px;">
-                  <table style="border-collapse:collapse; width:100%; font-size:12px;">
+                <summary style='cursor:pointer;font-weight:600;color:#111;'>Indicadores por mes (mismo rango)</summary>
+                <div style='margin-top:8px;'>
+                  <table style='border-collapse:collapse; width:100%; font-size:12px;'>
                     <thead>
                       <tr>
-                        <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #eee;">Mes</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Muestras</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">#Días hábiles</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Pedidos</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;" title="Nuevos + Recuperación + Perdidos reactivados">% N/Recu</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">% Fieles</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Efectividad</th>
-                        <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #eee;">Valor con IVA</th>
+                        <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Mes</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Muestras</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>#Días hábiles</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Pedidos</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Nuevos + Recuperación + Perdidos reactivados'>% N/Recu</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Fieles</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Efectividad</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Valor con IVA</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1568,92 +1359,111 @@ def generar_mapa_muestras(fecha_inicio, fecha_fin, ciudad, barrios=None, promoto
               </details>
             </div>
             """
-        
-        mapa.get_root().html.add_child(folium.Element(legend_html))
 
+        # Agregar leyenda si aplica
+        if legend_html:
+            # Inyectar assets de ordenamiento si faltan e insertar leyenda
+            inject_sort_assets(mapa)
+            mapa.get_root().html.add_child(folium.Element(legend_html))
+            # Hook de inicialización para tablas ordenables
+            mapa.get_root().html.add_child(folium.Element("<script>window.TASortable && window.TASortable.initAll();</script>"))
 
+        # Resumen flotante (arriba a la izquierda)
+        html_content = f"""
+        <div id='legend-resumen' class='legend-box' style='
+            position: fixed; top: 20px; left: 20px; background-color: white; padding: 15px; border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 1000; font-family: Arial, sans-serif; min-width: 250px;'>
+            <div class='legend-header' onclick="toggleLegend('legend-resumen')" style='cursor: pointer; display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px 0;'>
+                <h4 style='margin: 0; color: #111;'>Resumen de Muestras</h4>
+                <span id='legend-resumen-toggle' class='toggle-icon' style='margin-left: 10px; transition: transform 0.3s ease; font-size: 12px; color: #6b7280;'>▼</span>
+            </div>
+            <div id='legend-resumen-body' class='legend-body'>
+                <table style='width: 100%; border-collapse: collapse;'>
+                    <tr><td style='padding: 3px 0;'>Fechas:</td><td style='padding: 3px 0;'><b>{stats_data['fecha_inicio']} - {stats_data['fecha_fin']}</b></td></tr>
+                    <tr><td style='padding: 3px 0;'>Muestras/día:</td><td style='padding: 3px 0;'><b>{stats_data['promedio_muestras']:.1f}</b></td></tr>
+                    <tr style='border-top: 1px solid #eee;'><td style='padding: 5px 0;'><b>Total muestras:</b></td><td style='padding: 5px 0;'><b>{stats_data['total_cantidad']}</b></td></tr>
+                </table>
+            </div>
+        </div>
+        <style>
+            .legend-box.collapsed .legend-body {{ display: none; }}
+            .legend-box.collapsed .toggle-icon {{ transform: rotate(-90deg); }}
+            .legend-header:hover {{ background-color: #f9fafb; border-radius: 4px; padding: 2px; }}
+            .toggle-icon {{ font-size: 12px; color: #6b7280; }}
+        </style>
+        <script>
+            function toggleLegend(legendId) {{
+                const legend = document.getElementById(legendId);
+                const toggle = document.getElementById(legendId + '-toggle');
+                const body = document.getElementById(legendId + '-body');
+                if (legend.classList.contains('collapsed')) {{
+                    legend.classList.remove('collapsed'); toggle.style.transform = 'rotate(0deg)'; body.style.display = 'block';
+                }} else {{
+                    legend.classList.add('collapsed'); toggle.style.transform = 'rotate(-90deg)'; body.style.display = 'none';
+                }}
+                setTimeout(repositionZoomControls, 100);
+            }}
+            function repositionZoomControls() {{
+                const resumenLegend = document.getElementById('legend-resumen');
+                const zoomControl = document.querySelector('.leaflet-control-zoom');
+                if (zoomControl && resumenLegend) {{
+                    const resumenRect = resumenLegend.getBoundingClientRect();
+                    const topPosition = resumenRect.bottom + 10; zoomControl.style.top = topPosition + 'px'; zoomControl.style.left = '20px'; zoomControl.style.position = 'fixed';
+                }}
+            }}
+            document.addEventListener('DOMContentLoaded', function() {{ setTimeout(repositionZoomControls, 500); }});
+            window.addEventListener('load', function() {{ setTimeout(repositionZoomControls, 1000); }});
+        </script>
+        """
+        mapa.get_root().html.add_child(folium.Element(html_content))
 
         # Guardar mapa
         filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-        filepath = f"static/maps/{filename}"
-        mapa.save(filepath)
-        
-        # === CONSTRUCCIÓN DEL DF EXPORTABLE (CSV) ===
+        mapa.save(f"static/maps/{filename}")
+
+        # CSV exportable
         df_csv = None
         try:
             if not df_filtrado.empty:
                 df_csv = df_filtrado.copy()
-                
-                # lat / lot normalizados
-                df_csv["lat"] = df_csv.apply(lambda r: r.get("coordenada_latitud", r.get("latitud", None)), axis=1)
-                df_csv["lot"] = df_csv.apply(lambda r: r.get("coordenada_longitud", r.get("longitud", None)), axis=1)
-                
-                # Verificar que fecha_evento existe
-                if "fecha_evento" not in df_csv.columns and "fecha" in df_csv.columns:
-                    df_csv["fecha_evento"] = df_csv["fecha"]
-                
-                # Filtrar registros con coordenadas válidas
-                df_csv = df_csv.dropna(subset=["lat", "lot"])
-                
-                # Ordenar por fecha_evento asc, luego lat, luego lot para empates
+                df_csv['lat'] = df_csv.apply(lambda r: r.get('coordenada_latitud', r.get('latitud', None)), axis=1)
+                df_csv['lot'] = df_csv.apply(lambda r: r.get('coordenada_longitud', r.get('longitud', None)), axis=1)
+                if 'fecha_evento' not in df_csv.columns and 'fecha' in df_csv.columns:
+                    df_csv['fecha_evento'] = pd.to_datetime(df_csv['fecha'], errors='coerce')
+                df_csv = df_csv.dropna(subset=['lat', 'lot'])
                 sort_cols = []
-                if "fecha_evento" in df_csv.columns:
-                    sort_cols.append("fecha_evento")
-                sort_cols.extend(["lat", "lot"])
+                if 'fecha_evento' in df_csv.columns:
+                    sort_cols.append('fecha_evento')
+                sort_cols.extend(['lat', 'lot'])
                 df_csv = df_csv.sort_values(sort_cols, ascending=True)
-                
-                # Resetear índice y crear ID simple 1..N
                 df_csv = df_csv.reset_index(drop=True)
-                df_csv["id"] = df_csv.index + 1
-                
-                # Agregar lon duplicando lot (mantener compatibilidad)
-                df_csv["lon"] = df_csv["lot"]
-                
-                # cod_cuadrante sin reconsultas
+                df_csv['id'] = df_csv.index + 1
+                df_csv['lon'] = df_csv['lot']
                 cod_series = _asignar_cuadrante_a_puntos(df_csv, features_cuadrantes)
-                df_csv["cod_cuadrante"] = cod_series
-                
-                # Agregar area_m2_cuadrante usando el mapeo calculado
-                df_csv["area_m2_cuadrante"] = df_csv["cod_cuadrante"].map(area_map).fillna(0).round().astype(int)
-                
-                # columnas finales sugeridas
-                cols_finales = ["id", "fecha_evento", "id_autor", "lat", "lot", "lon", "cod_cuadrante", "area_m2_cuadrante"]
-                
-                # Incluir id_contacto si existe, justo después de id_autor
-                if "id_contacto" in df_csv.columns:
-                    insert_pos = cols_finales.index("id_autor") + 1
-                    cols_finales = cols_finales[:insert_pos] + ["id_contacto"] + cols_finales[insert_pos:]
-                
-                # Usar solo las columnas que existan
-                cols_disponibles = [col for col in cols_finales if col in df_csv.columns]
+                df_csv['cod_cuadrante'] = cod_series
+                df_csv['area_m2_cuadrante'] = df_csv['cod_cuadrante'].map(area_map).fillna(0).round().astype(int)
+                cols_finales = ['id','fecha_evento','id_autor','lat','lot','lon','cod_cuadrante','area_m2_cuadrante']
+                if 'id_contacto' in df_csv.columns:
+                    insert_pos = cols_finales.index('id_autor') + 1
+                    cols_finales = cols_finales[:insert_pos] + ['id_contacto'] + cols_finales[insert_pos:]
+                cols_disponibles = [c for c in cols_finales if c in df_csv.columns]
                 df_csv = df_csv[cols_disponibles]
-                
-                logging.info(f"DF CSV construido: {len(df_csv)} registros con coordenadas válidas y ordenamiento fecha_evento ASC")
         except Exception as e:
             logging.error(f"Error construyendo DF CSV: {e}")
             df_csv = None
-        
-        # Preparar df_ism para retorno (si está vacío, crear con esquema)
+
+        # df_ism por defecto vacío si no disponible
         if df_ism is None or df_ism.empty:
-            # Crear DataFrame vacío con esquema ISM de FASE 3
-            schema_ism = [
-                'ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag'
-            ]
+            schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
             df_ism = pd.DataFrame(columns=schema_ism)
-        
-        # Retornar filename, número de puntos, DF para CSV e ISM
+
         n_puntos = len(df_filtrado) if not df_filtrado.empty else 0
         return filename, n_puntos, df_csv, df_ism
 
     except Exception as e:
         logging.error(f"Error en la generación del mapa: {e}")
-        # DataFrame ISM vacío con esquema para casos de error
-        schema_ism = ['ciudad', 'codigo_cuadrante', 'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-                      'muestras_local', 'dias_operacion', 'n_promotores', 'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag']
-        df_ism_empty = pd.DataFrame(columns=schema_ism)
-        return None, 0, None, df_ism_empty
+        schema_ism = ['ciudad','codigo_cuadrante','area_m2','area_km2','hogares_por_m2','hogares_estimados','muestras_local','dias_operacion','n_promotores','lambda_q','C_raw','C','E_raw','E','ISM','over_flag']
+        return None, 0, None, pd.DataFrame(columns=schema_ism)
     finally:
-        # Restaurar DEBUG_AREAS al valor original
         if verificar_areas:
             DEBUG_AREAS = DEBUG_AREAS_ORIGINAL
