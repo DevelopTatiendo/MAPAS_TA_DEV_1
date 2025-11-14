@@ -79,7 +79,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad (solo cambia esta línea para alternar)
-CIUDAD = "CALI"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 if CIUDAD not in CIUDADES:
     raise ValueError(f"Ciudad inválida: {CIUDAD}. Disponibles: {list(CIUDADES)}")
 
@@ -373,11 +373,17 @@ def _polygon_metrics(geom_utm, X_used):
 
 
 def _reset_resultados_ciudad(base_dir, ciudad):
-    """Elimina y recrea la estructura Pruebas/Resultados M1/<CIUDAD>/{base,sub_clusters}."""
+    """
+    Elimina y recrea SOLO la estructura:
+    Pruebas/Resultados M1/<CIUDAD>/{base, sub_clusters}
+    sin borrar otras ciudades.
+    """
     import shutil
     resultados_dir = os.path.join(base_dir, "Pruebas", "Resultados M1")
-    shutil.rmtree(resultados_dir, ignore_errors=True)
+    os.makedirs(resultados_dir, exist_ok=True)
     base_ciudad = os.path.join(resultados_dir, ciudad)
+    # borrar solo la carpeta de la ciudad
+    shutil.rmtree(base_ciudad, ignore_errors=True)
     base_dir_out = os.path.join(base_ciudad, "base")
     sub_dir = os.path.join(base_ciudad, "sub_clusters")
     os.makedirs(base_dir_out, exist_ok=True)
@@ -627,6 +633,8 @@ def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
         "davies_bouldin": dbis,
         "calinski_harabasz": chis
     })
+    # Marcar origen métrica
+    dfk["metrica"] = "M1"
     # Forzar coma decimal
     dfk = _format_decimal_comma(dfk, decimals=3)
     dfk.to_csv(csv_por_k_path, index=False, sep=";", encoding="utf-8-sig")
@@ -757,6 +765,7 @@ def _compute_metrics_csv(X, labels, km, transformer, out_csv_path):
 
     import pandas as _pd
     dfm = _pd.DataFrame(rows)
+    dfm["metrica"] = "M1"
     # columnas en km derivadas (opcional)
     for col in ["rmse_m","mean_dist_m","median_dist_m","p80_dist_m","p90_dist_m","p95_dist_m",
                 "max_dist_m","bbox_w_m","bbox_h_m","bbox_diag_m","std_x_m","std_y_m"]:
@@ -1115,27 +1124,30 @@ def main():
     try:
         if 'asesor_rows' in locals() and isinstance(asesor_rows, list) and len(asesor_rows):
             import pandas as _pd
-            # Añadimos area_km2 a las columnas exportadas
-            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados"]
+            # Columnas estándar + metrica
+            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados", "metrica"]
 
             df_res = _pd.DataFrame(asesor_rows)
 
-            # Quedarse únicamente con filas que traen áreas/perímetros (polígonos)
+            # Filtrar filas con área válida
             df_res = df_res[_pd.to_numeric(df_res.get("area_m2"), errors="coerce").notna()].copy()
 
-            # Calcular km² ANTES de formatear
+            # Calcular km²
             df_res["area_km2"] = _pd.to_numeric(df_res["area_m2"], errors="coerce") / 1_000_000.0
+            # Etiqueta de origen
+            df_res["metrica"] = "M1"
 
-            # Dejar solo las columnas solicitadas, en ese orden
+            # Reordenar columnas
             df_res = df_res[cols_keep].copy()
 
-            # Guardar SIN totales por cluster ni total asesor
+            # Resumen detallado por asesor (poligonos)
             out_res = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"resumen_areas_asesor_{asesor_id}.csv")
             os.makedirs(os.path.dirname(out_res), exist_ok=True)
-
-            # Formato CSV con separador ';' y coma decimal para números.
-            # Usamos 3 decimales para todo (área m2 y km2 saldrán con coma).
             dump_csv_coma_decimal(df_res, out_res, decimals=3)
+
+            # Resumen global en sub_clusters
+            out_global = os.path.join(SUBCLUSTERS_DIR, f"resumen_{asesor_id}.csv")
+            dump_csv_coma_decimal(df_res, out_global, decimals=3)
     except Exception as e:
         logging.warning(f"No fue posible generar resumen por asesor: {e}")
 

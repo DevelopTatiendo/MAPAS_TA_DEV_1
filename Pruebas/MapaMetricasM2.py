@@ -76,7 +76,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad
-CIUDAD = "CALI"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 _cfg = CIUDADES[CIUDAD]
 CENTROOPE = _cfg["centroope"]
 
@@ -98,7 +98,7 @@ METRICAS_K_CSV  = os.path.join(RESULTADOS_DIR, "metricas_por_k.csv")
 TAU_ELBOW       = 0.12
 
 # === Auditoría sub-agrupación KMeans (igual M1) ===
-P_OUTLIER           = 0.00
+P_OUTLIER           = 0.10
 SUBK_KMAX_ABS       = 20
 SUBK_KMAX_FRAC      = 0.10
 ELBOW_POLICY        = "min"
@@ -233,6 +233,7 @@ def _curva_elbow_y_metricas(X, resultados_dir, elbow_png, csv_por_k_path):
     plt.xlabel("K"); plt.ylabel("SSE / Inertia"); plt.title("Gráfica de codo")
     fig.tight_layout(); fig.savefig(elbow_png, dpi=150); plt.close(fig)
     dfk = pd.DataFrame({"K": ks, "inertia": inertias, "davies_bouldin": dbis, "calinski_harabasz": chis})
+    dfk["metrica"] = "M2"
     dfk = _format_decimal_comma(dfk, decimals=3)
     dfk.to_csv(csv_por_k_path, index=False, sep=";", encoding="utf-8-sig")
     return ks, inertias
@@ -301,6 +302,7 @@ def _compute_metrics_csv(X, labels, km, transformer, out_csv_path):
             "rmse_m": rmse_m,
         })
     dfm = pd.DataFrame(rows)
+    dfm["metrica"] = "M2"
     dfm = _format_decimal_comma(dfm, decimals=3)
     dfm.to_csv(out_csv_path, index=False, sep=";", encoding="utf-8-sig")
 
@@ -819,13 +821,12 @@ def _export_concave_cluster_from_submap(
 
 def main():
     logging.info(f"Iniciando generación de mapa de muestras (M2) {CIUDAD} 2025")
-    # Reset de resultados M2
-    shutil.rmtree(RESULTADOS_DIR, ignore_errors=True)
-    os.makedirs(RESULTADOS_DIR, exist_ok=True)
+    # Reset SOLO de la ciudad actual (preserva otras ciudades dentro de Resultados M2)
     BASE_CIUDAD_DIR = os.path.join(RESULTADOS_DIR, CIUDAD)
-    BASE_DIR_OUT = os.path.join(BASE_CIUDAD_DIR, "base")
+    shutil.rmtree(BASE_CIUDAD_DIR, ignore_errors=True)
+    BASE_DIR_OUT    = os.path.join(BASE_CIUDAD_DIR, "base")
     SUBCLUSTERS_DIR = os.path.join(BASE_CIUDAD_DIR, "sub_clusters")
-    POLIGONOS_DIR = os.path.join(BASE_CIUDAD_DIR, "poligonos")
+    POLIGONOS_DIR   = os.path.join(BASE_CIUDAD_DIR, "poligonos")
     for d in (BASE_DIR_OUT, SUBCLUSTERS_DIR, POLIGONOS_DIR):
         os.makedirs(d, exist_ok=True)
     global HTML_OUT, CSV_OUT, HTML_OUT_CLUST, ELBOW_PNG, METRICS_CSV, METRICAS_K_CSV
@@ -977,7 +978,8 @@ def main():
         # Resumen por asesor (SOLO métricas de polígonos)
         if isinstance(resumen_rows, list) and len(resumen_rows):
             df_res = pd.DataFrame(resumen_rows)
-            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados"]
+            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados", "metrica"]
+            df_res["metrica"] = "M2"
             df_res = df_res[cols_keep]
             out_res = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"resumen_areas_asesor_{asesor_id}.csv")
             os.makedirs(os.path.dirname(out_res), exist_ok=True)
@@ -986,6 +988,7 @@ def main():
             # CSV global concatenado por subcluster en nivel sub_clusters/
             try:
                 df_global = pd.DataFrame(resumen_rows)
+                df_global["metrica"] = "M2"
                 df_global = df_global[cols_keep]
                 os.makedirs(SUBCLUSTERS_DIR, exist_ok=True)
                 out_global = os.path.join(SUBCLUSTERS_DIR, f"resumen_{asesor_id}.csv")
