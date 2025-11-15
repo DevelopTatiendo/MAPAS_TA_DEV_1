@@ -82,7 +82,7 @@ CENTROOPE = _cfg["centroope"]
 
 FECHA_INICIO = "2025-01-01"
 FECHA_FIN    = "2025-12-31"
-promotor_num = 1
+promotor_num = 2
 MANUAL_k = False
 K_target = 4
 
