@@ -464,3 +464,60 @@ def generar_geojson_subclusters_promotor(
 # - Provee:
 #     * calcular_areas_por_promotor: resumen de área total (m²) por promotor.
 #     * generar_geojson_subclusters_promotor: detalle por subcluster + GeoJSON para auditoría.
+
+# =============================================================
+# Wrappers específicos para el módulo de Muestras
+# =============================================================
+
+def areas_muestras_resumen(
+    df: pd.DataFrame,
+    centroope: int | None,
+) -> pd.DataFrame:
+    """
+    Punto de entrada pensado para el módulo de Muestras en modo normal
+    (llamado desde `mapa_muestras` a través de `preprocesamiento_muestras.metricas_areas_muestras`).
+
+    - Recibe el mismo df que se usa para generar el mapa de muestras.
+    - Internamente delega en `calcular_areas_por_promotor` **sin cambiar su lógica**.
+    - Devuelve un DataFrame con las columnas:
+        * id_autor
+        * area_m2    (alias de area_total_m2)
+
+    Este wrapper NO hace ningún filtrado adicional ni cálculos nuevos.
+    """
+    df_base = calcular_areas_por_promotor(df, centroope)
+    if df_base is None or df_base.empty:
+        return pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    out = (
+        df_base[["id_autor", "area_total_m2"]]
+        .copy()
+        .rename(columns={"area_total_m2": "area_m2"})
+    )
+    # Aseguramos tipos limpios
+    out["id_autor"] = pd.to_numeric(out["id_autor"], errors="coerce").astype("Int64")
+    out["area_m2"] = pd.to_numeric(out["area_m2"], errors="coerce")
+    out = out.dropna(subset=["id_autor"]).reset_index(drop=True)
+    return out
+
+
+def areas_muestras_auditoria(
+    df_promotor: pd.DataFrame,
+    centroope: int | None,
+):
+    """
+    Esqueleto de punto de entrada para el modo auditoría del módulo de Muestras.
+
+    Idea de uso futuro (NO implementar lógica nueva todavía):
+    - Será llamado desde `mapa_muestras_auditoria`, con df ya filtrado a un solo id_autor.
+    - Deberá combinar:
+        * métricas geométricas por subcluster (áreas, perímetros, n_puntos)
+        * un GeoJSON con los polígonos de subclusters
+
+    Por ahora:
+    - Solo delega en `generar_geojson_subclusters_promotor(df_promotor, centroope)`
+      y devuelve su resultado tal cual.
+    """
+    # Placeholder: en el futuro se conectará con generar_geojson_subclusters_promotor
+    # y retornará métricas + GeoJSON. Por ahora no ejecuta lógica geométrica adicional.
+    return df_promotor

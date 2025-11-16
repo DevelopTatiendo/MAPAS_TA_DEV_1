@@ -14,7 +14,8 @@ from pre_procesamiento.preprocesamiento_muestras import (
     crear_df,
     obtener_metricas_pedidos_por_promotores,  # usado aún en modo Temporalidad (mes)
     resolver_nombre_ruta,
-    prepo_metricas_promotores_muestras      # nueva API métricas por promotor (muestras)
+    prepo_metricas_promotores_muestras,      # nueva API métricas por promotor (muestras)
+    metricas_areas_muestras                  # placeholder métricas de área por promotor
 )
 import unicodedata
 from utils.gestor_mapas import guardar_mapa_controlado
@@ -34,7 +35,6 @@ OBJETIVO_X_1000M2 = 1.0        # meta: 1 muestra por 1.000 m² (ajustable)
 # === CONSTANTES PARA CÁLCULO DE ÁREAS ===
 DEBUG_AREAS = False  # Si True, el popup mostrará el método: "geodésico" o "fallback"
 
-# (Eliminado) Debug ISM
 
 # === PALETA DE COLORES POR MES ===
 PALETA_MESES = {
@@ -285,7 +285,7 @@ def _calcular_metricas_padre(feature_padre: dict, features_hijos: list, metricas
         
     return result
 
-# (Eliminado) Popup ISM
+ 
 
 def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dias_activos: int, metodo_area: str = None, tipo_capa: str = None, verificacion_info: dict = None, ciudad: str = None, n_promotores: int = None) -> str:
     """
@@ -849,9 +849,6 @@ def generar_mapa_muestras(
         df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
         df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
 
-        # (Eliminado) Cálculo ISM
-        metrics_by_code = {}
-
         # Métricas por cuadrante
         features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
         features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
@@ -866,47 +863,7 @@ def generar_mapa_muestras(
             metricas_cache[('PADRE', met['codigo'])] = met
             area_map[met['codigo']] = met['area_m2']
 
-        # Índice helper (cuando enable_ism=False)
-        def _calc_indice(met: dict):
-            area = met.get('area_m2')
-            mloc = met.get('muestras_local', met.get('total_muestras', 0))
-            if not area or area <= 0:
-                return None
-            try:
-                return (float(mloc) / float(area)) * 1000.0
-            except Exception:
-                return None
-
-        def _popup_cuadrante_indice(props: dict, met: dict):
-            nombre = props.get('display_name') or props.get('nombre') or props.get('codigo', 'Sin nombre')
-            muestras = int(met.get('muestras_local', met.get('total_muestras', 0)) or 0)
-            dias = int(met.get('dias_operacion', met.get('dias_activos', 0)) or 0)
-            prom = int(met.get('n_promotores', met.get('promotores', 0)) or 0)
-            tasa = float(met.get('lambda_q', met.get('tasa', 0)) or 0)
-            area = met.get('area_m2')
-            indice = met.get('indice')
-            if area and area > 0:
-                area_m2_txt = f"{area:,.0f} m²".replace(',', '.')
-                area_km_txt = f"{area/1e6:,.2f} km²".replace(',', '.')
-                area_txt = f"{area_m2_txt} · ({area_km_txt})"
-            else:
-                area_txt = 'N/D'
-            indice_txt = 'N/D' if indice is None else f"{indice:.2f}"
-            return f"""
-            <div style='font-family: Inter,system-ui,Arial;'>
-              <div style='font-weight:700;font-size:18px;margin:2px 0 6px 0;'>{nombre}</div>
-              <div style='font-size:13px;font-weight:700;margin-bottom:10px;'>Índice: {indice_txt}</div>
-              <div style='display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;'>
-                <span class='chip chip-cobertura'><b>Muestras (local): {muestras}</b></span>
-                <span class='chip chip-efectividad'><b>Área: {area_txt}</b></span>
-              </div>
-              <div style='font-size:13px;line-height:1.45;'>
-                <div><b>Días de operación:</b> {dias}</div>
-                <div><b>Promotores:</b> {prom}</div>
-                <div><b>Tasa:</b> {tasa:.2f}</div>
-              </div>
-            </div>
-            """
+                
 
         # Dibujar PADRES
         for feature_padre in features_padres:
@@ -918,23 +875,19 @@ def generar_mapa_muestras(
                 continue
             metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
             verificacion_info = _verificar_area_draw_vs_cache(feature_padre, m['area_m2'], 'PADRE') if verificar_areas else None
-            met_idx = {
-                'area_m2': m['area_m2'],
-                'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
-                'dias_operacion': m.get('dias_activos', 0),
-                'n_promotores': 0,
-                'lambda_q': 0.0,
-            }
-            if codigo in metrics_by_code:
-                row_ism = metrics_by_code[codigo]
-                met_idx.update({
-                    'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
-                    'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
-                    'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
-                    'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q']),
-                })
-            met_idx['indice'] = _calc_indice(met_idx)
-            popup_html = _popup_cuadrante_indice(props, met_idx)
+            total_local = m.get('muestras_local', m.get('total_muestras', 0))
+            dias_activos = m.get('dias_activos', 0)
+            popup_html = _popup_cuadrante_muestras(
+                codigo,
+                m['area_m2'],
+                total_local,
+                dias_activos,
+                metodo_area=metodo_area,
+                tipo_capa='PADRE',
+                verificacion_info=verificacion_info,
+                ciudad=ciudad,
+                n_promotores=None
+            )
             layer_padre = folium.GeoJson(
                 data=feature_padre,
                 style_function=_style_cuadrante_padre,
@@ -953,23 +906,19 @@ def generar_mapa_muestras(
                 continue
             metodo_area = m.get('metodo_area') if DEBUG_AREAS else None
             verificacion_info = _verificar_area_draw_vs_cache(feature_hijo, m['area_m2'], 'HIJO') if verificar_areas else None
-            met_idx = {
-                'area_m2': m['area_m2'],
-                'muestras_local': m.get('muestras_local', m.get('total_muestras', 0)),
-                'dias_operacion': m.get('dias_activos', 0),
-                'n_promotores': 0,
-                'lambda_q': 0.0,
-            }
-            if codigo in metrics_by_code:
-                row_ism = metrics_by_code[codigo]
-                met_idx.update({
-                    'muestras_local': row_ism.get('muestras_local', met_idx['muestras_local']),
-                    'dias_operacion': row_ism.get('dias_operacion', met_idx['dias_operacion']),
-                    'n_promotores': row_ism.get('n_promotores', met_idx['n_promotores']),
-                    'lambda_q': row_ism.get('lambda_q', met_idx['lambda_q']),
-                })
-            met_idx['indice'] = _calc_indice(met_idx)
-            popup_html = _popup_cuadrante_indice(props, met_idx)
+            total_local = m.get('muestras_local', m.get('total_muestras', 0))
+            dias_activos = m.get('dias_activos', 0)
+            popup_html = _popup_cuadrante_muestras(
+                codigo,
+                m['area_m2'],
+                total_local,
+                dias_activos,
+                metodo_area=metodo_area,
+                tipo_capa='HIJO',
+                verificacion_info=verificacion_info,
+                ciudad=ciudad,
+                n_promotores=None
+            )
             layer_hijo = folium.GeoJson(
                 data=feature_hijo,
                 style_function=_style_cuadrante,
@@ -1025,11 +974,16 @@ def generar_mapa_muestras(
             else:
                 folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
             # Métricas por promotor (muestras)
+            # Placeholder: preparar entrada de métricas de área por promotor (sin usar aún)
+            try:
+                df_area_prom = metricas_areas_muestras(df_filtrado, centroope)
+            except Exception:
+                df_area_prom = pd.DataFrame(columns=["id_autor","area_m2"])
             try:
                 df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados)
             except Exception as e:
                 logging.error(f"Error métricas promotores muestras: {e}")
-                df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2'])
+                df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','area_m2','muestras_area'])
             prom_metrics = {int(r['id_autor']): r for _, r in df_prom.iterrows()} if not df_prom.empty else {}
             legend_rows = []
             for (nombre_compacto, _sg, count_muestras, color_hex) in grupos_promotores:
@@ -1050,10 +1004,8 @@ def generar_mapa_muestras(
                 pct_no_fieles = float(met.get('pct_no_fieles', 0.0) or 0.0)
                 pct_contactables = float(met.get('pct_contactables', 0.0) or 0.0)
                 pct_contactables_nofieles = float(met.get('pct_contactables_nofieles', 0.0) or 0.0)
-                m1 = met.get('M1')
-                m2 = met.get('M2')
-                m3 = met.get('M3')
-                muestras_m2 = met.get('muestras_m2')
+                area_m2 = met.get('area_m2')
+                muestras_area = met.get('muestras_area')
                 def _fmt_int(v):
                     return f"{int(v):,}".replace(',', '.') if v is not None else '—'
                 def _fmt_pct(v):
@@ -1072,10 +1024,8 @@ def generar_mapa_muestras(
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m1)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m2)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(m3)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_placeholder(muestras_m2) if muestras_m2 is not None else '—'}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(area_m2)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(muestras_area)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
@@ -1095,10 +1045,8 @@ def generar_mapa_muestras(
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
-                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M1</th>
-                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M2</th>
-                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>M3</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Muestras por m² (usando M1)'>Muestras/m² (M1)</th>
+                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área m²</th>
+                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/área</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>

@@ -19,6 +19,7 @@ import base64
 # from mapa_pedidos import generar_mapa_pedidos
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 # from mapa_visitas import generar_mapa_visitas_individuales
+# from mapa_muestras_auditoria import generar_mapa_muestras_auditoria  # FASE 2: import futuro
 from mapa_muestras import generar_mapa_muestras
 from mapa_consultores import generar_mapa_consultores
 from mapa_consultores_simple import generar_mapa_consultores_simple
@@ -250,6 +251,12 @@ if "promotores_sel" not in st.session_state:
 if "filtrar_por_promotor" not in st.session_state:
     st.session_state["filtrar_por_promotor"] = False
 
+# Estado por defecto para modo auditoría (Muestras)
+if "muestras_modo_auditoria" not in st.session_state:
+    st.session_state["muestras_modo_auditoria"] = False
+if "promotor_auditoria" not in st.session_state:
+    st.session_state["promotor_auditoria"] = None
+
 with promotor_container:
     if tipo_mapa == "Muestras":
         st.session_state["filtrar_por_promotor"] = st.toggle("Filtrar por promotor", value=st.session_state["filtrar_por_promotor"])
@@ -290,6 +297,62 @@ with promotor_container:
         else:
             st.session_state["promotores_sel"] = None
 
+# --- CONTENEDOR REACTIVO PARA MODO AUDITORÍA (fuera del form) ---
+auditoria_container = st.container()
+
+with auditoria_container:
+    if tipo_mapa == "Muestras":
+        with st.expander("Opciones de visualización"):
+            modo_auditoria = st.checkbox(
+                "🕵️ Modo auditoría",
+                value=st.session_state["muestras_modo_auditoria"],
+                help="Activa el modo auditoría para revisar en detalle el comportamiento de un solo promotor.",
+                key="muestras_modo_auditoria"
+            )
+
+            if modo_auditoria:
+                with st.spinner("Cargando promotores para auditoría..."):
+                    try:
+                        df_prom_aud = listar_promotores()
+                    except Exception as e:
+                        st.error(f"Error al cargar promotores para auditoría: {e}")
+                        df_prom_aud = None
+
+                if df_prom_aud is None or df_prom_aud.empty:
+                    st.info("No se encontraron promotores para modo auditoría.")
+                    st.session_state["promotor_auditoria"] = None
+                else:
+                    ids_aud = df_prom_aud["id_autor"].astype(str).tolist()
+                    etiquetas_aud = (
+                        df_prom_aud["apellido"].fillna("").astype(str)
+                        + " · "
+                        + df_prom_aud["id_autor"].astype(str)
+                    ).tolist()
+                    label_map_aud = dict(zip(ids_aud, etiquetas_aud))
+
+                    # Añadimos una opción vacía al inicio para que no haya selección por defecto
+                    opciones_aud = [""] + ids_aud
+
+                    promotor_aud = st.selectbox(
+                        "Promotor a auditar",
+                        options=opciones_aud,
+                        format_func=lambda x: (
+                            "Escribe para buscar…" if x == "" else label_map_aud.get(x, x)
+                        ),
+                        key="muestras_promotor_auditoria",
+                    )
+
+                    # Si hay selección válida, guardamos el id; si no, None
+                    if promotor_aud:
+                        try:
+                            st.session_state["promotor_auditoria"] = int(promotor_aud)
+                        except Exception:
+                            st.session_state["promotor_auditoria"] = promotor_aud
+                    else:
+                        st.session_state["promotor_auditoria"] = None
+            else:
+                st.session_state["promotor_auditoria"] = None
+
 with st.form(key="filtros_form"):
     # if tipo_mapa == "Pedidos":
     #     rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
@@ -324,9 +387,7 @@ with st.form(key="filtros_form"):
             key="color_mode_muestras"  # mantener la misma key para persistencia
         )
 
-        # Opciones de visualización
-        with st.expander("Opciones de visualización"):
-            verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
+        # (Opciones de visualización movidas fuera del form: ver auditoria_container)
         
         # Cuadrantes (opcional)
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -824,8 +885,12 @@ if submit_button:
         #     map_type = "facturas"
         if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
-            promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
+            promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
+            # Lectura de estado de auditoría (no usado aún para desviar backend)
+            modo_auditoria = st.session_state.get("muestras_modo_auditoria", False)
+            promotor_auditoria = st.session_state.get("promotor_auditoria")
 
+            # Mantener llamada original (sin lógica de auditoría backend en esta fase)
             resultado = manejar_error(
                 generar_mapa_muestras,
                 fecha_inicio,
@@ -835,8 +900,9 @@ if submit_button:
                 promotores_sel,
                 override_fc,
                 color_mode,
-                verificar_areas,
+                False,  # verificar_areas desactivado en esta versión
             )
+
             if resultado:
                 # Formato final: (filename, n_puntos, df_csv)
                 if isinstance(resultado, tuple) and len(resultado) == 3:

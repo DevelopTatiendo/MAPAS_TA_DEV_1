@@ -9,6 +9,24 @@ import logging
 import re
 import unicodedata
 from .db_utils import sql_read
+# Wrappers de métricas de área para Muestras
+try:
+    from .metricas_areas import (
+        areas_muestras_resumen,
+        areas_muestras_auditoria,
+        calcular_areas_por_promotor,  # opcional si se usa en otros contextos
+    )
+except Exception:
+    try:
+        from metricas_areas import (
+            areas_muestras_resumen,
+            areas_muestras_auditoria,
+            calcular_areas_por_promotor,
+        )
+    except Exception:
+        areas_muestras_resumen = None
+        areas_muestras_auditoria = None
+        calcular_areas_por_promotor = None
 from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
 # (Eliminado) imports exclusivos de ISM
 from .preprocesamiento_consultores import listar_rutas_simple, get_co
@@ -268,6 +286,47 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
 
     return df_muestras_completo
 
+def metricas_areas_muestras(
+    df_muestras: pd.DataFrame,
+    centroope: int | None,
+    origen: str = "mapa_muestras",
+) -> pd.DataFrame:
+    """
+    Wrapper de alto nivel para obtener métricas de área de muestreo
+    asociadas al módulo de Muestras.
+
+    - origen="mapa_muestras":
+        Uso actual en modo normal. Devuelve df con columnas:
+            * id_autor
+            * area_m2
+        Delegando en `metricas_areas.areas_muestras_resumen`.
+
+    - origen="mapa_muestras_auditoria":
+        Uso futuro en modo auditoría. En esta fase se deja solo el esqueleto;
+        el cálculo real y el GeoJSON se implementarán cuando exista
+        `mapa_muestras_auditoria`.
+
+    En esta fase:
+    - NO se modifican ni los mapas ni las tablas visibles.
+    - `mapa_muestras` seguirá llamando a esta función sin cambiar su firma
+      (se apoya en el valor por defecto origen="mapa_muestras").
+    """
+    if df_muestras is None or df_muestras.empty:
+        return pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    if origen == "mapa_muestras":
+        # Modo normal: resumen por promotor
+        if areas_muestras_resumen is None:
+            return pd.DataFrame(columns=["id_autor", "area_m2"])
+        return areas_muestras_resumen(df_muestras, centroope)
+
+    elif origen == "mapa_muestras_auditoria":
+        # Placeholder para modo auditoría (aún no utilizado aquí)
+        return pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    else:
+        raise ValueError(f"Origen desconocido para metricas_areas_muestras: {origen}")
+
 def metricas_muestras_por_promotor(df_muestras: pd.DataFrame, fecha_inicio: str, fecha_fin: str, co=None, ids_autor=None) -> pd.DataFrame:
     """
     Calcula métricas base de muestras por promotor en un rango de fechas.
@@ -428,7 +487,7 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
         return pd.DataFrame(columns=[
             'id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles',
             'muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles',
-            'M1','M2','M3','muestras_m2'
+            'area_m2','muestras_area'
         ])
 
     df_work = df_muestras.copy()
@@ -494,14 +553,33 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
     for c in ['pct_no_fieles','pct_contactables','pct_contactables_nofieles']:
         out[c] = out[c].astype('float64')
 
-    # placeholders
-    out['M1'] = pd.NA
-    out['M2'] = pd.NA
-    out['M3'] = pd.NA
-    out['muestras_m2'] = pd.NA
+    # --- Integrar métricas de área por promotor (M2) ---
+    try:
+        df_areas = metricas_areas_muestras(df_muestras, co, origen="mapa_muestras")
+    except Exception as e:
+        logging.error(f"Error en metricas_areas_muestras: {e}")
+        df_areas = pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    if not df_areas.empty:
+        df_areas = df_areas.set_index("id_autor")
+        out = out.join(df_areas, how="left")
+    else:
+        out['area_m2'] = np.nan
+
+    # Muestras por unidad de área
+    out['muestras_area'] = np.nan
+    mask_area = out['area_m2'].notna() & (out['area_m2'] > 0)
+    out.loc[mask_area, 'muestras_area'] = (
+        out.loc[mask_area, 'muestras_total'].astype(float) /
+        out.loc[mask_area, 'area_m2'].astype(float)
+    )
 
     out = out.reset_index()
-    out = out[['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2']]
+    out = out[[
+        'id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles',
+        'muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles',
+        'area_m2','muestras_area'
+    ]]
     return out
 
 def obtener_promotores_por_ids(ids):
