@@ -76,7 +76,7 @@ CIUDADES = {
 }
 
 # Selección de ciudad
-CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "CALI"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 _cfg = CIUDADES[CIUDAD]
 CENTROOPE = _cfg["centroope"]
 
@@ -86,16 +86,18 @@ promotor_num = 2
 MANUAL_k = False
 K_target = 4
 
-# === Salidas M2 ===
+# === Salidas M2 (directorios base) ===
 RESULTADOS_DIR = os.path.join(BASE_DIR, "Pruebas", "Resultados M2")
 os.makedirs(RESULTADOS_DIR, exist_ok=True)
-HTML_OUT        = os.path.join(RESULTADOS_DIR, f"muestras_simple_{CIUDAD}_2025.html")
-CSV_OUT         = os.path.join(RESULTADOS_DIR, f"muestras_{CIUDAD}_2025.csv")
-HTML_OUT_CLUST  = os.path.join(RESULTADOS_DIR, f"muestras_simple_{CIUDAD}_2025_clusters.html")
-ELBOW_PNG       = os.path.join(RESULTADOS_DIR, "codo.png")
-METRICS_CSV     = os.path.join(RESULTADOS_DIR, "metricas_clusters.csv")
-METRICAS_K_CSV  = os.path.join(RESULTADOS_DIR, "metricas_por_k.csv")
-TAU_ELBOW       = 0.12
+
+# Placeholders para rutas que se redefinen dentro de main() por asesor
+HTML_BASE      = None
+CSV_OUT        = None
+HTML_OUT_CLUST = None
+ELBOW_PNG      = None
+METRICS_CSV    = None
+METRICAS_K_CSV = None
+TAU_ELBOW      = 0.12
 
 # === Auditoría sub-agrupación KMeans (igual M1) ===
 P_OUTLIER           = 0.10
@@ -142,6 +144,7 @@ FALLBACK_COLORS = [
 ]
 
 from pre_procesamiento.preprocesamiento_muestras import crear_df, obtener_promotores_por_ids
+from pre_procesamiento.metricas_areas import areas_muestras_auditoria
 
 try:
     from mapa_muestras import color_for_promotor
@@ -468,6 +471,7 @@ def _elbow_min_k(X, kmax):
 
 
 def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="C_subkmeans.html", filename_csv="C_resumen.csv"):
+    """Simplified: treat entire df_cluster as ONE subcluster (sub_id=0)."""
     os.makedirs(out_dir, exist_ok=True)
     if "_lat" not in df_cluster.columns or "_lon" not in df_cluster.columns:
         try:
@@ -475,8 +479,8 @@ def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="
         except Exception:
             pass
     latlon = df_cluster[["_lat","_lon"]].to_numpy(float)
-    X, _ = _to_utm_xy(df_cluster)
-    Xp, keep_mask = _podar_outliers_xy(X, P_OUTLIER)
+    X_full, _ = _to_utm_xy(df_cluster)
+    Xp, keep_mask = _podar_outliers_xy(X_full, P_OUTLIER)  # single global prune
     df_pod = df_cluster.loc[df_cluster.index[keep_mask]].copy()
     latlon_pod = df_pod[["_lat","_lon"]].to_numpy(float)
     n = len(Xp)
@@ -486,70 +490,50 @@ def _export_subclusters_kmeans(df_cluster, transformer, out_dir, filename_html="
         _add_rutas_layer(m)
     except Exception:
         pass
+    # Raw points (light)
     for la, lo in latlon:
         folium.CircleMarker([float(la), float(lo)], radius=3, color="#c5c8ce", fill=True, fillOpacity=0.45).add_to(m)
+    # Pruned points (blue)
     for la, lo in latlon_pod:
-        folium.CircleMarker([float(la), float(lo)], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.7).add_to(m)
-    rows = []
-    sub_index_map = {}
-    if n >= 10:
-        kmax_eff = max(1, min(SUBK_KMAX_ABS, int(np.ceil(SUBK_KMAX_FRAC * n))))
-        k_opt, _ = _elbow_min_k(Xp, kmax_eff)
-        km = KMeans(n_clusters=int(k_opt), n_init="auto", random_state=42).fit(Xp)
-        labels = km.labels_
-        sub_ids = []
-        for lab in range(int(k_opt)):
-            size_lab = int((labels == lab).sum())
-            if size_lab >= max(8, int(MIN_SUB_FRAC * n)):
-                sub_ids.append(lab)
-        if not sub_ids:
-            sub_ids = [0]
-        for i, lab in enumerate(sub_ids):
-            color = PALETA_SUBS[i % len(PALETA_SUBS)]
-            mask = (labels == lab)
-            Xi = Xp[mask]
-            df_iso = df_pod.iloc[np.where(mask)[0]].copy()
-            Xi2, keep2 = _podar_outliers_xy(Xi, p=SUBK_P_OUTLIER)
-            if len(Xi2) == 0:
-                Xi2 = Xi; keep2 = np.ones(len(Xi), dtype=bool)
-            df_iso_pruned = df_iso.iloc[keep2].copy()
-            sub_index_map[int(lab)] = (df_iso_pruned, Xi2)
-            for la, lo in df_iso_pruned[["_lat","_lon"]].to_numpy(float):
-                folium.CircleMarker([float(la), float(lo)], radius=4, color=color, fill=True, fillOpacity=0.95).add_to(m)
-            cx, cy = Xi2.mean(axis=0)
-            clatlon = np.array(_from_utm_to_lonlat(np.array([[cx, cy]]), transformer))[0]
-            folium.CircleMarker([float(clatlon[0]), float(clatlon[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(m)
-            di = np.sqrt(((Xi2 - np.array([cx, cy]))**2).sum(axis=1))
-            bbox_w = float(Xi2[:,0].max() - Xi2[:,0].min())
-            bbox_h = float(Xi2[:,1].max() - Xi2[:,1].min())
-            bbox_d = float(np.sqrt(bbox_w**2 + bbox_h**2))
-            rows.append({
-                "sub_id": int(lab),
-                "n_pts": int(len(Xi2)),
-                "pct_cluster": round(len(Xi2)/max(n,1), 6),
-                "centroid_lat": float(clatlon[0]),
-                "centroid_lon": float(clatlon[1]),
-                "mean_dist_m": float(di.mean()) if len(di) else np.nan,
-                "max_dist_m": float(di.max()) if len(di) else np.nan,
-                "bbox_diag_m": bbox_d,
-                "k_opt": int(k_opt)
-            })
-        legend = """
-        <div style="position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;">
-          <div style="font-weight:600; margin-bottom:6px;">Sub-clusters (K-Means)</div>
-          {rows}
-        </div>"""
-        row_t = '<div><span style="display:inline-block;width:10px;height:10px;background:{c};margin-right:6px;border-radius:2px;"></span>{txt}</div>'
-        legend_rows = []
-        for i, rec in enumerate(rows):
-            color = PALETA_SUBS[i % len(PALETA_SUBS)]
-            legend_rows.append(row_t.format(c=color, txt=f"sub {rec['sub_id']}: {rec['n_pts']} pts · {rec['pct_cluster']:.1%}"))
-        m.get_root().html.add_child(folium.Element(legend.format(rows="".join(legend_rows))))
+        folium.CircleMarker([float(la), float(lo)], radius=4, color="#5b9bd5", fill=True, fillOpacity=0.85).add_to(m)
+    # Subcluster single metrics
+    if len(Xp):
+        cx, cy = Xp.mean(axis=0)
+        clatlon = np.array(_from_utm_to_lonlat(np.array([[cx, cy]]), transformer))[0]
+        folium.CircleMarker([float(clatlon[0]), float(clatlon[1])], radius=7, color="black", fill=True, fillColor="white", fillOpacity=1).add_to(m)
+        di = np.sqrt(((Xp - np.array([cx, cy]))**2).sum(axis=1))
+        bbox_w = float(Xp[:,0].max() - Xp[:,0].min()) if len(Xp) else 0.0
+        bbox_h = float(Xp[:,1].max() - Xp[:,1].min()) if len(Xp) else 0.0
+        bbox_d = float(np.sqrt(bbox_w**2 + bbox_h**2))
+    else:
+        clatlon = [center[0], center[1]]
+        di = np.array([])
+        bbox_d = 0.0
+    rows = [{
+        "sub_id": 0,
+        "n_pts": int(len(Xp)),
+        "pct_cluster": 1.0,
+        "centroid_lat": float(clatlon[0]),
+        "centroid_lon": float(clatlon[1]),
+        "mean_dist_m": float(di.mean()) if len(di) else np.nan,
+        "max_dist_m": float(di.max()) if len(di) else np.nan,
+        "bbox_diag_m": bbox_d,
+        "k_opt": 1  # single subcluster
+    }]
+    legend_simple = f"""
+    <div style='position: fixed; top: 20px; left: 20px; z-index:1000; background: rgba(255,255,255,0.92); padding:8px 10px; border-radius:6px; font:12px/1.2 Inter, system-ui;'>
+      <div style='font-weight:600;'>Subcluster único</div>
+      <div>n pts usados: {len(Xp)}</div>
+    </div>
+    """
+    m.get_root().html.add_child(folium.Element(legend_simple))
     m.save(os.path.join(out_dir, filename_html))
     cols = ["sub_id","n_pts","pct_cluster","centroid_lat","centroid_lon","mean_dist_m","max_dist_m","bbox_diag_m","k_opt"]
     df_rows = pd.DataFrame(rows, columns=cols)
     df_rows = _format_decimal_comma(df_rows, decimals=6)
     df_rows.to_csv(os.path.join(out_dir, filename_csv), index=False, sep=";", encoding="utf-8-sig")
+    # sub_index_map with single entry for concave hull phase
+    sub_index_map = {0: (df_pod, Xp)}
     return rows, sub_index_map
 
 # ==== Flujo de clustering y dibujo ====
@@ -617,7 +601,7 @@ def _geom_utm_to_lonlat(geom_utm, transformer):
     except Exception:
         return None
 
-def _export_concave_sub(df_sub: pd.DataFrame, transformer: Transformer, out_dir: str, clip_city_utm=None, sub_idx: int=0, cluster_id: int=0):
+def _export_concave_sub(df_sub: pd.DataFrame, transformer: Transformer, out_dir: str, clip_city_utm=None, sub_idx: int=0, cluster_id: int=0, rutas_utm=None, mapa_global=None):
     os.makedirs(out_dir, exist_ok=True)
     # Proyección
     X, _ = _to_utm_xy(df_sub)
@@ -672,28 +656,81 @@ def _export_concave_sub(df_sub: pd.DataFrame, transformer: Transformer, out_dir:
     # HTML auditoría
     latlon_sc = df_sub[["_lat","_lon"]].to_numpy(float)
     center_sc = [float(latlon_sc[:,0].mean()), float(latlon_sc[:,1].mean())] if len(latlon_sc) else _cfg["center"]
-    ma = folium.Map(location=center_sc, zoom_start=13, zoom_control=False)
-    try:
-        _add_rutas_layer(ma)
-    except Exception:
-        pass
-    for la, lo in latlon_sc:
-        folium.CircleMarker([float(la), float(lo)], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.8).add_to(ma)
-    if geom_ll is not None:
-        folium.GeoJson(mapping(geom_ll), name="concave",
-                       style_function=lambda x: {"color":"#111","weight":2,"fillColor":"#2ca02c","fillOpacity":0.25}).add_to(ma)
-    area_km2_val = (mets['area_m2']/1_000_000.0) if pd.notna(mets['area_m2']) else float('nan')
-    legend = f"""
-    <div style='position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;'>
-      <div style='font-weight:600; margin-bottom:6px;'>sub {sub_idx} · α={mets['alpha_m']:.1f} m ({mets['alpha_mode']})</div>
-      <div>área: {area_km2_val:,.3f} km²</div>
-      <div>perímetro: {mets['perimetro_m']:.0f} m</div>
-      <div>n usados: {mets['n_puntos_usados']}</div>
-
-    </div>
+    ma = None
+    if mapa_global is None:
+        ma = folium.Map(location=center_sc, zoom_start=13, zoom_control=False)
+        try:
+            _add_rutas_layer(ma)
+        except Exception:
+            pass
+        # Solo en mapa local dibujamos puntos crudos
+        for la, lo in latlon_sc:
+            folium.CircleMarker([float(la), float(lo)], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.8).add_to(ma)
+    cuadrante_code = "sin determinar"
+    if rutas_utm and geom_utm is not None:
+        try:
+            for g_ruta, props_ruta in rutas_utm:
+                try:
+                    if geom_utm.intersects(g_ruta):
+                        inter = geom_utm.intersection(g_ruta)
+                        if not inter.is_empty and inter.area > 0:
+                            # Try common property keys
+                            for k in ["codigo", "ruta", "id", "name", "CUADRANTE", "CODIGO", "RUTA"]:
+                                if k in props_ruta and props_ruta[k]:
+                                    cuadrante_code = str(props_ruta[k])
+                                    break
+                            break
+                except Exception:
+                    continue
+        except Exception:
+            pass
+    # Popup HTML
+    popup_html = f"""
+    <b>Cluster:</b> {cluster_id}<br>
+    <b>Sub_id:</b> {sub_idx}<br>
+    <b>Área (m²):</b> {int(round(mets['area_m2'])) if pd.notna(mets['area_m2']) else 'N/A'}<br>
+    <b>Perímetro (m):</b> {int(round(mets['perimetro_m'])) if pd.notna(mets['perimetro_m']) else 'N/A'}<br>
+    <b>Puntos usados:</b> {mets['n_puntos_usados']}<br>
+    <b>Cuadrante:</b> {cuadrante_code}
     """
-    ma.get_root().html.add_child(folium.Element(legend))
-    ma.save(os.path.join(out_dir, f"SC_sub_{sub_idx}_concave.html"))
+    target_map = mapa_global if mapa_global is not None else ma
+    if geom_ll is not None and target_map is not None:
+        gj = folium.GeoJson(
+            mapping(geom_ll),
+            name="concave",
+            style_function=lambda x: {"color":"#111","weight":2,"fillColor":"#2ca02c","fillOpacity":0.25}
+        )
+        gj.add_child(folium.Popup(popup_html, max_width=260))
+        gj.add_to(target_map)
+
+        # centroid marker en el mapa destino
+        try:
+            cy = geom_ll.centroid
+            folium.CircleMarker(
+                [float(cy.y), float(cy.x)],
+                radius=7,
+                color="black",
+                fill=True,
+                fillColor="black",
+                fillOpacity=0.95
+            ).add_to(target_map)
+        except Exception:
+            pass
+    area_km2_val = (mets['area_m2']/1_000_000.0) if pd.notna(mets['area_m2']) else float('nan')
+    legend = (
+        "<div style='position: fixed; top: 20px; left: 20px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 10px 12px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.15); font: 12px/1.2 Inter, system-ui;'>"
+        f"<div style='font-weight:600; margin-bottom:6px;'>Cluster {cluster_id} · sub {sub_idx}</div>"
+        f"<div>α={mets['alpha_m']:.1f} m ({mets['alpha_mode']})</div>"
+        f"<div>Área: {area_km2_val:,.3f} km²</div>"
+        f"<div>Perímetro: {mets['perimetro_m']:.0f} m</div>"
+        f"<div>Puntos usados: {mets['n_puntos_usados']}</div>"
+        f"<div>Cuadrante: {cuadrante_code}</div>"
+        "</div>"
+    )
+    if ma is not None:
+        # Leyenda y guardado solo en mapa local (debug)
+        ma.get_root().html.add_child(folium.Element(legend))
+        ma.save(os.path.join(out_dir, f"SC_sub_{sub_idx}_concave.html"))
     # Para el resumen por asesor
     return {
         "cluster": int(cluster_id),
@@ -821,21 +858,8 @@ def _export_concave_cluster_from_submap(
 
 def main():
     logging.info(f"Iniciando generación de mapa de muestras (M2) {CIUDAD} 2025")
-    # Reset SOLO de la ciudad actual (preserva otras ciudades dentro de Resultados M2)
     BASE_CIUDAD_DIR = os.path.join(RESULTADOS_DIR, CIUDAD)
-    shutil.rmtree(BASE_CIUDAD_DIR, ignore_errors=True)
-    BASE_DIR_OUT    = os.path.join(BASE_CIUDAD_DIR, "base")
-    SUBCLUSTERS_DIR = os.path.join(BASE_CIUDAD_DIR, "sub_clusters")
-    POLIGONOS_DIR   = os.path.join(BASE_CIUDAD_DIR, "poligonos")
-    for d in (BASE_DIR_OUT, SUBCLUSTERS_DIR, POLIGONOS_DIR):
-        os.makedirs(d, exist_ok=True)
-    global HTML_OUT, CSV_OUT, HTML_OUT_CLUST, ELBOW_PNG, METRICS_CSV, METRICAS_K_CSV
-    HTML_OUT       = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025.html")
-    CSV_OUT        = os.path.join(BASE_DIR_OUT, f"muestras_{CIUDAD}_2025.csv")
-    HTML_OUT_CLUST = os.path.join(BASE_DIR_OUT, f"muestras_simple_{CIUDAD}_2025_clusters.html")
-    ELBOW_PNG      = os.path.join(BASE_DIR_OUT, "codo.png")
-    METRICS_CSV    = os.path.join(BASE_DIR_OUT, "metricas_clusters.csv")
-    METRICAS_K_CSV = os.path.join(BASE_DIR_OUT, "metricas_por_k.csv")
+    os.makedirs(BASE_CIUDAD_DIR, exist_ok=True)
 
     # Consulta de datos
     if not os.path.exists(_cfg["csv_rutas"]):
@@ -846,57 +870,21 @@ def main():
         logging.error(f"Error al crear DF base: {e}")
         df = pd.DataFrame()
 
-    if df.empty:
-        logging.warning("DF vacío: se generará mapa sin puntos.")
-        mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
-        mapa.save(HTML_OUT)
-        pd.DataFrame().to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
-        print(f"HTML vacío: {HTML_OUT}")
-        print(f"CSV vacío: {CSV_OUT}")
-        print("len(df)=0")
-        return
-
-    # Normalizar fecha_evento
-    if "fecha_evento" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["fecha_evento"]):
-        df["fecha_evento"] = pd.to_datetime(df["fecha_evento"], errors="coerce")
-
     # Resolver lat/lon
-    try:
-        df = _resolver_lat_lon(df)
-    except Exception as e:
-        logging.error(f"Abortando: {e}")
-        mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
-        folium.Marker(location=_cfg["center"], popup="Sin columnas lat/lon válidas").add_to(mapa)
-        mapa.save(HTML_OUT)
-        df.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
-        print(f"HTML con error: {HTML_OUT}")
-        print(f"CSV (posible parcial): {CSV_OUT}")
-        print(f"len(df)={len(df)}")
-        return
+    if not df.empty:
+        if "fecha_evento" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["fecha_evento"]):
+            df["fecha_evento"] = pd.to_datetime(df["fecha_evento"], errors="coerce")
+        try:
+            df = _resolver_lat_lon(df)
+        except Exception as e:
+            logging.error(f"Abortando: {e}")
+            df = pd.DataFrame()
 
-    # Guardar CSV crudo
-    try:
-        df.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
-    except Exception as e:
-        logging.error(f"No fue posible guardar CSV: {e}")
-
-    # Mapa base
-    mapa = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
-    try:
-        if os.path.exists(_cfg["geojson"]):
-            with open(_cfg["geojson"], "r", encoding="utf-8") as f:
-                geojson_data = json.load(f)
-            folium.GeoJson(geojson_data, name=f"Rutas {CIUDAD.title()}").add_to(mapa)
-        else:
-            logging.warning(f"GeoJSON no encontrado: {_cfg['geojson']}")
-    except Exception as e:
-        logging.error(f"Error cargando GeoJSON: {e}")
-
-    # Selector de promotor (rank)
+    # Selector de promotor (rank) para nombrar carpeta
     df_plot = df.copy()
-    selected_pid = None
+    selected_pid = 0
     selected_count = None
-    if "id_autor" in df.columns:
+    if not df.empty and "id_autor" in df.columns:
         counts = None
         try:
             counts = df["id_autor"].dropna().astype(int).value_counts()
@@ -905,23 +893,79 @@ def main():
             counts = pd.Series(dtype=int)
         total_promotores = int(counts.shape[0]) if counts is not None else 0
         if total_promotores == 0:
-            raise ValueError("No se encontraron asesores/promotores en el conjunto de datos para el rango solicitado.")
-        if promotor_num < 1 or promotor_num > total_promotores:
-            raise ValueError(f"promotor_num ({promotor_num}) es inválido: hay {total_promotores} asesores encontrados")
-        selected_pid = int(counts.index[promotor_num - 1])
-        selected_count = int(counts.iloc[promotor_num - 1])
-        df_plot = df[df["id_autor"].astype("Int64") == selected_pid].copy()
+            logging.warning("No se encontraron asesores/promotores; usando asesor_0")
+            selected_pid = 0
+        else:
+            if promotor_num < 1 or promotor_num > total_promotores:
+                raise ValueError(f"promotor_num ({promotor_num}) es inválido: hay {total_promotores} asesores encontrados")
+            selected_pid = int(counts.index[promotor_num - 1])
+            selected_count = int(counts.iloc[promotor_num - 1])
+            df_plot = df[df["id_autor"].astype("Int64") == selected_pid].copy()
 
-    # Colorear por asesor (no crítico para M2, mantenido)
-    ids_promotores = [selected_pid] if selected_pid is not None else [int(x) for x in df["id_autor"].dropna().unique().tolist() if str(x).strip()]
+    # Estructura de salida por asesor
+    ASESOR_DIR      = os.path.join(BASE_CIUDAD_DIR, f"asesor_{selected_pid}")
+    CLUSTERS_DIR    = os.path.join(ASESOR_DIR, "clusters")
+    SUBCLUSTERS_DIR = os.path.join(ASESOR_DIR, "sub_clusters")
+    POLIGONOS_DIR   = os.path.join(ASESOR_DIR, "poligonos")  # opcional debug
+    shutil.rmtree(ASESOR_DIR, ignore_errors=True)
+    os.makedirs(CLUSTERS_DIR, exist_ok=True)
+    os.makedirs(SUBCLUSTERS_DIR, exist_ok=True)
+    os.makedirs(POLIGONOS_DIR, exist_ok=True)
+
+    # Definir rutas de archivos por asesor
+    global HTML_BASE, CSV_OUT, HTML_OUT_CLUST, METRICS_CSV, METRICAS_K_CSV, ELBOW_PNG
+    HTML_BASE       = os.path.join(ASESOR_DIR,   "muestras_simple_base.html")
+    CSV_OUT         = os.path.join(ASESOR_DIR,   "muestras_con_clusters.csv")
+    HTML_OUT_CLUST  = os.path.join(CLUSTERS_DIR, "clusters_m2.html")
+    METRICS_CSV     = os.path.join(CLUSTERS_DIR, "clusters_resumen.csv")
+    METRICAS_K_CSV  = os.path.join(CLUSTERS_DIR, "metricas_por_k.csv")
+    ELBOW_PNG       = os.path.join(CLUSTERS_DIR, "codo.png")
+
+    if df.empty:
+        logging.warning("DF vacío: se generará mapa sin puntos.")
+        mapa_vacio = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
+        mapa_vacio.save(HTML_BASE)
+        pd.DataFrame().to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
+        logging.info(f"HTML vacío: {HTML_BASE}")
+        logging.info(f"CSV vacío: {CSV_OUT}")
+        return
 
     CLUSTER_PALETTE = [
         "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
         "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#393b79", "#637939"
     ]
+    # Guardar CSV crudo
+    try:
+        df.to_csv(CSV_OUT, index=False, sep=";", encoding="utf-8-sig")
+    except Exception as e:
+        logging.error(f"No fue posible guardar CSV crudo: {e}")
 
-    # Ejecutar clustering y pintar
-    df_plot, k_chosen = _cluster_and_draw(df_plot, RESULTADOS_DIR, mapa, CLUSTER_PALETTE)
+    # Mapa base (puntos crudos) para HTML_BASE
+    mapa_base = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
+    try:
+        if os.path.exists(_cfg["geojson"]):
+            with open(_cfg["geojson"], "r", encoding="utf-8") as f:
+                geojson_data = json.load(f)
+            folium.GeoJson(geojson_data, name=f"Rutas {CIUDAD.title()}").add_to(mapa_base)
+    except Exception:
+        pass
+    for _, r in df.iterrows():
+        try:
+            folium.CircleMarker([float(r["_lat"]), float(r["_lon"])], radius=3, color="#5b9bd5", fill=True, fillOpacity=0.7).add_to(mapa_base)
+        except Exception:
+            continue
+    try:
+        mapa_base.save(HTML_BASE)
+    except Exception:
+        logging.warning("No se pudo guardar mapa base")
+
+    # Clustering global
+    mapa_clusters = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
+    try:
+        _add_rutas_layer(mapa_clusters)
+    except Exception:
+        pass
+    df_plot, k_chosen = _cluster_and_draw(df_plot, CLUSTERS_DIR, mapa_clusters, CLUSTER_PALETTE)
 
     # Actualizar CSV con clusters
     try:
@@ -932,82 +976,92 @@ def main():
     except Exception as e:
         logging.warning(f"No fue posible actualizar CSV con clusters: {e}")
 
-    # Sub-clusters y concave hull por sub
+    # Preparar rutas_utm individuales para cuadrante detección
+    rutas_utm = []
     try:
         transformer_audit = Transformer.from_crs("EPSG:4326", _cfg["epsg_utm"], always_xy=True)
+        if os.path.exists(_cfg["geojson"]):
+            with open(_cfg["geojson"], "r", encoding="utf-8") as fr:
+                gj_rutas = json.load(fr)
+            def proj_ll_to_utm(x, y, z=None):
+                X, Y = transformer_audit.transform(x, y)
+                return (X, Y)
+            for feat in gj_rutas.get("features", []):
+                try:
+                    g_ll = shape(feat.get("geometry", {}))
+                    g_utm = shp_transform(proj_ll_to_utm, g_ll)
+                    rutas_utm.append((g_utm, feat.get("properties", {}) or {}))
+                except Exception:
+                    continue
         clip_city_utm = _city_perimeter_union_utm(_cfg, transformer_audit) if CLIP_A_RUTAS else None
-        asesor_id = int(df_plot["id_autor"].iloc[0]) if ("id_autor" in df_plot.columns and len(df_plot) > 0) else 0
-        resumen_rows = []
-        if "cluster" in df_plot.columns:
-            for cl in sorted(df_plot["cluster"].dropna().unique().astype(int)):
-                df_c = df_plot[df_plot["cluster"] == cl].copy()
-                if "_lat" not in df_c.columns or "_lon" not in df_c.columns:
-                    try:
-                        df_c = _resolver_lat_lon(df_c)
-                    except Exception:
-                        pass
-                out_dir = os.path.join(SUBCLUSTERS_DIR, f"asesor_{asesor_id}", f"cluster_{cl}")
-                os.makedirs(out_dir, exist_ok=True)
-                rows, sub_map = _export_subclusters_kmeans(df_c, transformer_audit, out_dir,
+    except Exception as e:
+        logging.warning(f"No se pudo preparar rutas_utm: {e}")
+        transformer_audit = Transformer.from_crs("EPSG:4326", _cfg["epsg_utm"], always_xy=True)
+        clip_city_utm = None
+
+    # Mapa global de subclusters (todas las geometrías)
+    mapa_subs_global = folium.Map(location=_cfg["center"], zoom_start=12, zoom_control=False)
+    try:
+        _add_rutas_layer(mapa_subs_global)
+    except Exception:
+        pass
+
+    # Export por cluster -> subcluster único + concave
+    resumen_rows = []
+    if 'cluster' in df_plot.columns:
+        for cl in sorted(df_plot['cluster'].dropna().unique().astype(int)):
+            df_c = df_plot[df_plot['cluster'] == cl].copy()
+            if "_lat" not in df_c.columns or "_lon" not in df_c.columns:
+                try:
+                    df_c = _resolver_lat_lon(df_c)
+                except Exception:
+                    pass
+            out_dir_sub = os.path.join(SUBCLUSTERS_DIR, f"cluster_{cl}")
+            os.makedirs(out_dir_sub, exist_ok=True)
+            rows_sub, sub_map = _export_subclusters_kmeans(df_c, transformer_audit, out_dir_sub,
                                                            filename_html=f"C{cl}_subkmeans.html",
                                                            filename_csv=f"C{cl}_resumen.csv")
-                # Concave por sub: generar y agregar cada sub-cluster al resumen (una fila por sub)
-                for sub_idx, (df_iso_pruned, Xi2) in sub_map.items():
-                    sub_dir = os.path.join(out_dir, f"sub_{int(sub_idx)}")
-                    os.makedirs(sub_dir, exist_ok=True)
-                    rec_sub = _export_concave_sub(
-                        df_iso_pruned,
-                        transformer_audit,
-                        sub_dir,
-                        clip_city_utm=clip_city_utm,
-                        sub_idx=int(sub_idx),
-                        cluster_id=int(cl),
-                    )
-                    resumen_rows.append(rec_sub)
-                # Opcional: polígono consolidado por cluster solo para auditoría (NO se agrega al resumen)
-                out_dir_cluster = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"cluster_{cl}")
-                os.makedirs(out_dir_cluster, exist_ok=True)
-                _ = _export_concave_cluster_from_submap(
-                    df_cluster=df_c,
-                    sub_map=sub_map,
-                    transformer=transformer_audit,
-                    out_dir=out_dir_cluster,
-                    clip_city_utm=clip_city_utm,
-                    cluster_id=int(cl),
-                )
-        # Resumen por asesor (SOLO métricas de polígonos)
-        if isinstance(resumen_rows, list) and len(resumen_rows):
-            df_res = pd.DataFrame(resumen_rows)
-            cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados", "metrica"]
-            df_res["metrica"] = "M2"
-            df_res = df_res[cols_keep]
-            out_res = os.path.join(POLIGONOS_DIR, f"asesor_{asesor_id}", f"resumen_areas_asesor_{asesor_id}.csv")
-            os.makedirs(os.path.dirname(out_res), exist_ok=True)
-            dump_csv_coma_decimal(df_res, out_res, decimals=3)
+            # Concave hull único (sub_id=0)
+            for sub_id, (df_iso_pruned, Xi2) in sub_map.items():
+                sub_dir = os.path.join(out_dir_sub, f"sub_{int(sub_id)}")
+                os.makedirs(sub_dir, exist_ok=True)
+                rec_sub = _export_concave_sub(df_iso_pruned, transformer_audit, sub_dir,
+                                              clip_city_utm=clip_city_utm,
+                                              sub_idx=int(sub_id), cluster_id=int(cl), rutas_utm=rutas_utm,
+                                              mapa_global=mapa_subs_global)
+                resumen_rows.append(rec_sub)
+            # Polígono consolidado por cluster (opcional) reutiliza función existente
+            out_dir_cluster = os.path.join(POLIGONOS_DIR, f"cluster_{cl}")
+            os.makedirs(out_dir_cluster, exist_ok=True)
+            _ = _export_concave_cluster_from_submap(df_cluster=df_c, sub_map=sub_map,
+                                                    transformer=transformer_audit, out_dir=out_dir_cluster,
+                                                    clip_city_utm=clip_city_utm, cluster_id=int(cl))
 
-            # CSV global concatenado por subcluster en nivel sub_clusters/
-            try:
-                df_global = pd.DataFrame(resumen_rows)
-                df_global["metrica"] = "M2"
-                df_global = df_global[cols_keep]
-                os.makedirs(SUBCLUSTERS_DIR, exist_ok=True)
-                out_global = os.path.join(SUBCLUSTERS_DIR, f"resumen_{asesor_id}.csv")
-                dump_csv_coma_decimal(df_global, out_global, decimals=3)
-            except Exception as e:
-                logging.warning(f"No se pudo guardar resumen global de subclusters: {e}")
-    except Exception as e:
-        logging.warning(f"Concave por subclusters omitido por error: {e}")
+    # Resumen de áreas por cluster/sub (CSV global)
+    if isinstance(resumen_rows, list) and len(resumen_rows):
+        df_res = pd.DataFrame(resumen_rows)
+        df_res["metrica"] = "M2"
+        cols_keep = ["cluster", "sub_id", "area_m2", "area_km2", "perimetro_m", "n_puntos_usados", "metrica"]
+        df_res = df_res[cols_keep]
+        out_global = os.path.join(SUBCLUSTERS_DIR, "subclusters_resumen.csv")
+        dump_csv_coma_decimal(df_res, out_global, decimals=3)
 
-    # Guardar HTML base
+    # Guardar mapa global de subclusters
     try:
-        mapa.save(HTML_OUT)
-        mapa.save(HTML_OUT_CLUST)
+        subclusters_html_path = os.path.join(SUBCLUSTERS_DIR, "subclusters_m2.html")
+        mapa_subs_global.save(subclusters_html_path)
     except Exception as e:
-        logging.error(f"No fue posible guardar HTML: {e}")
+        logging.warning(f"No fue posible guardar HTML de subclusters global: {e}")
 
-    print(f"HTML generado: {HTML_OUT}")
-    print(f"HTML (clusters): {HTML_OUT_CLUST}")
-    print(f"CSV generado: {CSV_OUT}")
+    # Guardar mapa de clusters final
+    try:
+        mapa_clusters.save(HTML_OUT_CLUST)
+    except Exception as e:
+        logging.error(f"No fue posible guardar HTML clusters: {e}")
+
+    logging.info(f"HTML base: {HTML_BASE}")
+    logging.info(f"HTML clusters: {HTML_OUT_CLUST}")
+    logging.info(f"CSV muestras/clusters: {CSV_OUT}")
 
 if __name__ == "__main__":
     main()
