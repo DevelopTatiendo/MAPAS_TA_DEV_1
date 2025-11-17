@@ -307,15 +307,7 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     
     # Cálculo de hogares estimados
     hogares_estimados = 0
-    try:
-        if ciudad:
-            from ism_config import resolve_hogares_por_m2, get_city_key
-            city_key = get_city_key(ciudad)
-            hogares_por_m2 = resolve_hogares_por_m2(city_key)
-            hogares_estimados = round(area_m2 * hogares_por_m2)
-    except Exception:
-        # Si falla la resolución de ciudad, mostrar N/D
-        pass
+
 
     # Formateo ES-CO con punto como separador de miles y coma como decimal
     area_m2_fmt = __fmt_es(area_m2, 0)  # Usar la función estándar ya disponible

@@ -501,23 +501,5 @@ def areas_muestras_resumen(
     return out
 
 
-def areas_muestras_auditoria(
-    df_promotor: pd.DataFrame,
-    centroope: int | None,
-):
-    """
-    Esqueleto de punto de entrada para el modo auditoría del módulo de Muestras.
-
-    Idea de uso futuro (NO implementar lógica nueva todavía):
-    - Será llamado desde `mapa_muestras_auditoria`, con df ya filtrado a un solo id_autor.
-    - Deberá combinar:
-        * métricas geométricas por subcluster (áreas, perímetros, n_puntos)
-        * un GeoJSON con los polígonos de subclusters
-
-    Por ahora:
-    - Solo delega en `generar_geojson_subclusters_promotor(df_promotor, centroope)`
-      y devuelve su resultado tal cual.
-    """
-    # Placeholder: en el futuro se conectará con generar_geojson_subclusters_promotor
-    # y retornará métricas + GeoJSON. Por ahora no ejecuta lógica geométrica adicional.
-    return df_promotor
+# Alias explícito para auditoría de Muestras: retorna (df_metrics, feature_collection)
+areas_muestras_auditoria = generar_geojson_subclusters_promotor

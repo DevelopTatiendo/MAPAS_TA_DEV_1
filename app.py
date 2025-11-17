@@ -19,7 +19,7 @@ import base64
 # from mapa_pedidos import generar_mapa_pedidos
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 # from mapa_visitas import generar_mapa_visitas_individuales
-# from mapa_muestras_auditoria import generar_mapa_muestras_auditoria  # FASE 2: import futuro
+from mapa_muestras_auditoria import generar_mapa_muestras_auditoria  # Modo auditoría Muestras
 from mapa_muestras import generar_mapa_muestras
 from mapa_consultores import generar_mapa_consultores
 from mapa_consultores_simple import generar_mapa_consultores_simple
@@ -886,28 +886,37 @@ if submit_button:
         if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
-            # Lectura de estado de auditoría (no usado aún para desviar backend)
+            # Lectura de estado de auditoría
             modo_auditoria = st.session_state.get("muestras_modo_auditoria", False)
             promotor_auditoria = st.session_state.get("promotor_auditoria")
 
-            # Mantener llamada original (sin lógica de auditoría backend en esta fase)
-            resultado = manejar_error(
-                generar_mapa_muestras,
-                fecha_inicio,
-                fecha_fin,
-                ciudad,
-                barrios,
-                promotores_sel,
-                override_fc,
-                color_mode,
-                False,  # verificar_areas desactivado en esta versión
-            )
+            # Desvío según modo auditoría
+            if modo_auditoria and promotor_auditoria is not None:
+                resultado = manejar_error(
+                    generar_mapa_muestras_auditoria,
+                    fecha_inicio,
+                    fecha_fin,
+                    ciudad,
+                    int(promotor_auditoria),
+                )
+            else:
+                resultado = manejar_error(
+                    generar_mapa_muestras,
+                    fecha_inicio,
+                    fecha_fin,
+                    ciudad,
+                    barrios,
+                    promotores_sel,
+                    override_fc,
+                    color_mode,
+                    False,  # verificar_areas desactivado en esta versión
+                )
 
             if resultado:
-                # Formato final: (filename, n_puntos, df_csv)
+                # Formato final: (filename, n_puntos, df_export)
                 if isinstance(resultado, tuple) and len(resultado) == 3:
-                    filename, n_puntos, df_csv = resultado
-                    st.session_state["muestras_export_df"] = df_csv
+                    filename, n_puntos, df_export = resultado
+                    st.session_state["muestras_export_df"] = df_export
                     st.session_state["muestras_export_meta"] = {
                         "ciudad": ciudad, 
                         "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
