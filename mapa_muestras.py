@@ -1005,8 +1005,28 @@ def generar_mapa_muestras(
                         return f"{float(v):.1f}%"
                     except Exception:
                         return '—'
-                def _fmt_placeholder(v):
-                    return '—' if (v is None or (isinstance(v, float) and np.isnan(v))) else str(v)
+                def _fmt_area_m2(v):
+                    """
+                    Entero sin decimales, separador de miles ',' (formato estándar Python)
+                    3249999.17 -> '3,249,999'
+                    """
+                    if v is None or (isinstance(v, float) and np.isnan(v)):
+                        return '—'
+                    try:
+                        return f"{int(round(float(v))):,}"
+                    except Exception:
+                        return '—'
+                def _fmt_muestras_area(v):
+                    """
+                    10 decimales, separador de miles ',' y punto decimal '.'
+                    0.00047692428323 -> '0.0004769243'
+                    """
+                    if v is None or (isinstance(v, float) and np.isnan(v)):
+                        return '—'
+                    try:
+                        return f"{float(v):,.10f}"
+                    except Exception:
+                        return '—'
                 legend_rows.append(f"""
                 <tr>
                     <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
@@ -1016,8 +1036,8 @@ def generar_mapa_muestras(
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(area_m2)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_placeholder(muestras_area)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
@@ -1215,9 +1235,8 @@ def generar_mapa_muestras(
         """
         mapa.get_root().html.add_child(folium.Element(html_content))
 
-        # Guardar mapa
+        # Guardar mapa (centralizado, sin segundo save redundante)
         filename = guardar_mapa_controlado(mapa, tipo_mapa="mapa_muestras", permitir_multiples=False)
-        mapa.save(f"static/maps/{filename}")
 
         # CSV exportable
         df_csv = None

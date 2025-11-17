@@ -176,7 +176,6 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
     # (Refactor Fase 1) Eliminado pre-filtrado adicional por cargo; el JOIN ya restringe a promotores (id_cargo=39).
     
     # Construir consulta base con INNER JOIN a personal para filtrar cargo=39
-    print("LA CONSULTA SI FUNCIONA PARA ESTE CASO")
     query = """
     SELECT 
         e.idEvento AS id_muestra,

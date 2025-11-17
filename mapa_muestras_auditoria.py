@@ -9,10 +9,15 @@ from pre_procesamiento.metricas_areas import areas_muestras_auditoria
 from utils.gestor_mapas import guardar_mapa_controlado
 
 # Diccionario de ciudades para centrar el mapa (solo contexto base)
+# En modo auditoría ya NO usamos rutas/cuadrantes, sino comunas por ciudad.
 COORDENADAS_CIUDADES = {
-    'CALI': ([3.4516, -76.5320], 'geojson/rutas/cali/cuadrantes_rutas_cali.geojson'),
-    'MEDELLIN': ([6.2442, -75.5812], 'geojson/rutas/medellin/cuadrantes_rutas_medellin.geojson'),
-    'BOGOTA': ([4.7110, -74.0721], 'geojson/rutas/bogota/cuadrantes_rutas_bogota.geojson'),
+    'CALI': ([3.4516, -76.5320], 'geojson/comunas_cali.geojson'),
+    'MEDELLIN': ([6.2442, -75.5812], 'geojson/comunas_medellin.geojson'),
+    'MANIZALES': ([5.0672, -75.5174], 'geojson/comunas_manizales.geojson'),
+    'PEREIRA': ([4.8087, -75.6906], 'geojson/comunas_pereira.geojson'),
+    'BOGOTA': ([4.7110, -74.0721], 'geojson/comunas_bogota.geojson'),
+    'BARRANQUILLA': ([10.9720, -74.7962], 'geojson/comunas_barranquilla.geojson'),
+    'BUCARAMANGA': ([7.1193, -73.1227], 'geojson/comunas_bucaramanga.geojson'),
 }
 
 # Centroope de cada ciudad (según especificación del usuario)
@@ -71,7 +76,7 @@ def generar_mapa_muestras_auditoria(
     # --- 3) CREAR MAPA ---
     mapa = folium.Map(location=center_point, zoom_start=13)
 
-    # Capa comunas/cuadrantes base
+    # Capa base de comunas de la ciudad
     try:
         with open(path_geojson, 'r', encoding='utf-8') as f:
             gj_base = json.load(f)
@@ -80,23 +85,42 @@ def generar_mapa_muestras_auditoria(
         logging.error(f"No se pudo cargar geojson base: {e}")
 
     # --- Capa de zonas auditoría ---
+    def _fmt_area_popup(v):
+        """
+        Área en m², sin decimales, con separador de miles.
+        """
+        try:
+            if v is None:
+                return "N/A"
+            val = float(v)
+            return f"{int(round(val)):,}"
+        except Exception:
+            return "N/A"
+
+    def _fmt_perimetro_popup(v):
+        """
+        Perímetro en metros, con 2 decimales y separador de miles.
+        """
+        try:
+            if v is None:
+                return "N/A"
+            val = float(v)
+            return f"{val:,.2f}"
+        except Exception:
+            return "N/A"
+
     capa_auditoria = folium.FeatureGroup(name="Zonas de auditoría")
     for ft in fc.get("features", []):
         props = ft.get("properties", {}) or {}
         area_m2 = props.get('area_m2')
+        perimetro_m = props.get('perimetro_m')
         n_puntos = props.get('n_puntos')
-        densidad = None
-        try:
-            if area_m2 and float(area_m2) > 0 and n_puntos is not None:
-                densidad = float(n_puntos) / float(area_m2)
-        except Exception:
-            densidad = None
 
         popup_html = f"""
         <b>Subcluster:</b> {props.get('id_subcluster', 'N/A')}<br>
-        <b>Área (m²):</b> {props.get('area_m2', 'N/A')}<br>
-        <b>Puntos usados:</b> {props.get('n_puntos', 'N/A')}<br>
-        <b>Densidad:</b> {densidad if densidad is not None else 'N/A'}
+        <b>Área (m²):</b> {_fmt_area_popup(area_m2)}<br>
+        <b>Perímetro (m):</b> {_fmt_perimetro_popup(perimetro_m)}<br>
+        <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
         """
 
         folium.GeoJson(

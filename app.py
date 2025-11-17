@@ -346,8 +346,10 @@ with auditoria_container:
                     if promotor_aud:
                         try:
                             st.session_state["promotor_auditoria"] = int(promotor_aud)
-                        except Exception:
-                            st.session_state["promotor_auditoria"] = promotor_aud
+                        except Exception as e:
+                            logging.error(f"Error convirtiendo promotor_auditoria a int: {promotor_aud} ({e})")
+                            st.session_state["promotor_auditoria"] = None
+                            st.error("⚠️ El promotor seleccionado no es válido. Vuelve a seleccionarlo.")
                     else:
                         st.session_state["promotor_auditoria"] = None
             else:
@@ -897,7 +899,7 @@ if submit_button:
                     fecha_inicio,
                     fecha_fin,
                     ciudad,
-                    int(promotor_auditoria),
+                    promotor_auditoria,
                 )
             else:
                 resultado = manejar_error(
@@ -1016,10 +1018,20 @@ if submit_button:
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
+        else:
+            # Si no se generó filename, limpiar enlace para evitar mapa congelado
+            st.session_state["map_url"] = None
+            link_placeholder.markdown(
+                '<div class="muted" style="text-align:center;">No se generó ningún mapa. Ajusta los filtros e inténtalo de nuevo.</div>',
+                unsafe_allow_html=True
+            )
 
     except Exception as e:
         logging.error(f"❌ Error inesperado: {str(e)}")
         st.error("⚠️ Se produjo un error inesperado. Revisa los logs.")
+        # Asegurarnos de no mostrar un mapa viejo tras un error crítico
+        st.session_state["map_url"] = None
+        st.session_state["muestras_last_filename"] = None
 
 # Manejar el enlace en el placeholder basado en session state
 if "map_url" in st.session_state and st.session_state["map_url"] is not None:

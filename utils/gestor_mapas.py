@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 
 def guardar_mapa_controlado(mapa, tipo_mapa, permitir_multiples=False, carpeta='static/maps', max_archivos=10):
     """
-    Guarda el mapa HTML con control de duplicación y limpieza.
-    - Si permitir_multiples=False, no guarda si ya existe.
-    - Siempre limpia para dejar máximo `max_archivos`.
+    Guarda el mapa HTML con control de limpieza.
+    - Si permitir_multiples=False: siempre guarda en nombre fijo <tipo_mapa>.html (sobrescribe la versión anterior).
+    - Si permitir_multiples=True: genera nombre con timestamp <tipo_mapa>_<ts>.html.
+    - Siempre limpia para dejar como máximo `max_archivos` archivos que comiencen con el prefijo.
     """
     os.makedirs(carpeta, exist_ok=True)
 
@@ -23,12 +24,13 @@ def guardar_mapa_controlado(mapa, tipo_mapa, permitir_multiples=False, carpeta='
 
     filepath = os.path.join(carpeta, filename)
 
-    if not permitir_multiples and os.path.exists(filepath):
-        #logger.info(f"Ya existe el mapa: {filepath}. No se sobrescribe.")
-        return filename
+    # Siempre guardar (sobrescribir si existe en modo único)
+    try:
+        mapa.save(filepath)
+        logger.info(f"Mapa guardado en {filepath}")
+    except Exception as e:
+        logger.error(f"Error guardando mapa en {filepath}: {e}")
 
-    mapa.save(filepath)
-    logger.info(f"Mapa guardado en {filepath}")
     limpiar_mapas_antiguos(carpeta, tipo_mapa, max_archivos)
     return filename
 
