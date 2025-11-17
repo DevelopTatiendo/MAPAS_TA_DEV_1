@@ -42,8 +42,8 @@ def get_transformer_utm(centroope: int | None) -> Transformer:
 # Constantes tomadas de la lógica M2 (solo geométricas)
 # =============================================================
 # Poda global y por subcluster (M2)
-P_OUTLIER: float = 0.10
-SUBK_P_OUTLIER: float = 0.00
+P_OUTLIER: float = 0.025
+SUBK_P_OUTLIER: float = 0.0
 
 # Selección de K para subclustering (M2)
 SUBK_KMAX_ABS: int = 20
@@ -51,14 +51,14 @@ SUBK_KMAX_FRAC: float = 0.10
 MIN_SUB_FRAC: float = 0.05
 
 # Concave Hull (M2)
-MIN_PTS_CONCAVE: int = 8
+MIN_PTS_CONCAVE: int = 5
 ALPHA_MODE: str = "fixed"   # "fixed" | "auto"
-ALPHA_FIXED: float = 250.0
+ALPHA_FIXED: float = 300.0
 ALPHA_QNN_PCTL: int = 70
 ALPHA_SCALE: float = 1.6
 HOLE_MIN_FRAC: float = 0.02
 HOLE_MIN_ABS: float = 1500.0
-SMOOTHING_BUFFER_M: float = 40.0
+SMOOTHING_BUFFER_M: float = 80.0
 
 # =============================================================
 # Helpers internos compartidos
