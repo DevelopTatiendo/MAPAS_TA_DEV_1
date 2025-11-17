@@ -123,16 +123,22 @@ def generar_mapa_muestras_auditoria(
         <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
         """
 
-        folium.GeoJson(
+        # Crear la geometría
+        gj = folium.GeoJson(
             data=ft,
             name="auditoria",
-            popup=popup_html,
             style_function=lambda x: {
                 "color": "red",
                 "fillOpacity": 0.2,
                 "weight": 2
             }
-        ).add_to(capa_auditoria)
+        )
+
+        # Adjuntar el popup a la geometría
+        gj.add_child(folium.Popup(popup_html, max_width=300))
+
+        # Añadir la geometría a la capa de auditoría
+        gj.add_to(capa_auditoria)
 
     capa_auditoria.add_to(mapa)
 
