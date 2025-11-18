@@ -127,7 +127,7 @@ st.markdown("""
 .hero .title{ display:none; }
 .hero .subtitle{ display:none; }
 .hero .tagline{
-    font-weight: 700;
+    font-weight: 600;
     font-size: clamp(18px, 2.6vw, 26px);
     margin-top: 4px;
     color: var(--text, #1F1A2F);
@@ -207,7 +207,7 @@ ciudades = ["Barranquilla", "Bogotá", "Bucaramanga", "Cali", "Manizales", "Mede
 ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 
 # Card "Configuración y Filtros"
-st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
+#st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
 tipos_mapa = ["Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
 # tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
@@ -373,7 +373,7 @@ with st.form(key="filtros_form"):
         # --- Métricas por (nuevo bloque, fuera del expander) ---
         st.markdown("### Métricas")
         color_options = ["Promotores", "Temporalidad (mes)"]
-        default_idx = 1  # Temporalidad por defecto
+        default_idx = 0  # Promotores por defecto
         color_mode = st.radio(
             "Métricas por:",
             color_options,

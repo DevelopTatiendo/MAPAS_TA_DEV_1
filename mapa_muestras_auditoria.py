@@ -80,7 +80,15 @@ def generar_mapa_muestras_auditoria(
     try:
         with open(path_geojson, 'r', encoding='utf-8') as f:
             gj_base = json.load(f)
-        folium.GeoJson(gj_base, name="Base ciudad").add_to(mapa)
+        folium.GeoJson(
+            gj_base,
+            name="Base ciudad",
+            style_function=lambda feature: {
+                "color": "black",     # borde negro
+                "weight": 1,            # grosor de línea
+                "fillOpacity": 0.0      # sin relleno
+            }
+        ).add_to(mapa)
     except Exception as e:
         logging.error(f"No se pudo cargar geojson base: {e}")
 
@@ -120,16 +128,16 @@ def generar_mapa_muestras_auditoria(
         <b>Subcluster:</b> {props.get('id_subcluster', 'N/A')}<br>
         <b>Área (m²):</b> {_fmt_area_popup(area_m2)}<br>
         <b>Perímetro (m):</b> {_fmt_perimetro_popup(perimetro_m)}<br>
-        <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
         """
+        #<b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
 
         # Crear la geometría
         gj = folium.GeoJson(
             data=ft,
             name="auditoria",
             style_function=lambda x: {
-                # Borde negro, sin relleno
-                "color": "black",
+                # Borde rojo, sin relleno (relleno incoloro)
+                "color": "red",
                 "fillOpacity": 0.0,
                 "weight": 2
             }
