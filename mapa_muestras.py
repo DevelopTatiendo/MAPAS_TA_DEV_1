@@ -1036,8 +1036,8 @@ def generar_mapa_muestras(
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2/1000)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area*1000)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
@@ -1057,8 +1057,8 @@ def generar_mapa_muestras(
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
-                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área m²</th>
-                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/área</th>
+                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área km²</th>
+                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/km²</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>
