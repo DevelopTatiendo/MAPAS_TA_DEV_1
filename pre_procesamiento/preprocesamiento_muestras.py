@@ -9,8 +9,26 @@ import logging
 import re
 import unicodedata
 from .db_utils import sql_read
+# Wrappers de métricas de área para Muestras
+try:
+    from .metricas_areas import (
+        areas_muestras_resumen,
+        areas_muestras_auditoria,
+        calcular_areas_por_promotor,  # opcional si se usa en otros contextos
+    )
+except Exception:
+    try:
+        from metricas_areas import (
+            areas_muestras_resumen,
+            areas_muestras_auditoria,
+            calcular_areas_por_promotor,
+        )
+    except Exception:
+        areas_muestras_resumen = None
+        areas_muestras_auditoria = None
+        calcular_areas_por_promotor = None
 from utils.spatial_ops import assign_quadrant_to_points, area_m2_geodesic
-from ism_config import get_city_key, compute_hogares_por_m2, resolve_hogares_por_m2
+# (Eliminado) imports exclusivos de ISM
 from .preprocesamiento_consultores import listar_rutas_simple, get_co
 from pathlib import Path
 
@@ -155,16 +173,7 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
     Solo incluye autores que sean promotores (cargo = 39).
     Retorna un DataFrame.
     """
-    # Si se pasan promotores, filtrar solo los que sean cargo=39
-    if promotores is not None and len(promotores) > 0:
-        promotores = filtrar_ids_por_cargo(promotores, 39)
-        if not promotores:
-            # Si ninguno es promotor, retornar DataFrame vacío
-            return pd.DataFrame(columns=[
-                'id_muestra', 'id_contacto', 'fecha_evento', 'id_autor',
-                'coordenada_longitud', 'coordenada_latitud', 'medio_contacto',
-                'tipo_evento', 'tipo_categoria', 'id_barrio', 'apellido_autor'
-            ])
+    # (Refactor Fase 1) Eliminado pre-filtrado adicional por cargo; el JOIN ya restringe a promotores (id_cargo=39).
     
     # Construir consulta base con INNER JOIN a personal para filtrar cargo=39
     query = """
@@ -276,6 +285,47 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
         df_muestras_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
 
     return df_muestras_completo
+
+def metricas_areas_muestras(
+    df_muestras: pd.DataFrame,
+    centroope: int | None,
+    origen: str = "mapa_muestras",
+) -> pd.DataFrame:
+    """
+    Wrapper de alto nivel para obtener métricas de área de muestreo
+    asociadas al módulo de Muestras.
+
+    - origen="mapa_muestras":
+        Uso actual en modo normal. Devuelve df con columnas:
+            * id_autor
+            * area_m2
+        Delegando en `metricas_areas.areas_muestras_resumen`.
+
+    - origen="mapa_muestras_auditoria":
+        Uso futuro en modo auditoría. En esta fase se deja solo el esqueleto;
+        el cálculo real y el GeoJSON se implementarán cuando exista
+        `mapa_muestras_auditoria`.
+
+    En esta fase:
+    - NO se modifican ni los mapas ni las tablas visibles.
+    - `mapa_muestras` seguirá llamando a esta función sin cambiar su firma
+      (se apoya en el valor por defecto origen="mapa_muestras").
+    """
+    if df_muestras is None or df_muestras.empty:
+        return pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    if origen == "mapa_muestras":
+        # Modo normal: resumen por promotor
+        if areas_muestras_resumen is None:
+            return pd.DataFrame(columns=["id_autor", "area_m2"])
+        return areas_muestras_resumen(df_muestras, centroope)
+
+    elif origen == "mapa_muestras_auditoria":
+        # Placeholder para modo auditoría (aún no utilizado aquí)
+        return pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    else:
+        raise ValueError(f"Origen desconocido para metricas_areas_muestras: {origen}")
 
 def metricas_muestras_por_promotor(df_muestras: pd.DataFrame, fecha_inicio: str, fecha_fin: str, co=None, ids_autor=None) -> pd.DataFrame:
     """
@@ -437,7 +487,7 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
         return pd.DataFrame(columns=[
             'id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles',
             'muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles',
-            'M1','M2','M3','muestras_m2'
+            'area_m2','muestras_area'
         ])
 
     df_work = df_muestras.copy()
@@ -503,14 +553,33 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
     for c in ['pct_no_fieles','pct_contactables','pct_contactables_nofieles']:
         out[c] = out[c].astype('float64')
 
-    # placeholders
-    out['M1'] = pd.NA
-    out['M2'] = pd.NA
-    out['M3'] = pd.NA
-    out['muestras_m2'] = pd.NA
+    # --- Integrar métricas de área por promotor (M2) ---
+    try:
+        df_areas = metricas_areas_muestras(df_muestras, co, origen="mapa_muestras")
+    except Exception as e:
+        logging.error(f"Error en metricas_areas_muestras: {e}")
+        df_areas = pd.DataFrame(columns=["id_autor", "area_m2"])
+
+    if not df_areas.empty:
+        df_areas = df_areas.set_index("id_autor")
+        out = out.join(df_areas, how="left")
+    else:
+        out['area_m2'] = np.nan
+
+    # Muestras por unidad de área
+    out['muestras_area'] = np.nan
+    mask_area = out['area_m2'].notna() & (out['area_m2'] > 0)
+    out.loc[mask_area, 'muestras_area'] = (
+        out.loc[mask_area, 'muestras_total'].astype(float) /
+        out.loc[mask_area, 'area_m2'].astype(float)
+    )
 
     out = out.reset_index()
-    out = out[['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','M1','M2','M3','muestras_m2']]
+    out = out[[
+        'id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles',
+        'muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles',
+        'area_m2','muestras_area'
+    ]]
     return out
 
 def obtener_promotores_por_ids(ids):
@@ -658,185 +727,7 @@ def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, 
         return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA", "venta_adq_recu", "venta_fieles", "pct_nrecu", "pct_fieles"])
 
 
-def compute_ism_metrics_por_cuadrante(
-    df_eventos,               # pd.DataFrame con columnas mínimas: lat, lon, fecha_evento, id_autor, id_contacto
-    features_cuadrantes,      # list[feature GeoJSON] con geometry y properties[codigo_key]
-    ciudad,                   # str (ej. 'CALI')
-    codigo_key: str = 'codigo',
-    tz: str = 'America/Bogota',
-    hogares_por_m2_override: float = None,  # Override directo para hogares/m²
-    pph_override: float = None              # Override para personas por hogar
-) -> 'pd.DataFrame':
-    """
-    Calcula métricas ISM (Índice de Saturación del Mercado) por cuadrante.
-    
-    Agrega eventos por cuadrante y calcula:
-    - C (Cobertura): muestras / hogares_estimados
-    - E (Esfuerzo): muestras / (promotores * dias * lambda_promedio)  
-    - ISM: media armónica de C y E escalada a 0-100
-    
-    Args:
-        df_eventos: DataFrame con columnas lat, lon, fecha_evento, id_autor, id_contacto
-        features_cuadrantes: Lista de features GeoJSON con geometry y properties[codigo_key]
-        ciudad: Nombre de ciudad (ej. 'CALI') para obtener densidad demográfica
-        codigo_key: Clave en properties para identificar cuadrantes (default: 'codigo')
-        tz: Zona horaria para normalización de fechas (default: 'America/Bogota')
-        hogares_por_m2_override: Override directo para hogares/m² (para calibración)
-        pph_override: Override para personas por hogar (para calibración)
-        
-    Returns:
-        pd.DataFrame con métricas ISM por cuadrante:
-        - ciudad, codigo_cuadrante, area_m2, area_km2, hogares_por_m2, hogares_estimados
-        - muestras_local, dias_operacion, n_promotores, lambda_q
-        - C_raw, C, E_raw, E, ISM, over_flag
-        
-    Raises:
-        ValueError: Si ciudad no tiene densidad_hab_km2 configurada y no se proveen overrides
-        
-    Notes:
-        - Retorna DataFrame vacío con esquema completo si no hay eventos o cuadrantes
-        - C y E se capan en 1.0, ISM usa media armónica: 2*C*E/(C+E) * 100
-        - over_flag=True cuando cobertura raw > 100%
-        - Overrides permiten calibración sin modificar configuración base
-        - Maneja casos edge: divisiones por cero, cuadrantes sin eventos, etc.
-    """
-    
-    # Esquema final de columnas esperado
-    schema_final = [
-        'ciudad', 'codigo_cuadrante',
-        'area_m2', 'area_km2', 'hogares_por_m2', 'hogares_estimados',
-        'muestras_local', 'dias_operacion', 'n_promotores',
-        'lambda_q', 'C_raw', 'C', 'E_raw', 'E', 'ISM', 'over_flag'
-    ]
-    
-    # Paso A — Normalización y guardas
-    df = _normalize_eventos_columns(df_eventos, tz)
-    
-    if df.empty:
-        return pd.DataFrame(columns=schema_final)
-    
-    if not features_cuadrantes:
-        return pd.DataFrame(columns=schema_final)
-    
-    # Paso B — Asignar punto→cuadrante
-    df['codigo_cuadrante'] = assign_quadrant_to_points(df[['lat','lon']], features_cuadrantes, codigo_key)
-    
-    df = df[df['codigo_cuadrante'].notna()]
-    
-    if df.empty:
-        return pd.DataFrame(columns=schema_final)
-    
-    # Paso C — Constantes ciudad y áreas por código
-    city_key = get_city_key(str(ciudad))
-    
-    # Obtener hogares_por_m2 con nueva función de override
-    hogares_por_m2 = resolve_hogares_por_m2(
-        city_key=city_key,
-        hogares_por_m2_override=hogares_por_m2_override,
-        pph_override=pph_override
-    )
-    
-    # Construir cache de áreas una sola vez
-    area_por_codigo = {}
-    codigos_vistos = set()
-    
-    for feature in features_cuadrantes:
-        codigo = feature['properties'].get(codigo_key)
-        if codigo is None:
-            # Saltar polígonos sin codigo_key
-            continue
-            
-        if codigo in codigos_vistos:
-            # Log warning para códigos duplicados y usar primera geometría
-            print(f"WARNING: Código cuadrante duplicado '{codigo}', usando primera geometría encontrada")
-            continue
-            
-        codigos_vistos.add(codigo)
-        
-        try:
-            area_m2 = area_m2_geodesic(feature['geometry'])
-            # Protección contra áreas 0 o NaN
-            if pd.isna(area_m2) or area_m2 <= 0:
-                area_m2 = 0.0
-            area_por_codigo[codigo] = float(area_m2)
-        except Exception:
-            # Si falla cálculo de área, setear a 0.0
-            area_por_codigo[codigo] = 0.0
-    
-    # Paso D — Agregados base por cuadrante
-    g = df.groupby('codigo_cuadrante', observed=True)
-    
-    M = g.size().rename('muestras_local')
-    N = g['id_autor'].nunique().rename('n_promotores') 
-    D = g['fecha_dia'].nunique().rename('dias_operacion')
-    
-    # Paso E — Tasas por promotor y λ_q (dentro del cuadrante)
-    gp = df.groupby(['codigo_cuadrante','id_autor'], observed=True)
-    
-    M_p = gp.size().rename('M_p')
-    D_p = gp['fecha_dia'].nunique().rename('D_p')
-    
-    # Construir λ_p sólo donde D_p > 0
-    tmp = pd.concat([M_p, D_p], axis=1)
-    tmp = tmp[tmp['D_p'] > 0]
-    tmp['lambda_p'] = tmp['M_p'] / tmp['D_p']
-    
-    lambda_q = tmp['lambda_p'].groupby(level=0, observed=True).mean().rename('lambda_q')
-    
-    # Paso F — DataFrame por cuadrante (join + constantes)
-    df_q = M.to_frame().join([N, D, lambda_q], how='left')
-    
-    # Si un cuadrante no aparece en lambda_q ⇒ rellenar con 0.0
-    df_q['lambda_q'] = df_q['lambda_q'].fillna(0.0)
-    
-    # Mapear áreas desde el cache
-    df_q['area_m2'] = df_q.index.map(area_por_codigo).astype(float)
-    df_q['area_km2'] = df_q['area_m2'] / 1_000_000.0
-    df_q['hogares_por_m2'] = float(hogares_por_m2)  # constante por ciudad
-    df_q['hogares_estimados'] = df_q['area_m2'] * df_q['hogares_por_m2']
-    
-    # Paso G — C, E e ISM (raw + capped) con protección de ceros/NaN
-    
-    # Cobertura
-    df_q['C_raw'] = 0.0
-    mask_H = df_q['hogares_estimados'] > 0
-    df_q.loc[mask_H, 'C_raw'] = df_q.loc[mask_H, 'muestras_local'] / df_q.loc[mask_H, 'hogares_estimados']
-    
-    df_q['C'] = df_q['C_raw'].clip(upper=1.0)
-    df_q['over_flag'] = df_q['C_raw'] > 1.0
-    
-    # Esfuerzo
-    den_E = (df_q['n_promotores'] * df_q['dias_operacion'] * df_q['lambda_q']).astype(float)
-    
-    df_q['E_raw'] = 0.0
-    mask_E = den_E > 0
-    df_q.loc[mask_E, 'E_raw'] = df_q.loc[mask_E, 'muestras_local'] / den_E[mask_E]
-    
-    df_q['E'] = df_q['E_raw'].clip(upper=1.0)
-    
-    # ISM
-    df_q['ISM'] = 0.0
-    mask_ISM = (df_q['C'] + df_q['E']) > 0
-    df_q.loc[mask_ISM, 'ISM'] = 100.0 * (2.0 * df_q.loc[mask_ISM, 'C'] * df_q.loc[mask_ISM, 'E']) / (df_q.loc[mask_ISM, 'C'] + df_q.loc[mask_ISM, 'E'])
-    
-    # Paso H — Columnas, orden, tipos y retorno
-    
-    # Añadir columna constante ciudad
-    df_q['ciudad'] = city_key
-    
-    # Convertir índice a columna
-    df_q.index.name = 'codigo_cuadrante'
-    df_q = df_q.reset_index()
-    
-    # Asegurar tipos enteros en columnas específicas
-    df_q['muestras_local'] = df_q['muestras_local'].astype(int)
-    df_q['dias_operacion'] = df_q['dias_operacion'].astype(int)  
-    df_q['n_promotores'] = df_q['n_promotores'].astype(int)
-    
-    # Orden exacto de salida (esquema final)
-    df_q = df_q[schema_final]
-    
-    return df_q
+# (Eliminado) compute_ism_metrics_por_cuadrante y toda lógica ISM
 
 # === Helpers de nombres de rutas (para tooltips/popup) ===
 

@@ -19,6 +19,7 @@ import base64
 # from mapa_pedidos import generar_mapa_pedidos
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 # from mapa_visitas import generar_mapa_visitas_individuales
+from mapa_muestras_auditoria import generar_mapa_muestras_auditoria  # Modo auditoría Muestras
 from mapa_muestras import generar_mapa_muestras
 from mapa_consultores import generar_mapa_consultores
 from mapa_consultores_simple import generar_mapa_consultores_simple
@@ -250,6 +251,12 @@ if "promotores_sel" not in st.session_state:
 if "filtrar_por_promotor" not in st.session_state:
     st.session_state["filtrar_por_promotor"] = False
 
+# Estado por defecto para modo auditoría (Muestras)
+if "muestras_modo_auditoria" not in st.session_state:
+    st.session_state["muestras_modo_auditoria"] = False
+if "promotor_auditoria" not in st.session_state:
+    st.session_state["promotor_auditoria"] = None
+
 with promotor_container:
     if tipo_mapa == "Muestras":
         st.session_state["filtrar_por_promotor"] = st.toggle("Filtrar por promotor", value=st.session_state["filtrar_por_promotor"])
@@ -290,6 +297,64 @@ with promotor_container:
         else:
             st.session_state["promotores_sel"] = None
 
+# --- CONTENEDOR REACTIVO PARA MODO AUDITORÍA (fuera del form) ---
+auditoria_container = st.container()
+
+with auditoria_container:
+    if tipo_mapa == "Muestras":
+        with st.expander("Opciones de visualización"):
+            modo_auditoria = st.checkbox(
+                "🕵️ Modo auditoría",
+                value=st.session_state["muestras_modo_auditoria"],
+                help="Activa el modo auditoría para revisar en detalle el comportamiento de un solo promotor.",
+                key="muestras_modo_auditoria"
+            )
+
+            if modo_auditoria:
+                with st.spinner("Cargando promotores para auditoría..."):
+                    try:
+                        df_prom_aud = listar_promotores()
+                    except Exception as e:
+                        st.error(f"Error al cargar promotores para auditoría: {e}")
+                        df_prom_aud = None
+
+                if df_prom_aud is None or df_prom_aud.empty:
+                    st.info("No se encontraron promotores para modo auditoría.")
+                    st.session_state["promotor_auditoria"] = None
+                else:
+                    ids_aud = df_prom_aud["id_autor"].astype(str).tolist()
+                    etiquetas_aud = (
+                        df_prom_aud["apellido"].fillna("").astype(str)
+                        + " · "
+                        + df_prom_aud["id_autor"].astype(str)
+                    ).tolist()
+                    label_map_aud = dict(zip(ids_aud, etiquetas_aud))
+
+                    # Añadimos una opción vacía al inicio para que no haya selección por defecto
+                    opciones_aud = [""] + ids_aud
+
+                    promotor_aud = st.selectbox(
+                        "Promotor a auditar",
+                        options=opciones_aud,
+                        format_func=lambda x: (
+                            "Escribe para buscar…" if x == "" else label_map_aud.get(x, x)
+                        ),
+                        key="muestras_promotor_auditoria",
+                    )
+
+                    # Si hay selección válida, guardamos el id; si no, None
+                    if promotor_aud:
+                        try:
+                            st.session_state["promotor_auditoria"] = int(promotor_aud)
+                        except Exception as e:
+                            logging.error(f"Error convirtiendo promotor_auditoria a int: {promotor_aud} ({e})")
+                            st.session_state["promotor_auditoria"] = None
+                            st.error("⚠️ El promotor seleccionado no es válido. Vuelve a seleccionarlo.")
+                    else:
+                        st.session_state["promotor_auditoria"] = None
+            else:
+                st.session_state["promotor_auditoria"] = None
+
 with st.form(key="filtros_form"):
     # if tipo_mapa == "Pedidos":
     #     rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
@@ -324,37 +389,7 @@ with st.form(key="filtros_form"):
             key="color_mode_muestras"  # mantener la misma key para persistencia
         )
 
-        # Opciones de visualización
-        with st.expander("Opciones de visualización"):
-            verificar_areas = st.checkbox("🔍 Verificar áreas (modo debug)", value=False, help="Muestra información detallada sobre el cálculo de áreas en los popups de cuadrantes")
-            enable_ism = st.checkbox("Activar ISM (modo legado)", value=False, key="muestras_enable_ism")
-            
-            # ISM Calibración
-            st.markdown("**🎯 Calibración ISM**")
-            st.caption("Overrides opcionales para ajustar el cálculo de ISM sin modificar la configuración base")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                pph_override = st.number_input(
-                    "Personas por hogar", 
-                    min_value=1.0, 
-                    max_value=10.0, 
-                    value=None,
-                    step=0.1,
-                    placeholder="Por defecto según ciudad",
-                    help="Override para personas por hogar (afecta densidad de hogares)"
-                )
-            with col2:
-                hogares_por_m2_override = st.number_input(
-                    "Hogares por m²", 
-                    min_value=0.0, 
-                    max_value=0.01, 
-                    value=None,
-                    step=0.0001,
-                    format="%.6f",
-                    placeholder="Por defecto según ciudad",
-                    help="Override directo para hogares por metro cuadrado"
-                )
+        # (Opciones de visualización movidas fuera del form: ver auditoria_container)
         
         # Cuadrantes (opcional)
         with st.expander("🗺️ Cuadrantes (opcional)"):
@@ -561,11 +596,10 @@ with st.form(key="filtros_form"):
     #         help="Fecha para la cual se proyectan las visitas (por defecto: mañana)"
     #     )
     
-    # Guardar overrides ISM en session state
-    if 'pph_override' in locals():
-        st.session_state["pph_override"] = pph_override if pph_override else None
-    if 'hogares_por_m2_override' in locals():
-        st.session_state["hogares_por_m2_override"] = hogares_por_m2_override if hogares_por_m2_override else None
+    # Limpieza de cualquier estado previo relacionado con ISM
+    st.session_state.pop("pph_override", None)
+    st.session_state.pop("hogares_por_m2_override", None)
+    st.session_state.pop("muestras_enable_ism", None)
     
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
@@ -749,68 +783,7 @@ elif tipo_mapa == "Muestras":
         )
         st.markdown('</div></div>', unsafe_allow_html=True)
 
-# 3. Descarga CSV ISM (métricas por cuadrante)
-if tipo_mapa == "Muestras":
-    df_ism_export = st.session_state.get("muestras_ism_df")
-    
-    if df_ism_export is not None and not df_ism_export.empty:
-        from datetime import datetime
-        import re
-        
-        def _fmt_yyyymmdd(x):
-            try:
-                if hasattr(x, 'strftime'):
-                    return x.strftime("%Y%m%d")
-                if isinstance(x, str) and x:
-                    cleaned = x.replace("-", "")
-                    if len(cleaned) >= 8 and cleaned[:8].isdigit():
-                        return cleaned[:8]
-            except Exception:
-                pass
-            return datetime.now().strftime("%Y%m%d")
-        
-        meta_ism = st.session_state.get("muestras_export_meta", {})
-        ciudad_ism = re.sub(r'[^A-Za-z0-9]', '', meta_ism.get("ciudad", ciudad).upper())
-        ciudad_ism = ciudad_ism.replace('Á', 'A').replace('É', 'E').replace('Í', 'I').replace('Ó', 'O').replace('Ú', 'U')
-        
-        fecha_inicio_ism = _fmt_yyyymmdd(meta_ism.get("fecha_inicio"))
-        fecha_fin_ism = _fmt_yyyymmdd(meta_ism.get("fecha_fin"))
-        
-        filename_ism = f"ISM_Muestras_{ciudad_ism}_{fecha_inicio_ism}_{fecha_fin_ism}.csv"
-        
-        csv_data_ism = df_ism_export.to_csv(index=False, decimal=',').encode('utf-8-sig')
-        
-        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-        st.download_button(
-            label="📥 Descargar CSV ISM (métricas por cuadrante)",
-            data=csv_data_ism,
-            file_name=filename_ism,
-            mime="text/csv",
-            type="secondary",
-            use_container_width=True,
-            help="Descarga métricas ISM por cuadrante"
-        )
-        st.markdown('</div></div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-        st.button(
-            "📥 Descargar CSV ISM (métricas por cuadrante)",
-            disabled=True,
-            type="secondary",
-            use_container_width=True,
-            help="Genere un mapa para habilitar esta descarga."
-        )
-        st.markdown('</div></div>', unsafe_allow_html=True)
-elif tipo_mapa == "Consultores":
-    st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
-    st.button(
-        "📥 Descargar CSV ISM (métricas por cuadrante)",
-        disabled=True,
-        type="secondary",
-        use_container_width=True,
-        help="ISM no disponible para Consultores"
-    )
-    st.markdown('</div></div>', unsafe_allow_html=True)
+# 3. (Eliminado) Descarga CSV ISM
 
 # Cerrar card "Resultados y Descargas"
 st.markdown('</div>', unsafe_allow_html=True)
@@ -914,41 +887,38 @@ if submit_button:
         #     map_type = "facturas"
         if tipo_mapa == "Muestras":
             override_fc = st.session_state.get("muestras_override_fc")
-            promotores_sel = st.session_state.get("promotores_sel")  # <-- de session_state
-            # Obtener overrides ISM de los controles
-            pph_override = st.session_state.get("pph_override")
-            hogares_por_m2_override = st.session_state.get("hogares_por_m2_override")
-            
-            resultado = manejar_error(
-                generar_mapa_muestras,
-                fecha_inicio,
-                fecha_fin,
-                ciudad,
-                barrios,
-                promotores_sel,
-                override_fc,
-                color_mode,
-                verificar_areas,
-                hogares_por_m2_override,
-                pph_override,
-                enable_ism=st.session_state.get("muestras_enable_ism", False)
-            )
+            promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
+            # Lectura de estado de auditoría
+            modo_auditoria = st.session_state.get("muestras_modo_auditoria", False)
+            promotor_auditoria = st.session_state.get("promotor_auditoria")
+
+            # Desvío según modo auditoría
+            if modo_auditoria and promotor_auditoria is not None:
+                resultado = manejar_error(
+                    generar_mapa_muestras_auditoria,
+                    fecha_inicio,
+                    fecha_fin,
+                    ciudad,
+                    promotor_auditoria,
+                )
+            else:
+                resultado = manejar_error(
+                    generar_mapa_muestras,
+                    fecha_inicio,
+                    fecha_fin,
+                    ciudad,
+                    barrios,
+                    promotores_sel,
+                    override_fc,
+                    color_mode,
+                    False,  # verificar_areas desactivado en esta versión
+                )
+
             if resultado:
-                # Manejar el nuevo formato (filename, n_puntos, df_csv, df_ism)
-                if isinstance(resultado, tuple) and len(resultado) == 4:
-                    filename, n_puntos, df_csv, df_ism = resultado
-                    st.session_state["muestras_export_df"] = df_csv
-                    st.session_state["muestras_ism_df"] = df_ism  # Nuevo: ISM DataFrame
-                    st.session_state["muestras_export_meta"] = {
-                        "ciudad": ciudad, 
-                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
-                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
-                    }
-                elif isinstance(resultado, tuple) and len(resultado) == 3:
-                    # Compatibilidad con formato anterior (sin ISM)
-                    filename, n_puntos, df_csv = resultado
-                    st.session_state["muestras_export_df"] = df_csv
-                    st.session_state["muestras_ism_df"] = None
+                # Formato final: (filename, n_puntos, df_export)
+                if isinstance(resultado, tuple) and len(resultado) == 3:
+                    filename, n_puntos, df_export = resultado
+                    st.session_state["muestras_export_df"] = df_export
                     st.session_state["muestras_export_meta"] = {
                         "ciudad": ciudad, 
                         "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
@@ -957,7 +927,6 @@ if submit_button:
                 else:
                     filename, n_puntos = resultado
                     st.session_state["muestras_export_df"] = None
-                    st.session_state["muestras_ism_df"] = None
                     st.session_state["muestras_export_meta"] = None
                 # Guardar filename para el botón de descarga HTML
                 st.session_state["muestras_last_filename"] = filename
@@ -965,7 +934,6 @@ if submit_button:
                 filename, n_puntos = None, 0
                 st.session_state["muestras_last_filename"] = None
                 st.session_state["muestras_export_df"] = None
-                st.session_state["muestras_ism_df"] = None  # Nuevo: limpiar ISM
                 st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
@@ -1050,10 +1018,20 @@ if submit_button:
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
+        else:
+            # Si no se generó filename, limpiar enlace para evitar mapa congelado
+            st.session_state["map_url"] = None
+            link_placeholder.markdown(
+                '<div class="muted" style="text-align:center;">No se generó ningún mapa. Ajusta los filtros e inténtalo de nuevo.</div>',
+                unsafe_allow_html=True
+            )
 
     except Exception as e:
         logging.error(f"❌ Error inesperado: {str(e)}")
         st.error("⚠️ Se produjo un error inesperado. Revisa los logs.")
+        # Asegurarnos de no mostrar un mapa viejo tras un error crítico
+        st.session_state["map_url"] = None
+        st.session_state["muestras_last_filename"] = None
 
 # Manejar el enlace en el placeholder basado en session state
 if "map_url" in st.session_state and st.session_state["map_url"] is not None:
