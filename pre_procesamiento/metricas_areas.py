@@ -262,68 +262,96 @@ class SubclusterM2:
 
 def _subclusters_m2_detalle(X: np.ndarray) -> List[SubclusterM2]:
     """
-    Recibe X en metros (puntos de un promotor) y aplica la lógica M2:
-      - poda global
-      - selección de k (codo)
-      - filtrado de subclusters pequeños
-      - concave hull / convex hull
-    Devuelve lista de SubclusterM2 con métricas geométricas por subcluster válido.
+    Recibe X en metros (puntos de un promotor) y aplica la lógica M2 multi-subcluster:
+      - poda global de outliers (P_OUTLIER)
+      - selección de K (codo) hasta SUBK_KMAX_ABS o SUBK_KMAX_FRAC
+      - KMeans para etiquetar subclusters
+      - poda opcional por subcluster (SUBK_P_OUTLIER) y filtro por tamaño (MIN_SUB_FRAC)
+      - concave hull / convex hull por subcluster
+    Devuelve una lista de SubclusterM2 (una entrada por subcluster válido).
     """
     n = len(X)
     if n < 3:
         return []
-    # Poda global
+    # 1) Poda global de outliers
     Xp, _ = _podar_outliers_xy(X, P_OUTLIER)
-    n = len(Xp)
-    if n == 0:
+    if len(Xp) == 0:
         return []
-    # k* por elbow (permite k=1)
-    kmax_eff = max(1, min(SUBK_KMAX_ABS, int(np.ceil(SUBK_KMAX_FRAC * n))))
-    k_opt, _ = _elbow_min_k(Xp, kmax_eff)
-    k_opt = int(max(1, k_opt))
-    km = KMeans(n_clusters=k_opt, n_init="auto", random_state=42).fit(Xp)
-    labels = km.labels_
 
-    # Filtrar subclusters pequeños
-    sub_ids = []
-    for lab in range(int(k_opt)):
-        size_lab = int((labels == lab).sum())
-        if size_lab >= max(8, int(MIN_SUB_FRAC * n)):
-            sub_ids.append(lab)
-    if not sub_ids:
-        sub_ids = [0]
+    # 2) Cálculo de K máximo permitido
+    kmax_raw = max(1, int(len(Xp) * float(SUBK_KMAX_FRAC)))
+    kmax = max(1, min(int(SUBK_KMAX_ABS), int(kmax_raw)))
 
-    detalles: List[SubclusterM2] = []
-    sc_idx = 0
-    for lab in sub_ids:
-        mask = (labels == lab)
-        Xi = Xp[mask]
-        # Poda adicional en subcluster
-        Xi2, _ = _podar_outliers_xy(Xi, p=SUBK_P_OUTLIER)
-        if len(Xi2) == 0:
-            Xi2 = Xi
-        # Geometría concave/convex
+    # Si kmax == 1, fallback a un único subcluster
+    if kmax == 1:
         if ALPHA_MODE == "fixed":
             alpha_m = float(ALPHA_FIXED)
             if alpha_m < 5.0:
                 alpha_m = 5.0
         else:
-            alpha_m = _alpha_auto_from_nn(Xi2)
-        geom = _concave_hull_from_points_utm(Xi2, alpha_m)
+            alpha_m = _alpha_auto_from_nn(Xp)
+        geom = _concave_hull_from_points_utm(Xp, alpha_m)
+        if geom is None:
+            return []
+        return [SubclusterM2(
+            id_subcluster=0,
+            area_m2=float(geom.area),
+            perimetro_m=float(geom.length),
+            n_puntos=int(len(Xp)),
+            X_utm=Xp,
+            geom_utm=geom,
+        )]
+
+    # 3) Elección de K mediante elbow
+    k_star, _ = _elbow_min_k(Xp, kmax)
+    k_star = max(1, min(int(kmax), int(k_star)))
+
+    # 4) Aplicar KMeans sobre Xp
+    km = KMeans(n_clusters=int(k_star), n_init="auto", random_state=42)
+    labels = km.fit_predict(Xp)
+
+    # 5) Construir subclusters por etiqueta
+    subclusters: List[SubclusterM2] = []
+    uniq_labels = sorted(set(int(l) for l in labels.tolist()))
+    total_after_prune = len(Xp)
+    for lab in uniq_labels:
+        mask = (labels == lab)
+        X_lab = Xp[mask]
+        n_lab_total = len(X_lab)
+        if n_lab_total < 3:
+            continue
+        # Poda opcional por subcluster
+        X_lab_pod, _ = _podar_outliers_xy(X_lab, SUBK_P_OUTLIER)
+        n_lab = len(X_lab_pod)
+        if n_lab < 3:
+            continue
+        # Filtro por tamaño mínimo relativo
+        if n_lab < (float(MIN_SUB_FRAC) * float(total_after_prune)):
+            continue
+        # Geometría concave/convex por subcluster
+        if ALPHA_MODE == "fixed":
+            alpha_m = float(ALPHA_FIXED)
+            if alpha_m < 5.0:
+                alpha_m = 5.0
+        else:
+            alpha_m = _alpha_auto_from_nn(X_lab_pod)
+        geom = _concave_hull_from_points_utm(X_lab_pod, alpha_m)
         if geom is None:
             continue
-        area = float(geom.area)
-        perim = float(geom.length)
-        detalles.append(SubclusterM2(
-            id_subcluster=sc_idx,
-            area_m2=area,
-            perimetro_m=perim,
-            n_puntos=int(len(Xi2)),
-            X_utm=Xi2,
+        subclusters.append(SubclusterM2(
+            id_subcluster=int(lab),
+            area_m2=float(geom.area),
+            perimetro_m=float(geom.length),
+            n_puntos=int(n_lab),
+            X_utm=X_lab_pod,
             geom_utm=geom,
         ))
-        sc_idx += 1
-    return detalles
+
+    # 6) Orden y devolución
+    if not subclusters:
+        return []
+    subclusters.sort(key=lambda sc: int(sc.id_subcluster))
+    return subclusters
 
 
 def _geom_utm_to_lonlat(geom_utm, centroope: int | None):
