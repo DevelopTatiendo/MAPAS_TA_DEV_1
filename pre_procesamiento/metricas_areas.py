@@ -61,6 +61,13 @@ HOLE_MIN_ABS: float = 1500.0
 SMOOTHING_BUFFER_M: float = 80.0
 
 # =============================================================
+# Clustering global para modo auditoría (basado en MapaMetricasM2)
+# =============================================================
+# Selección de K (auditoría) por rango y elbow con umbral y curvatura
+AUD_TAU_ELBOW: float = 0.12  # equivalente a TAU_ELBOW
+AUD_K_MAX_ABS: int = 12      # tope superior para K global auditoría
+
+# =============================================================
 # Helpers internos compartidos
 # =============================================================
 
@@ -367,6 +374,159 @@ def _geom_utm_to_lonlat(geom_utm, centroope: int | None):
         return None
 
 # =============================================================
+# Helpers de clustering global para modo auditoría
+# =============================================================
+
+def _aud_k_range(n_points: int) -> List[int]:
+    """Devuelve lista de K candidatos [2..Kmax] con Kmax=min(AUD_K_MAX_ABS, n_points-1) y al menos 2."""
+    try:
+        n = int(n_points)
+    except Exception:
+        n = 0
+    if n < 3:
+        return []  # se manejará en _aud_cluster_labels
+    kmax = max(2, min(int(AUD_K_MAX_ABS), n - 1))
+    return list(range(2, kmax + 1))
+
+def _aud_curva_elbow(X: np.ndarray) -> Tuple[List[int], List[float]]:
+    """Calcula (ks, inertias) sobre KMeans estándar para candidatos de _aud_k_range."""
+    n = len(X)
+    ks = _aud_k_range(n)
+    if not ks:
+        return [], []
+    inertias: List[float] = []
+    for k in ks:
+        km = KMeans(n_clusters=int(k), random_state=42, n_init="auto")
+        km.fit(X)
+        inertias.append(float(km.inertia_))
+    return ks, inertias
+
+def _aud_k_por_codo_threshold(ks: List[int], inertias: List[float], tau: float) -> int:
+    """Selecciona K por primer caída relativa (< tau) en mejora de SSE. Fallback: máximo K."""
+    if not ks:
+        return 1
+    if len(inertias) != len(ks):
+        return ks[0]
+    # Mejoras relativas entre pasos consecutivos
+    prev = inertias[0]
+    for i in range(1, len(ks)):
+        cur = inertias[i]
+        if prev <= 0:
+            prev = cur
+            continue
+        mejora_rel = (prev - cur) / prev
+        if mejora_rel < tau:
+            return ks[i - 1]  # K anterior al descenso bajo el umbral
+        prev = cur
+    return ks[-1]
+
+def _aud_k_por_curvatura(ks: List[int], inertias: List[float]) -> int:
+    """Selecciona K por máxima curvatura (segundo diferencial sobre log(inertia))."""
+    if not ks:
+        return 1
+    arr = np.array(inertias, dtype=float)
+    if arr.size <= 2:
+        return ks[0]
+    y = np.log(arr + 1e-9)
+    d1 = np.diff(y)
+    d2 = np.diff(d1)
+    idx = int(np.argmax(d2)) + 2  # +2 por doble diff offset
+    # Mapear idx (1..len(ks)) dentro de rango ks
+    k_curv = ks[min(len(ks) - 1, max(0, idx - 2))]
+    return k_curv
+
+def _aud_elegir_k_elbow(ks: List[int], inertias: List[float], tau: float = AUD_TAU_ELBOW) -> int:
+    """Elige K combinando criterio de umbral y curvatura (max entre ambos)."""
+    if not ks:
+        return 1
+    k_tau = _aud_k_por_codo_threshold(ks, inertias, tau)
+    k_curv = _aud_k_por_curvatura(ks, inertias)
+    k_best = max(int(k_tau), int(k_curv))
+    # Asegurar pertenencia al dominio
+    if k_best not in ks:
+        # escoger el más cercano presente
+        k_best = ks[-1]
+    return k_best
+
+def _aud_cluster_labels(X: np.ndarray) -> Tuple[np.ndarray, int]:
+    """Clustering global en UTM para auditoría devolviendo (labels, k_best)."""
+    n = len(X)
+    if n < 3:
+        return np.zeros(n, dtype=int), 1
+    ks, inertias = _aud_curva_elbow(X)
+    if not ks:
+        return np.zeros(n, dtype=int), 1
+    k_best = _aud_elegir_k_elbow(ks, inertias, tau=AUD_TAU_ELBOW)
+    # Ajuste defensivo
+    if k_best < 1:
+        k_best = 1
+    if k_best == 1:
+        return np.zeros(n, dtype=int), 1
+    km = KMeans(n_clusters=int(k_best), random_state=42, n_init="auto")
+    labels = km.fit_predict(X)
+    return labels.astype(int), int(k_best)
+
+def _aud_subclusters_por_cluster(X: np.ndarray) -> List[SubclusterM2]:
+    """Construye SubclusterM2 por cluster global (auditoría)."""
+    n = len(X)
+    if n < 3:
+        return []
+    labels, k_best = _aud_cluster_labels(X)
+    if k_best <= 1:
+        # Un único cluster: aplicar lógica igual que resto (sin MIN_SUB_FRAC opcional)
+        Xp, _ = _podar_outliers_xy(X, P_OUTLIER)
+        if len(Xp) < 3:
+            return []
+        if ALPHA_MODE == "fixed":
+            alpha_m = float(ALPHA_FIXED) if ALPHA_FIXED >= 5.0 else 5.0
+        else:
+            alpha_m = _alpha_auto_from_nn(Xp)
+        geom = _concave_hull_from_points_utm(Xp, alpha_m)
+        if geom is None:
+            return []
+        return [SubclusterM2(
+            id_subcluster=0,
+            area_m2=float(getattr(geom, 'area', 0.0)),
+            perimetro_m=float(getattr(geom, 'length', 0.0)),
+            n_puntos=int(len(Xp)),
+            X_utm=Xp,
+            geom_utm=geom,
+        )]
+    subclusters: List[SubclusterM2] = []
+    total_n = len(X)
+    unique_labels = sorted(set(int(l) for l in labels.tolist()))
+    for lab in unique_labels:
+        X_clust = X[labels == lab]
+        if len(X_clust) < 3:
+            continue
+        # Poda interna opcional
+        X_clust_pod, _ = _podar_outliers_xy(X_clust, P_OUTLIER)
+        if len(X_clust_pod) < 3:
+            continue
+        # Filtro por tamaño relativo (opcional, mantiene coherencia con modo normal)
+        if len(X_clust_pod) < (float(MIN_SUB_FRAC) * float(total_n)):
+            continue
+        if ALPHA_MODE == "fixed":
+            alpha_m = float(ALPHA_FIXED) if ALPHA_FIXED >= 5.0 else 5.0
+        else:
+            alpha_m = _alpha_auto_from_nn(X_clust_pod)
+        geom = _concave_hull_from_points_utm(X_clust_pod, alpha_m)
+        if geom is None or getattr(geom, 'is_empty', False):
+            continue
+        subclusters.append(SubclusterM2(
+            id_subcluster=int(lab),
+            area_m2=float(getattr(geom, 'area', 0.0)),
+            perimetro_m=float(getattr(geom, 'length', 0.0)),
+            n_puntos=int(len(X_clust_pod)),
+            X_utm=X_clust_pod,
+            geom_utm=geom,
+        ))
+    if not subclusters:
+        return []
+    subclusters.sort(key=lambda sc: int(sc.id_subcluster))
+    return subclusters
+
+# =============================================================
 # API pública
 # =============================================================
 
@@ -446,7 +606,8 @@ def generar_geojson_subclusters_promotor(
     lonlat_valid = lonlat[mask_valid]
     X = _from_lonlat_to_utm(lonlat_valid, centroope)
 
-    detalles = _subclusters_m2_detalle(X)
+    # Auditoría: usar clustering global tipo MapaMetricasM2
+    detalles = _aud_subclusters_por_cluster(X)
     if not detalles:
         df_metrics = pd.DataFrame([{
             "id_autor": pid,
