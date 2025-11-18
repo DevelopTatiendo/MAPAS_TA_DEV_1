@@ -76,13 +76,13 @@ CIUDADES = {
 }
 
 # Selección de ciudad
-CIUDAD = "CALI"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
+CIUDAD = "MEDELLIN"  # "MEDELLIN" | "MANIZALES" | "PEREIRA" | "BOGOTA" | "BARRANQUILLA" | "BUCARAMANGA" | "CALI"
 _cfg = CIUDADES[CIUDAD]
 CENTROOPE = _cfg["centroope"]
 
 FECHA_INICIO = "2025-01-01"
 FECHA_FIN    = "2025-11-01"
-promotor_num = 2
+promotor_num = 1
 MANUAL_k = False
 K_target = 4
 

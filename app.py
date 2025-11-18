@@ -100,45 +100,41 @@ st.set_page_config(
 st.markdown("""
 <style>
 :root{
-  --primary:#5B21B6; --primary-600:#6D28D9; --accent:#FACC15;
-  --bg:#F8F7FF; --card:#FFFFFF; --text:#1F1A2F; --muted:#6B7280; --border:#E5E7EB;
-  --bg-dark:#0F1116; --card-dark:#161923; --text-dark:#EAEAF0; --muted-dark:#A3A8B3; --border-dark:#2A2F3A;
+    --primary:#5B21B6; --primary-600:#6D28D9; --accent:#FACC15;
+    --bg:#F8F7FF; --card:#FFFFFF; --text:#1F1A2F; --muted:#6B7280; --border:#E5E7EB;
+    --bg-dark:#0F1116; --card-dark:#161923; --text-dark:#EAEAF0; --muted-dark:#A3A8B3; --border-dark:#2A2F3A;
 }
-/* Contenedor más estrecho para foco visual */
 .block-container { max-width: 1100px; }
 
 /* ===== HERO de marca ===== */
 .hero-wrap{
-  display:flex; justify-content:center; margin: 6px 0 18px 0;
+    display:flex;
+    justify-content:center;
+    margin: 12px 0 24px 0;
 }
 .hero{
-  display:flex; align-items:center; gap:28px;
+    display:flex;
+    flex-direction: column;      /* Logo arriba, texto abajo */
+    align-items:center;
+    text-align:center;
+    gap:12px;
 }
 .hero .logo{
-  width: 112px; height:auto; display:block;
+    width: 280px;                /* Logo más grande */
+    height:auto;
+    display:block;
 }
-.hero .title{
-  font-weight: 900;
-  font-size: clamp(40px, 6vw, 64px);
-  line-height: 1.0;
-  letter-spacing: -0.02em;
-  margin: 0;
-}
-.hero .subtitle{
-  font-weight: 700;
-  font-size: clamp(18px, 2.6vw, 26px);
-  margin-top: 6px;
-}
+.hero .title{ display:none; }
+.hero .subtitle{ display:none; }
 .hero .tagline{
-  color: var(--muted, #6B7280);
-  font-size: clamp(14px, 1.8vw, 18px);
-  margin-top: 4px;
+    font-weight: 700;
+    font-size: clamp(18px, 2.6vw, 26px);
+    margin-top: 4px;
+    color: var(--text, #1F1A2F);
 }
-
-/* Apilado en móviles */
 @media (max-width: 820px){
-  .hero{ flex-direction: column; text-align: center; gap: 14px; }
-  .hero .logo{ width: 88px; }
+    .hero{ flex-direction: column; text-align: center; gap: 10px; }
+    .hero .logo{ width: 140px; }
 }
 
 /* tipografía */
@@ -177,8 +173,8 @@ a.pill .icon{ margin-right:.35rem; }
   body, .stMarkdown, .stText, .stRadio, .stSelectbox, .stMultiSelect{ color:var(--text-dark) !important; }
   a.pill, .btn-link{ background:var(--primary-600); border-color:var(--primary-600); }
   a.pill:hover{ filter:brightness(1.05); }
-  .hero .title, .hero .subtitle{ color: var(--text-dark, #EAEAF0); }
-  .hero .tagline{ color: var(--muted-dark, #A3A8B3); }
+    .hero .title, .hero .subtitle{ color: var(--text-dark, #EAEAF0); }
+    .hero .tagline{ color: var(--muted-dark, #A3A8B3); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -187,19 +183,15 @@ a.pill .icon{ margin-right:.35rem; }
 logo_b64 = img_to_b64(LOGO_FILE) if LOGO_FILE.exists() else None
 
 st.markdown(
-    f"""
-    <div class="hero-wrap">
-      <div class="hero">
-        {'<img class="logo" src="data:image/png;base64,' + logo_b64 + '" alt="Atlas TA">' if logo_b64 else ''}
-        <div class="hero-text">
-          <h1 class="title">Atlas TA</h1>
-          <div class="subtitle">El mapa de tu operación</div>
-          <div class="tagline"></div>
+        f"""
+        <div class="hero-wrap">
+            <div class="hero">
+                {'<img class="logo" src="data:image/png;base64,' + logo_b64 + '" alt="Atlas TA">' if logo_b64 else ''}
+                <div class="tagline">El mapa de tu operación</div>
+            </div>
         </div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True
 )
 
 # Debug checks (opcional - descomentarlas si necesitas verificar rutas)

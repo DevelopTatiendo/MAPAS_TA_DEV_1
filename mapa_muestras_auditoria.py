@@ -128,8 +128,9 @@ def generar_mapa_muestras_auditoria(
             data=ft,
             name="auditoria",
             style_function=lambda x: {
-                "color": "red",
-                "fillOpacity": 0.2,
+                # Borde negro, sin relleno
+                "color": "black",
+                "fillOpacity": 0.0,
                 "weight": 2
             }
         )
