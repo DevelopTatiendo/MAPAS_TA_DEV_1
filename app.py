@@ -209,7 +209,7 @@ ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 # Card "Configuración y Filtros"
 #st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
-tipos_mapa = ["Muestras", "Clientes x Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
+tipos_mapa = ["Clientes x Muestras","Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
 # Compatibilidad temporal para sesiones con "Gestores"

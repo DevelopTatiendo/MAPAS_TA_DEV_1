@@ -53,12 +53,12 @@ MIN_SUB_FRAC: float = 0.05
 # Concave Hull (M2)
 MIN_PTS_CONCAVE: int = 5
 ALPHA_MODE: str = "fixed"   # "fixed" | "auto"
-ALPHA_FIXED: float = 300.0
-ALPHA_QNN_PCTL: int = 70
-ALPHA_SCALE: float = 1.6
-HOLE_MIN_FRAC: float = 0.02
-HOLE_MIN_ABS: float = 1500.0
-SMOOTHING_BUFFER_M: float = 80.0
+ALPHA_FIXED: float = 500.0
+ALPHA_QNN_PCTL: int = 80
+ALPHA_SCALE: float = 2.0
+HOLE_MIN_FRAC: float = 0.03
+HOLE_MIN_ABS: float = 2000
+SMOOTHING_BUFFER_M: float = 90.0
 
 # =============================================================
 # Clustering global para modo auditoría (basado en MapaMetricasM2)

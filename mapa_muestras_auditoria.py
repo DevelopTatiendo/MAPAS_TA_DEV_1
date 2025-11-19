@@ -140,6 +140,7 @@ def generar_mapa_muestras_auditoria(
         <b>Subcluster:</b> {props.get('id_subcluster', 'N/A')}<br>
         <b>Área (m²):</b> {_fmt_area_popup(area_m2)}<br>
         <b>Perímetro (m):</b> {_fmt_perimetro_popup(perimetro_m)}<br>
+        <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
         """
         #<b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
 
@@ -173,7 +174,7 @@ def generar_mapa_muestras_auditoria(
             continue
         folium.CircleMarker(
             location=[lat, lon],
-            radius=3,
+            radius=5,
             color="blue",
             fill=True,
             fill_opacity=0.9,
