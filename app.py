@@ -209,8 +209,7 @@ ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 # Card "Configuración y Filtros"
 #st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
-tipos_mapa = ["Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
-# tipos_mapa = ["Pedidos", "Facturas Vencidas", "Muestras", "Visitas", "Pruebas", "Consultores"]
+tipos_mapa = ["Muestras", "Clientes x Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
 # Compatibilidad temporal para sesiones con "Gestores"
@@ -250,7 +249,7 @@ if "promotor_auditoria" not in st.session_state:
     st.session_state["promotor_auditoria"] = None
 
 with promotor_container:
-    if tipo_mapa == "Muestras":
+    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
         st.session_state["filtrar_por_promotor"] = st.toggle("Filtrar por promotor", value=st.session_state["filtrar_por_promotor"])
         if st.session_state["filtrar_por_promotor"]:
             with st.spinner("Cargando promotores..."):
@@ -293,7 +292,7 @@ with promotor_container:
 auditoria_container = st.container()
 
 with auditoria_container:
-    if tipo_mapa == "Muestras":
+    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
         with st.expander("Opciones de visualización"):
             modo_auditoria = st.checkbox(
                 "🕵️ Modo auditoría",
@@ -358,7 +357,7 @@ with st.form(key="filtros_form"):
     #     edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
     #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
     #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-    if tipo_mapa == "Muestras":
+    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
         # Barrios
         barrios_disponibles = datos_ciudad["barrios"]["barrio"].sort_values().unique()
         barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
@@ -624,7 +623,7 @@ else:
 # Descargas (tres botones centrados)
 
 # 1. Descarga HTML del mapa
-if tipo_mapa == "Muestras":
+if tipo_mapa in ("Muestras", "Clientes x Muestras"):
     map_filename = st.session_state.get("muestras_last_filename")
     
     if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
@@ -723,7 +722,7 @@ if tipo_mapa == "Consultores":
             help="Genere un mapa para habilitar esta descarga."
         )
         st.markdown('</div></div>', unsafe_allow_html=True)
-elif tipo_mapa == "Muestras":
+elif tipo_mapa in ("Muestras", "Clientes x Muestras"):
     df_export = st.session_state.get("muestras_export_df")
     export_meta = st.session_state.get("muestras_export_meta")
     
@@ -877,12 +876,15 @@ if submit_button:
         # elif tipo_mapa == "Facturas Vencidas":
         #     filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
         #     map_type = "facturas"
-        if tipo_mapa == "Muestras":
+        if tipo_mapa in ("Muestras", "Clientes x Muestras"):
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
             # Lectura de estado de auditoría
             modo_auditoria = st.session_state.get("muestras_modo_auditoria", False)
             promotor_auditoria = st.session_state.get("promotor_auditoria")
+
+            # Flag para modo clientes únicos
+            clientes_x_muestras = (tipo_mapa == "Clientes x Muestras")
 
             # Desvío según modo auditoría
             if modo_auditoria and promotor_auditoria is not None:
@@ -892,6 +894,7 @@ if submit_button:
                     fecha_fin,
                     ciudad,
                     promotor_auditoria,
+                    clientes_x_muestras,  # pasar flag también a auditoría
                 )
             else:
                 resultado = manejar_error(
@@ -903,7 +906,8 @@ if submit_button:
                     promotores_sel,
                     override_fc,
                     color_mode,
-                    False,  # verificar_areas desactivado en esta versión
+                    False,              # verificar_areas desactivado en esta versión
+                    clientes_x_muestras # NUEVO parámetro
                 )
 
             if resultado:
@@ -1008,7 +1012,7 @@ if submit_button:
 
             
             # Warning si hay filtro y no hubo puntos
-            if tipo_mapa == "Muestras" and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+            if tipo_mapa in ("Muestras", "Clientes x Muestras") and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
         else:
             # Si no se generó filename, limpiar enlace para evitar mapa congelado

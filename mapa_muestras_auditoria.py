@@ -35,7 +35,8 @@ def generar_mapa_muestras_auditoria(
     fecha_inicio: str,
     fecha_fin: str,
     ciudad: str,
-    id_promotor: int
+    id_promotor: int,
+    clientes_x_muestras: bool = False,
 ):
     """
     Genera el mapa de auditoría para UN promotor.
@@ -68,6 +69,17 @@ def generar_mapa_muestras_auditoria(
     # Normalizar columnas mínimas
     df = df.copy()
     df = df.dropna(subset=['coordenada_latitud', 'coordenada_longitud'])
+
+    # ==============================
+    #  Modo opcional: Clientes x Muestras
+    #  (una fila por cliente para este promotor)
+    # ==============================
+    if clientes_x_muestras and 'id_contacto' in df.columns:
+        df = (
+            df.sort_values('fecha_evento')
+              .drop_duplicates(subset=['id_contacto'], keep='last')
+        )
+    # ==============================
 
     # --- 2) CALCULAR ÁREAS + GEOJSON ---
     # subclusters, áreas, perímetros, n_puntos, geojson completo

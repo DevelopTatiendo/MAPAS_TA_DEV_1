@@ -694,6 +694,7 @@ def generar_mapa_muestras(
     override_fc=None,
     color_mode="Promotores",
     verificar_areas=False,
+    clientes_x_muestras: bool = False,
 ):
     try:
         # Toggle debug areas
@@ -765,6 +766,14 @@ def generar_mapa_muestras(
         # Preparar columnas de fecha y filtrado
         df['fecha_evento'] = pd.to_datetime(df.get('fecha_evento', df.get('fecha')), errors='coerce')
         df['fecha_dia'] = df['fecha_evento'].dt.date
+
+        # Modo opcional: Clientes x Muestras (una fila por cliente y promotor)
+        if clientes_x_muestras and {'id_autor', 'id_contacto'}.issubset(df.columns):
+            df = (
+                df.sort_values('fecha_evento')
+                  .drop_duplicates(subset=['id_autor', 'id_contacto'], keep='last')
+            )
+
         df_filtrado = df.copy()
         if barrios:
             if 'barrio' in df_filtrado.columns:
@@ -840,7 +849,6 @@ def generar_mapa_muestras(
         df_for_conteo['lon'] = df_for_conteo.apply(lambda r: r.get('coordenada_longitud', r.get('longitud', None)), axis=1)
         df_for_conteo['fecha_dia'] = df_for_conteo['fecha_evento'].dt.date
         df_for_conteo = df_for_conteo.dropna(subset=['lat', 'lon'])
-
         # Métricas por cuadrante
         features_padres = [f for f in features_cuadrantes if _es_cuadrante_padre(f)]
         features_hijos = [f for f in features_cuadrantes if _es_cuadrante_hijo(f)]
@@ -977,6 +985,11 @@ def generar_mapa_muestras(
                 logging.error(f"Error métricas promotores muestras: {e}")
                 df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','area_m2','muestras_area'])
             prom_metrics = {int(r['id_autor']): r for _, r in df_prom.iterrows()} if not df_prom.empty else {}
+            # Cálculo de clientes únicos por promotor a partir del DF filtrado actual
+            if {'id_autor', 'id_contacto'}.issubset(df_filtrado.columns):
+                clientes_por_promotor = df_filtrado.groupby('id_autor')['id_contacto'].nunique()
+            else:
+                clientes_por_promotor = pd.Series(dtype='int64')
             legend_rows = []
             for (nombre_compacto, _sg, count_muestras, color_hex) in grupos_promotores:
                 pid_match = None
@@ -991,6 +1004,11 @@ def generar_mapa_muestras(
                         continue
                 met = prom_metrics.get(pid_match, {})
                 muestras_total = int(met.get('muestras_total', count_muestras) or 0)
+                # Nuevo: #Clientes por promotor
+                try:
+                    clientes_total = int(clientes_por_promotor.get(pid_match, 0) or 0)
+                except Exception:
+                    clientes_total = 0
                 dias_habiles = int(met.get('dias_habiles', 0) or 0)
                 muestras_por_dia_habil = int(muestras_total / dias_habiles) if dias_habiles > 0 else 0
                 pct_no_fieles = float(met.get('pct_no_fieles', 0.0) or 0.0)
@@ -1034,6 +1052,7 @@ def generar_mapa_muestras(
                         <span>{nombre_compacto}</span>
                     </td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(clientes_total)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2/1000)}</td>
@@ -1055,6 +1074,7 @@ def generar_mapa_muestras(
                       <tr>
                         <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Promotor</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# de clientes únicos por promotor en el rango'>#Clientes</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
                                                 <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área km²</th>
