@@ -151,6 +151,30 @@ def listar_promotores():
     
     return df
 
+def obtener_nombre_promotor(id_autor: int) -> str | None:
+    """
+    Retorna el nombre del promotor basado en su ID.
+    Consulta la tabla fullclean_personal.personal.
+    Si no encuentra el ID, retorna None.
+    """
+    try:
+        query = """
+            SELECT id, apellido AS nombre
+            FROM fullclean_personal.personal
+            WHERE id = :id_autor
+            LIMIT 1
+        """
+        df = sql_read(query, params={"id_autor": id_autor}, schema="fullclean_personal")
+        if df is None or df.empty:
+            return None
+        nombre = df.loc[0, "nombre"]
+        if nombre is None:
+            return None
+        return str(nombre).strip()
+    except Exception as e:
+        print(f"[WARN] obtener_nombre_promotor({id_autor}) falló: {e}")
+        return None
+
 def filtrar_ids_por_cargo(ids, cargo=39):
     """Devuelve solo los IDs cuyo p.id_cargo == cargo en fullclean_personal.personal."""
     if not ids: 

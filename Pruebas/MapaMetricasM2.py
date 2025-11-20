@@ -109,15 +109,17 @@ PALETA_SUBS = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd",
                "#8c564b","#e377c2","#7f7f7f","#bcbd22","#17becf"]
 SUBK_P_OUTLIER      = 0.00
 
-# === Concave Hull (M2) ===
-MIN_PTS_CONCAVE   = 8
-ALPHA_MODE        = "fixed"  # "auto" | "fixed"
-ALPHA_FIXED       = 250.0
-ALPHA_QNN_PCTL    = 70
-ALPHA_SCALE       = 1.6
+# Concave Hull (M2)
+MIN_PTS_CONCAVE: int = 5
+ALPHA_MODE: str = "fixed"   # "fixed" | "auto"
+ALPHA_FIXED: float = 500.0
+ALPHA_QNN_PCTL: int = 80
+ALPHA_SCALE: float = 2.0
+HOLE_MIN_FRAC: float = 0.03
+HOLE_MIN_ABS: float = 2000
+SMOOTHING_BUFFER_M: float = 90.0
 
-HOLE_MIN_FRAC     = 0.02
-HOLE_MIN_ABS      = 1500
+
 
 # Suavizado extra de bordes (en metros, 0 = sin suavizado)
 SMOOTHING_BUFFER_M = 40.0

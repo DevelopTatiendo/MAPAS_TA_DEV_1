@@ -978,13 +978,23 @@ def generar_mapa_muestras(
             try:
                 df_area_prom = metricas_areas_muestras(df_filtrado, centroope)
             except Exception:
-                df_area_prom = pd.DataFrame(columns=["id_autor","area_m2"])
+                df_area_prom = pd.DataFrame(columns=["id_autor","area_m2","densidad_compacta_promotor"])
             try:
                 df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados)
             except Exception as e:
                 logging.error(f"Error métricas promotores muestras: {e}")
                 df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','area_m2','muestras_area'])
             prom_metrics = {int(r['id_autor']): r for _, r in df_prom.iterrows()} if not df_prom.empty else {}
+            # Mapa de densidad compacta por promotor (promedio ponderado por puntos)
+            densidad_map = {}
+            if df_area_prom is not None and not df_area_prom.empty:
+                try:
+                    for _, r in df_area_prom.iterrows():
+                        pidv = r.get('id_autor')
+                        if pd.notna(pidv):
+                            densidad_map[int(pidv)] = r.get('densidad_compacta_promotor', np.nan)
+                except Exception:
+                    densidad_map = {}
             # Cálculo de clientes únicos por promotor a partir del DF filtrado actual
             if {'id_autor', 'id_contacto'}.issubset(df_filtrado.columns):
                 clientes_por_promotor = df_filtrado.groupby('id_autor')['id_contacto'].nunique()
@@ -1016,6 +1026,7 @@ def generar_mapa_muestras(
                 pct_contactables_nofieles = float(met.get('pct_contactables_nofieles', 0.0) or 0.0)
                 area_m2 = met.get('area_m2')
                 muestras_area = met.get('muestras_area')
+                dens_comp = densidad_map.get(pid_match, np.nan)
                 def _fmt_int(v):
                     return f"{int(v):,}".replace(',', '.') if v is not None else '—'
                 def _fmt_pct(v):
@@ -1045,6 +1056,15 @@ def generar_mapa_muestras(
                         return f"{float(v):,.10f}"
                     except Exception:
                         return '—'
+                def _fmt_densidad_compacta(v):
+                    """Densidad compuesta (factor 1000), 6 decimales."""
+                    if v is None or (isinstance(v, float) and np.isnan(v)):
+                        return '—'
+                    try:
+                        return f"{float(v)*1000:,.6f}"
+                    except Exception:
+                        return '—'
+            
                 legend_rows.append(f"""
                 <tr>
                     <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
@@ -1057,6 +1077,7 @@ def generar_mapa_muestras(
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2/1000)}</td>
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area*1000)}</td>
+                    <td style='padding:6px 8px;text-align:center;'>{_fmt_densidad_compacta(dens_comp)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
@@ -1070,7 +1091,7 @@ def generar_mapa_muestras(
                 <summary style='cursor:pointer;font-weight:600;color:#111;'>Métricas por promotor (muestras)</summary>
                 <div style='margin-top:8px;'>
                   <table style='border-collapse:collapse; width:100%; font-size:12px;'>
-                    <thead>
+                                        <thead>
                       <tr>
                         <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Promotor</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
@@ -1079,6 +1100,7 @@ def generar_mapa_muestras(
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
                                                 <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área km²</th>
                                                 <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/km²</th>
+                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;' title='(muestras/área) × compacidad (Polsby–Popper)'>Densidad compuesta</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>
@@ -1160,7 +1182,6 @@ def generar_mapa_muestras(
                         <span>{mes_label} {anyo}</span>
                     </td>
                     <td style='padding:6px 8px;text-align:right;'>{muestras_mes}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{dias_hab_mes}</td>
                     <td style='padding:6px 8px;text-align:right;'>{cant_ped_mes}</td>
                     <td style='padding:6px 8px;text-align:right;'>{pct_nrecu:.1f}%</td>
                     <td style='padding:6px 8px;text-align:right;'>{pct_fieles:.1f}%</td>
@@ -1181,7 +1202,6 @@ def generar_mapa_muestras(
                       <tr>
                         <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Mes</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Muestras</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>#Días hábiles</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Pedidos</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Nuevos + Recuperación + Perdidos reactivados'>% N/Recu</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Fieles</th>

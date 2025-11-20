@@ -48,7 +48,7 @@ SUBK_P_OUTLIER: float = 0.0
 # Selección de K para subclustering (M2)
 SUBK_KMAX_ABS: int = 20
 SUBK_KMAX_FRAC: float = 0.10
-MIN_SUB_FRAC: float = 0.05
+MIN_SUB_FRAC: float = 0.01
 
 # Concave Hull (M2)
 MIN_PTS_CONCAVE: int = 5
@@ -265,6 +265,8 @@ class SubclusterM2:
     n_puntos: int
     X_utm: np.ndarray
     geom_utm: object | None
+    compacidad: float
+    densidad_compacta: float
 
 
 def _subclusters_m2_detalle(X: np.ndarray) -> List[SubclusterM2]:
@@ -300,13 +302,21 @@ def _subclusters_m2_detalle(X: np.ndarray) -> List[SubclusterM2]:
         geom = _concave_hull_from_points_utm(Xp, alpha_m)
         if geom is None:
             return []
+        area = float(getattr(geom, 'area', 0.0))
+        perim = float(getattr(geom, 'length', 0.0))
+        # Polsby–Popper compactness: 4*pi*A / P^2, acotada [0,1]
+        comp = float((4.0 * float(np.pi) * area) / (perim ** 2)) if perim > 0 and area > 0 else 0.0
+        comp = max(0.0, min(1.0, comp))
+        dens_c = float((len(Xp) / area) * comp) if area > 0 else 0.0
         return [SubclusterM2(
             id_subcluster=0,
-            area_m2=float(geom.area),
-            perimetro_m=float(geom.length),
+            area_m2=area,
+            perimetro_m=perim,
             n_puntos=int(len(Xp)),
             X_utm=Xp,
             geom_utm=geom,
+            compacidad=comp,
+            densidad_compacta=dens_c,
         )]
 
     # 3) Elección de K mediante elbow
@@ -345,13 +355,20 @@ def _subclusters_m2_detalle(X: np.ndarray) -> List[SubclusterM2]:
         geom = _concave_hull_from_points_utm(X_lab_pod, alpha_m)
         if geom is None:
             continue
+        area = float(getattr(geom, 'area', 0.0))
+        perim = float(getattr(geom, 'length', 0.0))
+        comp = float((4.0 * float(np.pi) * area) / (perim ** 2)) if perim > 0 and area > 0 else 0.0
+        comp = max(0.0, min(1.0, comp))
+        dens_c = float((len(X_lab_pod) / area) * comp) if area > 0 else 0.0
         subclusters.append(SubclusterM2(
             id_subcluster=int(lab),
-            area_m2=float(geom.area),
-            perimetro_m=float(geom.length),
+            area_m2=area,
+            perimetro_m=perim,
             n_puntos=int(n_lab),
             X_utm=X_lab_pod,
             geom_utm=geom,
+            compacidad=comp,
+            densidad_compacta=dens_c,
         ))
 
     # 6) Orden y devolución
@@ -484,13 +501,20 @@ def _aud_subclusters_por_cluster(X: np.ndarray) -> List[SubclusterM2]:
         geom = _concave_hull_from_points_utm(Xp, alpha_m)
         if geom is None:
             return []
+        area = float(getattr(geom, 'area', 0.0))
+        perim = float(getattr(geom, 'length', 0.0))
+        comp = float((4.0 * float(np.pi) * area) / (perim ** 2)) if perim > 0 and area > 0 else 0.0
+        comp = max(0.0, min(1.0, comp))
+        dens_c = float((len(Xp) / area) * comp) if area > 0 else 0.0
         return [SubclusterM2(
             id_subcluster=0,
-            area_m2=float(getattr(geom, 'area', 0.0)),
-            perimetro_m=float(getattr(geom, 'length', 0.0)),
+            area_m2=area,
+            perimetro_m=perim,
             n_puntos=int(len(Xp)),
             X_utm=Xp,
             geom_utm=geom,
+            compacidad=comp,
+            densidad_compacta=dens_c,
         )]
     subclusters: List[SubclusterM2] = []
     total_n = len(X)
@@ -513,13 +537,20 @@ def _aud_subclusters_por_cluster(X: np.ndarray) -> List[SubclusterM2]:
         geom = _concave_hull_from_points_utm(X_clust_pod, alpha_m)
         if geom is None or getattr(geom, 'is_empty', False):
             continue
+        area = float(getattr(geom, 'area', 0.0))
+        perim = float(getattr(geom, 'length', 0.0))
+        comp = float((4.0 * float(np.pi) * area) / (perim ** 2)) if perim > 0 and area > 0 else 0.0
+        comp = max(0.0, min(1.0, comp))
+        dens_c = float((len(X_clust_pod) / area) * comp) if area > 0 else 0.0
         subclusters.append(SubclusterM2(
             id_subcluster=int(lab),
-            area_m2=float(getattr(geom, 'area', 0.0)),
-            perimetro_m=float(getattr(geom, 'length', 0.0)),
+            area_m2=area,
+            perimetro_m=perim,
             n_puntos=int(len(X_clust_pod)),
             X_utm=X_clust_pod,
             geom_utm=geom,
+            compacidad=comp,
+            densidad_compacta=dens_c,
         ))
     if not subclusters:
         return []
@@ -547,16 +578,16 @@ def calcular_areas_por_promotor(
     - centroope: código del centro de operación (2=CALI, 3=MEDELLIN, etc.).
     """
     if df is None or df.empty:
-        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales"])
+        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     _ensure_id_autor(df)
     df_ll = _resolver_lat_lon(df)
     if df_ll.empty:
-        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales"])
+        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     X_por_promotor = _build_X_por_promotor(df_ll, centroope)
     if not X_por_promotor:
-        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales"])
+        return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     rows: List[dict] = []
     for pid, X in X_por_promotor.items():
@@ -564,9 +595,14 @@ def calcular_areas_por_promotor(
         if not detalles:
             area_total = 0.0
             usados = 0
+            dens_comp_prom = 0.0
         else:
             area_total = float(sum(sc.area_m2 for sc in detalles))
             usados = int(sum(sc.n_puntos for sc in detalles))
+            # Promedio ponderado por n_puntos de la densidad compacta de subclusters
+            wsum = float(sum(float(sc.densidad_compacta) * float(sc.n_puntos) for sc in detalles))
+            nsum = float(sum(float(sc.n_puntos) for sc in detalles))
+            dens_comp_prom = float(wsum / nsum) if nsum > 0 else 0.0
         # puntos_totales = registros originales de este id_autor (con lat/lon válidos)
         puntos_totales = int(len(df_ll[df_ll['id_autor'] == pid]))
         rows.append({
@@ -574,9 +610,11 @@ def calcular_areas_por_promotor(
             "area_total_m2": area_total,
             "puntos_usados_total": usados,
             "puntos_totales": puntos_totales,
+            "densidad_compacta_promotor": dens_comp_prom,
         })
 
-    return pd.DataFrame(rows, columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales"]).drop_duplicates("id_autor")
+    return pd.DataFrame(rows, columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])\
+        .drop_duplicates("id_autor")
 
 
 def generar_geojson_subclusters_promotor(
@@ -614,16 +652,24 @@ def generar_geojson_subclusters_promotor(
             "area_total_m2": 0.0,
             "puntos_usados_total": 0,
             "puntos_totales": puntos_totales,
+            "densidad_compacta_promotor": 0.0,
         }])
         return df_metrics, {"type": "FeatureCollection", "features": []}
 
+    # NO recalcular n_puntos; ya refleja los puntos del subcluster tras poda y clustering.
+    # NO modificar densidad_compacta aquí.
+
     area_total = float(sum(sc.area_m2 for sc in detalles))
     usados_total = int(sum(sc.n_puntos for sc in detalles))
+    wsum = float(sum(float(sc.densidad_compacta) * float(sc.n_puntos) for sc in detalles))
+    nsum = float(sum(float(sc.n_puntos) for sc in detalles))
+    dens_comp_prom = float(wsum / nsum) if nsum > 0 else 0.0
     df_metrics = pd.DataFrame([{
         "id_autor": pid,
         "area_total_m2": area_total,
         "puntos_usados_total": usados_total,
         "puntos_totales": puntos_totales,
+        "densidad_compacta_promotor": dens_comp_prom,
     }])
 
     # GeoJSON FeatureCollection
@@ -641,6 +687,8 @@ def generar_geojson_subclusters_promotor(
                 "area_m2": float(sc.area_m2),
                 "perimetro_m": float(sc.perimetro_m),
                 "n_puntos": int(sc.n_puntos),
+                "compacidad": float(sc.compacidad),
+                "densidad_compacta": float(sc.densidad_compacta),
             },
         }
         features.append(feat)
@@ -676,16 +724,18 @@ def areas_muestras_resumen(
     """
     df_base = calcular_areas_por_promotor(df, centroope)
     if df_base is None or df_base.empty:
-        return pd.DataFrame(columns=["id_autor", "area_m2"])
+        return pd.DataFrame(columns=["id_autor", "area_m2", "densidad_compacta_promotor"])
 
     out = (
-        df_base[["id_autor", "area_total_m2"]]
+        df_base[["id_autor", "area_total_m2", "densidad_compacta_promotor"]]
         .copy()
         .rename(columns={"area_total_m2": "area_m2"})
     )
     # Aseguramos tipos limpios
     out["id_autor"] = pd.to_numeric(out["id_autor"], errors="coerce").astype("Int64")
     out["area_m2"] = pd.to_numeric(out["area_m2"], errors="coerce")
+    if "densidad_compacta_promotor" in out.columns:
+        out["densidad_compacta_promotor"] = pd.to_numeric(out["densidad_compacta_promotor"], errors="coerce")
     out = out.dropna(subset=["id_autor"]).reset_index(drop=True)
     return out
 

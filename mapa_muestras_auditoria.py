@@ -4,7 +4,7 @@ import pandas as pd
 import logging
 import unicodedata
 
-from pre_procesamiento.preprocesamiento_muestras import consultar_muestras_db
+from pre_procesamiento.preprocesamiento_muestras import consultar_muestras_db, obtener_nombre_promotor
 from pre_procesamiento.metricas_areas import areas_muestras_auditoria
 from utils.gestor_mapas import guardar_mapa_controlado
 
@@ -70,6 +70,9 @@ def generar_mapa_muestras_auditoria(
     df = df.copy()
     df = df.dropna(subset=['coordenada_latitud', 'coordenada_longitud'])
 
+    # Nombre del promotor vía función centralizada
+    nombre_promotor_ui = obtener_nombre_promotor(id_promotor) or f"ID promotor {id_promotor}"
+
     # ==============================
     #  Modo opcional: Clientes x Muestras
     #  (una fila por cliente para este promotor)
@@ -107,12 +110,12 @@ def generar_mapa_muestras_auditoria(
     # --- Capa de zonas auditoría ---
     def _fmt_area_popup(v):
         """
-        Área en m², sin decimales, con separador de miles.
+        Área en miles de m² (area_m2 / 1000), sin decimales, con separador de miles.
         """
         try:
             if v is None:
                 return "N/A"
-            val = float(v)
+            val = float(v) / 1000.0
             return f"{int(round(val)):,}"
         except Exception:
             return "N/A"
@@ -128,6 +131,14 @@ def generar_mapa_muestras_auditoria(
             return f"{val:,.2f}"
         except Exception:
             return "N/A"
+    def _fmt_densidad_km2(v):
+        """Densidad compuesta (factor 1000), 6 decimales."""
+        try:
+            if v is None:
+                return "N/A"
+            return f"{float(v)*1000:,.6f}"
+        except Exception:
+            return "N/A"
 
     capa_auditoria = folium.FeatureGroup(name="Zonas de auditoría")
     for ft in fc.get("features", []):
@@ -135,12 +146,16 @@ def generar_mapa_muestras_auditoria(
         area_m2 = props.get('area_m2')
         perimetro_m = props.get('perimetro_m')
         n_puntos = props.get('n_puntos')
+        densidad_compacta = props.get('densidad_compacta')
+        compacidad = props.get('compacidad')
 
         popup_html = f"""
         <b>Subcluster:</b> {props.get('id_subcluster', 'N/A')}<br>
-        <b>Área (m²):</b> {_fmt_area_popup(area_m2)}<br>
+        <b>Área (miles de m²):</b> {_fmt_area_popup(area_m2)}<br>
         <b>Perímetro (m):</b> {_fmt_perimetro_popup(perimetro_m)}<br>
-        <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
+        <b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}<br>
+        <b>Densidad compuesta:</b> {_fmt_densidad_km2(densidad_compacta)}<br>
+        <b>Compacidad:</b> {compacidad if compacidad is not None else 'N/A'}
         """
         #<b>Puntos en el área:</b> {n_puntos if n_puntos is not None else 'N/A'}
 
@@ -184,6 +199,43 @@ def generar_mapa_muestras_auditoria(
     capa_puntos.add_to(mapa)
 
     folium.LayerControl().add_to(mapa)
+
+    # --- Leyenda de resumen para auditoría ---
+    try:
+        descripcion_modo = "Clientes x muestras" if clientes_x_muestras else "Todas las muestras del promotor"
+        html_resumen = f"""
+        <div id='legend-resumen-auditoria' style='
+            position: fixed; top: 20px; left: 20px;
+            background-color: white; padding: 15px; border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2); z-index: 1000;
+            font-family: Arial, sans-serif; min-width: 260px; font-size: 12px;'>
+            <div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;'>
+                <h4 style='margin:0; font-size:13px; color:#111;'>Resumen Auditoría Muestras</h4>
+            </div>
+            <table style='width: 100%; border-collapse: collapse;'>
+                <tr>
+                    <td style='padding: 3px 0;'>Promotor/a:</td>
+                    <td style='padding: 3px 0;'><b>{nombre_promotor_ui}</b></td>
+                </tr>
+                <tr>
+                    <td style='padding: 3px 0;'>Fechas:</td>
+                    <td style='padding: 3px 0;'><b>{fecha_inicio} - {fecha_fin}</b></td>
+                </tr>
+                <tr>
+                    <td style='padding: 3px 0;'>Puntos en mapa:</td>
+                    <td style='padding: 3px 0;'><b>{len(df)}</b></td>
+                </tr>
+                <tr>
+                    <td colspan='2' style='padding: 4px 0; font-size:11px; color:#6b7280;'>
+                        {descripcion_modo}
+                    </td>
+                </tr>
+            </table>
+        </div>
+        """
+        mapa.get_root().html.add_child(folium.Element(html_resumen))
+    except Exception as e:
+        logging.warning(f"No se pudo insertar leyenda de resumen en auditoría: {e}")
 
     # --- Guardar ---
     filename = guardar_mapa_controlado(mapa, "mapa_muestras_auditoria", permitir_multiples=False)

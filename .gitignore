@@ -87,6 +87,9 @@ Pruebas/Resultados M2/**
 Pruebas/Resultados M2/*.html
 Pruebas/Resultados M2/*.csv
 
+Pruebas/Resultados_M2_Test/**
+Pruebas/Resultados_M2_Test/*.html
+Pruebas/Resultados_M2_Test/*.csv
 
 # ⚠️ No ignores todo *.html / *.pdf globalmente
 # Si necesitas ignorar PDFs de informes, hazlo por carpeta:
