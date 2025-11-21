@@ -293,10 +293,10 @@ def _popup_cuadrante_muestras(codigo: str, area_m2: float, total_local: int, dia
     """
     # Verificación y alertas de área inusual
     area_km2 = area_m2 / 1_000_000 if area_m2 > 0 else 0.0
-    if area_km2 < 0.005:
-        st.warning(f"Área muy pequeña detectada en {codigo}: {area_km2:.6f} km²")
-    elif area_km2 > 5.0:
-        st.warning(f"Área muy grande detectada en {codigo}: {area_km2:.2f} km²")
+    # if area_km2 < 0.005:
+    #     st.warning(f"Área muy pequeña detectada en {codigo}: {area_km2:.6f} km²")
+    # elif area_km2 > 5.0:
+    #     st.warning(f"Área muy grande detectada en {codigo}: {area_km2:.2f} km²")
     
     # Cálculo de tasa (lambda aproximado)
     if n_promotores is None:
@@ -1073,11 +1073,10 @@ def generar_mapa_muestras(
                     </td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_int(clientes_total)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2/1000)}</td>
                     <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area*1000)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_densidad_compacta(dens_comp)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
+                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
                     <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
                 </tr>
@@ -1096,11 +1095,11 @@ def generar_mapa_muestras(
                         <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Promotor</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# de clientes únicos por promotor en el rango'>#Clientes</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
+                        
                                                 <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área km²</th>
                                                 <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/km²</th>
-                        <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;' title='(muestras/área) × compacidad (Polsby–Popper)'>Densidad compuesta</th>
+                                                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
+                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
                         <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
                       </tr>
