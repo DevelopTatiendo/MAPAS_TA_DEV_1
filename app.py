@@ -209,7 +209,7 @@ ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 # Card "Configuración y Filtros"
 #st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
-tipos_mapa = ["Clientes x Muestras","Muestras", "Consultores", "Pruebas"]  # Solo módulos activos
+tipos_mapa = ["Clientes", "Muestras"]
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
 
 # Compatibilidad temporal para sesiones con "Gestores"
@@ -231,120 +231,20 @@ datos_ciudad = cargar_datos_ciudad(ciudad)
 st.divider()
 
 # Formulario dinámico de filtros
-st.subheader("Aplicar Filtros")
 
-# --- CONTENEDOR REACTIVO FUERA DEL FORM ---
-promotor_container = st.container()
-
-# Estado por defecto
+# Estado por defecto (UI de promotores oculta)
 if "promotores_sel" not in st.session_state:
     st.session_state["promotores_sel"] = None
 if "filtrar_por_promotor" not in st.session_state:
     st.session_state["filtrar_por_promotor"] = False
 
-# Estado por defecto para modo auditoría (Muestras)
+# Estado por defecto para modo auditoría (mantener, UI oculta)
 if "muestras_modo_auditoria" not in st.session_state:
     st.session_state["muestras_modo_auditoria"] = False
 if "promotor_auditoria" not in st.session_state:
     st.session_state["promotor_auditoria"] = None
 
-with promotor_container:
-    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
-        st.session_state["filtrar_por_promotor"] = st.toggle("Filtrar por promotor", value=st.session_state["filtrar_por_promotor"])
-        if st.session_state["filtrar_por_promotor"]:
-            with st.spinner("Cargando promotores..."):
-                try:
-                    df_prom = listar_promotores()
-                    # Depuración en terminal
-                    print("[DEBUG] listar_promotores rows:", 0 if df_prom is None else len(df_prom))
-                    if df_prom is not None and not df_prom.empty:
-                        print("[DEBUG] listar_promotores head:\n", df_prom.head(10).to_string())
-                        logging.info("promotores.head():\n%s", df_prom.head(10).to_string())
-                except Exception as e:
-                    st.error(f"Error al cargar promotores: {e}")
-                    df_prom = None
-
-            if df_prom is None or df_prom.empty:
-                st.info("No se encontraron promotores en la BD.")
-                st.session_state["promotores_sel"] = None
-            else:
-                ids = df_prom["id_autor"].astype(str).tolist()
-                etiquetas = (df_prom["apellido"].fillna("").astype(str) + " · " + df_prom["id_autor"].astype(str)).tolist()
-                label_map = dict(zip(ids, etiquetas))
-
-                seleccion = st.multiselect(
-                    "Promotores",
-                    options=ids,
-                    format_func=lambda x: label_map.get(x, x),
-                    placeholder="Escribe para buscar…"
-                )
-                if seleccion:
-                    try:
-                        st.session_state["promotores_sel"] = [int(x) for x in seleccion]
-                    except Exception:
-                        st.session_state["promotores_sel"] = seleccion
-                else:
-                    st.session_state["promotores_sel"] = None
-        else:
-            st.session_state["promotores_sel"] = None
-
-# --- CONTENEDOR REACTIVO PARA MODO AUDITORÍA (fuera del form) ---
-auditoria_container = st.container()
-
-with auditoria_container:
-    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
-        with st.expander("Opciones de visualización"):
-            modo_auditoria = st.checkbox(
-                "🕵️ Modo auditoría",
-                value=st.session_state["muestras_modo_auditoria"],
-                help="Activa el modo auditoría para revisar en detalle el comportamiento de un solo promotor.",
-                key="muestras_modo_auditoria"
-            )
-
-            if modo_auditoria:
-                with st.spinner("Cargando promotores para auditoría..."):
-                    try:
-                        df_prom_aud = listar_promotores()
-                    except Exception as e:
-                        st.error(f"Error al cargar promotores para auditoría: {e}")
-                        df_prom_aud = None
-
-                if df_prom_aud is None or df_prom_aud.empty:
-                    st.info("No se encontraron promotores para modo auditoría.")
-                    st.session_state["promotor_auditoria"] = None
-                else:
-                    ids_aud = df_prom_aud["id_autor"].astype(str).tolist()
-                    etiquetas_aud = (
-                        df_prom_aud["apellido"].fillna("").astype(str)
-                        + " · "
-                        + df_prom_aud["id_autor"].astype(str)
-                    ).tolist()
-                    label_map_aud = dict(zip(ids_aud, etiquetas_aud))
-
-                    # Añadimos una opción vacía al inicio para que no haya selección por defecto
-                    opciones_aud = [""] + ids_aud
-
-                    promotor_aud = st.selectbox(
-                        "Promotor a auditar",
-                        options=opciones_aud,
-                        format_func=lambda x: (
-                            "Escribe para buscar…" if x == "" else label_map_aud.get(x, x)
-                        ),
-                        key="muestras_promotor_auditoria",
-                    )
-
-                    # Si hay selección válida, guardamos el id; si no, None
-                    if promotor_aud:
-                        try:
-                            st.session_state["promotor_auditoria"] = int(promotor_aud)
-                        except Exception as e:
-                            logging.error(f"Error convirtiendo promotor_auditoria a int: {promotor_aud} ({e})")
-                            st.session_state["promotor_auditoria"] = None
-                            st.error("⚠️ El promotor seleccionado no es válido. Vuelve a seleccionarlo.")
-                    else:
-                        st.session_state["promotor_auditoria"] = None
-            else:
-                st.session_state["promotor_auditoria"] = None
+    
 
 with st.form(key="filtros_form"):
     # if tipo_mapa == "Pedidos":
@@ -357,10 +257,9 @@ with st.form(key="filtros_form"):
     #     edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
     #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
     #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-    if tipo_mapa in ("Muestras", "Clientes x Muestras"):
-        # Barrios
-        barrios_disponibles = datos_ciudad["barrios"]["barrio"].sort_values().unique()
-        barrios = st.multiselect("Seleccione los barrios:", options=barrios_disponibles, default=[])
+    if tipo_mapa in ("Muestras", "Clientes"):
+        # Barrios (filtro desactivado en UI)
+        barrios = []
         
         # Fechas en dos columnas
         c1, c2 = st.columns(2)
@@ -369,49 +268,39 @@ with st.form(key="filtros_form"):
         with c2: 
             fecha_fin = st.date_input("Fecha de Fin")
         
-        # --- Métricas por (nuevo bloque, fuera del expander) ---
-        st.markdown("### Métricas")
-        color_options = ["Promotores", "Temporalidad (mes)"]
-        default_idx = 0  # Promotores por defecto
-        color_mode = st.radio(
-            "Métricas por:",
-            color_options,
+        # --- Agrupar por ---
+      
+
+        # Labels visibles en la UI
+        agrupacion_labels = ["Promotores", "Meses"]
+
+        # Mapa label → valor lógico usado por el backend
+        agrupacion_value_map = {
+            "Promotores": "Promotores",
+            "Meses": "Temporalidad (mes)",
+        }
+
+        # Leer selección previa (si existe) para mantener estado
+        default_label = st.session_state.get("color_mode_muestras_label", "Promotores")
+        if default_label not in agrupacion_labels:
+            default_label = "Promotores"
+        default_idx = agrupacion_labels.index(default_label)
+
+        # Radio guarda el LABEL, no el valor interno
+        color_mode_label = st.radio(
+            "Agrupar por:",
+            agrupacion_labels,
             index=default_idx,
-            key="color_mode_muestras"  # mantener la misma key para persistencia
+            key="color_mode_muestras_label",
         )
 
-        # (Opciones de visualización movidas fuera del form: ver auditoria_container)
-        
-        # Cuadrantes (opcional)
-        with st.expander("🗺️ Cuadrantes (opcional)"):
-            st.write("Suba un archivo GeoJSON personalizado para usar como base en lugar de las comunas por defecto.")
-            uploaded_file = st.file_uploader(
-                "Archivo GeoJSON:",
-                type=['geojson'],
-                key="muestras_geojson_uploader"
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    # Leer y parsear el archivo GeoJSON
-                    geojson_content = uploaded_file.read().decode('utf-8')
-                    override_fc = json.loads(geojson_content)
-                    
-                    # Validar que sea un FeatureCollection
-                    if override_fc.get('type') == 'FeatureCollection':
-                        st.session_state["muestras_override_fc"] = override_fc
-                        st.success(f"✅ Archivo cargado: {uploaded_file.name}")
-                        st.caption(f"Se usará como base geográfica en lugar de las comunas de {ciudad}.")
-                    else:
-                        st.error("❌ El archivo debe ser un FeatureCollection válido.")
-                        st.session_state["muestras_override_fc"] = None
-                except Exception as e:
-                    st.error(f"❌ Error al procesar el archivo: {str(e)}")
-                    st.session_state["muestras_override_fc"] = None
-            else:
-                # Limpiar session state si no hay archivo
-                if "muestras_override_fc" in st.session_state:
-                    del st.session_state["muestras_override_fc"]
+        # Convertir a valor interno para el backend
+        color_mode = agrupacion_value_map[color_mode_label]
+
+        # Mantener también el valor lógico en session_state
+        st.session_state["color_mode_muestras"] = color_mode
+
+        # (Opciones avanzadas y cuadrantes ocultos en esta versión de UI)
     elif tipo_mapa == "Visitas":
         # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -623,7 +512,7 @@ else:
 # Descargas (tres botones centrados)
 
 # 1. Descarga HTML del mapa
-if tipo_mapa in ("Muestras", "Clientes x Muestras"):
+if tipo_mapa in ("Muestras", "Clientes"):
     map_filename = st.session_state.get("muestras_last_filename")
     
     if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
@@ -722,7 +611,7 @@ if tipo_mapa == "Consultores":
             help="Genere un mapa para habilitar esta descarga."
         )
         st.markdown('</div></div>', unsafe_allow_html=True)
-elif tipo_mapa in ("Muestras", "Clientes x Muestras"):
+elif tipo_mapa in ("Muestras", "Clientes"):
     df_export = st.session_state.get("muestras_export_df")
     export_meta = st.session_state.get("muestras_export_meta")
     
@@ -835,19 +724,8 @@ st.markdown(
             color: #a0aec0;
         }}
     }}
-    </style>
-    <div class="card-cuadrantes">
-        <h3>Segmentación de ciudades</h3>
-        <p>Dibuje cuadrantes a base de polígonos para dividir areas de interés en la ciudad seleccionada.</p>
-        <div style="text-align: center;">
-            <a href="{editor_url}" 
-               target="_blank" 
-               class="cta-editor"
-               aria-label="Abrir editor de cuadrantes para la ciudad seleccionada"
-               tabindex="0">
-                🗺️ Abrir editor de cuadrantes
-            </a>
-        </div>
+    
+    
     </div>
     """, 
     unsafe_allow_html=True
@@ -876,7 +754,7 @@ if submit_button:
         # elif tipo_mapa == "Facturas Vencidas":
         #     filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
         #     map_type = "facturas"
-        if tipo_mapa in ("Muestras", "Clientes x Muestras"):
+        if tipo_mapa in ("Muestras", "Clientes"):
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
             # Lectura de estado de auditoría
@@ -884,7 +762,7 @@ if submit_button:
             promotor_auditoria = st.session_state.get("promotor_auditoria")
 
             # Flag para modo clientes únicos
-            clientes_x_muestras = (tipo_mapa == "Clientes x Muestras")
+            clientes_x_muestras = (tipo_mapa == "Clientes")
 
             # Desvío según modo auditoría
             if modo_auditoria and promotor_auditoria is not None:
@@ -1012,7 +890,7 @@ if submit_button:
 
             
             # Warning si hay filtro y no hubo puntos
-            if tipo_mapa in ("Muestras", "Clientes x Muestras") and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+            if tipo_mapa in ("Muestras", "Clientes") and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
         else:
             # Si no se generó filename, limpiar enlace para evitar mapa congelado
