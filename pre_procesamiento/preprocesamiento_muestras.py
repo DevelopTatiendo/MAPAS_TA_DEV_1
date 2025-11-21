@@ -308,6 +308,7 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
     if 'barrio_x' in df_muestras_completo.columns:
         df_muestras_completo.rename(columns={'barrio_x': 'barrio'}, inplace=True)
 
+
     return df_muestras_completo
 
 def metricas_areas_muestras(

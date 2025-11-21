@@ -21,7 +21,7 @@ COORDENADAS_CIUDADES = {
 }
 
 # Centroope de cada ciudad (según especificación del usuario)
-CENTROOPES = {'CALI': 2, 'MEDELLIN': 3, 'BOGOTA': 1}
+CENTROOPES = {'CALI': 2, 'MEDELLIN': 3, 'BOGOTA': 1, 'BARRANQUILLA': 4, 'BUCARAMANGA': 5, 'MANIZALES': 6, 'PEREIRA': 7}
 
 
 def _normalizar_ciudad(ciudad: str) -> str:
