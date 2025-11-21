@@ -496,7 +496,6 @@ if submit_button and 'fecha_inicio' in locals() and 'fecha_fin' in locals():
     )
 
 # Card "Resultados y Descargas"
-st.markdown('<div class="card sp-2"><div class="card-header">Resultados y Descargas</div>', unsafe_allow_html=True)
 
 # Enlace del mapa (anti-embed)
 link_placeholder = st.empty()
@@ -537,7 +536,6 @@ if tipo_mapa in ("Muestras", "Clientes"):
             use_container_width=True,
             help="Descarga el archivo HTML del mapa generado"
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
         st.button(
@@ -547,7 +545,7 @@ if tipo_mapa in ("Muestras", "Clientes"):
             use_container_width=True,
             help="Genere un mapa para habilitar esta descarga."
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
+
 elif tipo_mapa == "Consultores":
     st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
     st.button(
@@ -557,7 +555,6 @@ elif tipo_mapa == "Consultores":
         use_container_width=True,
         help="Descarga HTML no disponible para Consultores"
     )
-    st.markdown('</div></div>', unsafe_allow_html=True)
 
 # 2. Descarga CSV (resumen de operación)
 if tipo_mapa == "Consultores":
@@ -600,7 +597,6 @@ if tipo_mapa == "Consultores":
             use_container_width=True,
             help="Descarga los datos mostrados en el mapa"
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
         st.button(
@@ -610,7 +606,7 @@ if tipo_mapa == "Consultores":
             use_container_width=True,
             help="Genere un mapa para habilitar esta descarga."
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
+
 elif tipo_mapa in ("Muestras", "Clientes"):
     df_export = st.session_state.get("muestras_export_df")
     export_meta = st.session_state.get("muestras_export_meta")
@@ -641,7 +637,6 @@ elif tipo_mapa in ("Muestras", "Clientes"):
         
         csv_data = df_export.to_csv(index=False, sep=';').encode('utf-8-sig')
         
-        st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
         st.download_button(
             label="📥 Descargar CSV (resumen de operación)",
             data=csv_data,
@@ -651,7 +646,6 @@ elif tipo_mapa in ("Muestras", "Clientes"):
             use_container_width=True,
             help="Descarga los datos mostrados en el mapa"
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="btn-row"><div>', unsafe_allow_html=True)
         st.button(
@@ -661,18 +655,14 @@ elif tipo_mapa in ("Muestras", "Clientes"):
             use_container_width=True,
             help="Genere un mapa para habilitar esta descarga."
         )
-        st.markdown('</div></div>', unsafe_allow_html=True)
 
 # 3. (Eliminado) Descarga CSV ISM
 
 # Cerrar card "Resultados y Descargas"
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Separador entre cards y procesamiento
-st.markdown('<div class="sp-3"></div>', unsafe_allow_html=True)
 
 # Separador sutil entre secciones
-st.markdown("<div style='margin: 2rem 0 1.5rem 0;'></div>", unsafe_allow_html=True)
 
 # Card secundario para Cuadrantes (opcional)
 ciudad_normalizada = ciudad.upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
