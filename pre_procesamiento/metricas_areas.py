@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import logging
 from typing import Dict, Tuple, Iterable, List
 from dataclasses import dataclass
 
@@ -43,7 +44,7 @@ def get_transformer_utm(centroope: int | None) -> Transformer:
 # =============================================================
 # Poda global y por subcluster (M2)
 P_OUTLIER: float = 0.025
-SUBK_P_OUTLIER: float = 0.0
+SUBK_P_OUTLIER: float = 0.025
 
 # Selección de K para subclustering (M2)
 SUBK_KMAX_ABS: int = 20
@@ -51,7 +52,7 @@ SUBK_KMAX_FRAC: float = 0.10
 MIN_SUB_FRAC: float = 0.01
 
 # Concave Hull (M2)
-MIN_PTS_CONCAVE: int = 5
+MIN_PTS_CONCAVE: int = 8
 ALPHA_MODE: str = "fixed"   # "fixed" | "auto"
 ALPHA_FIXED: float = 500.0
 ALPHA_QNN_PCTL: int = 80
@@ -166,19 +167,36 @@ def _convex_hull_geom_utm(X: np.ndarray):
 
 
 def _elbow_min_k(X: np.ndarray, kmax: int) -> Tuple[int, Iterable[float]]:
-    """Selecciona k* por 'primer codo' sobre log(WCSS), evaluando k=1..kmax (kmax>=1)."""
-    wcss = []
-    for k in range(1, int(kmax) + 1):
+    """
+    Selecciona k* por 'primer codo' sobre log(WCSS), evaluando k=1..kmax (kmax>=1).
+
+    Notas de robustez:
+    - Si solo hay 1 valor de WCSS, devolvemos k=1.
+    - Si hay exactamente 2 valores, no tiene sentido segunda derivada; devolvemos k=2 (o kmax si <2).
+    - Solo aplicamos la lógica de diff/diff cuando hay al menos 3 puntos.
+    """
+    wcss: List[float] = []
+    kmax_int = max(1, int(kmax))
+
+    for k in range(1, kmax_int + 1):
         km = KMeans(n_clusters=k, n_init="auto", random_state=42)
         km.fit(X)
         wcss.append(float(km.inertia_))
+
+    if len(wcss) == 0:
+        return 1, wcss
     if len(wcss) == 1:
         return 1, wcss
+    if len(wcss) == 2:
+        return min(2, kmax_int), wcss
+
     y = np.log(np.array(wcss))
     d1 = np.diff(y)
     d2 = np.diff(d1)
+    if d2.size == 0:
+        return min(len(wcss), kmax_int), wcss
     idx_codo = int(np.argmax(d2)) + 2  # +2 por doble diff
-    kstar = max(1, min(int(kmax), idx_codo))
+    kstar = max(1, min(kmax_int, idx_codo))
     return kstar, wcss
 
 
@@ -577,15 +595,18 @@ def calcular_areas_por_promotor(
     - df: DataFrame con al menos columnas de lat/lon estándar y 'id_autor'.
     - centroope: código del centro de operación (2=CALI, 3=MEDELLIN, etc.).
     """
+    logging.info(f"[AREAS-DEBUG] inicio calcular_areas_por_promotor centroope={centroope} n_filas={0 if df is None else len(df)}")
     if df is None or df.empty:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     _ensure_id_autor(df)
     df_ll = _resolver_lat_lon(df)
+    logging.info(f"[AREAS-DEBUG] df_ll_rows={len(df_ll)} cols={list(df_ll.columns)}")
     if df_ll.empty:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     X_por_promotor = _build_X_por_promotor(df_ll, centroope)
+    logging.info(f"[AREAS-DEBUG] n_promotores_X={len(X_por_promotor)} keys={list(X_por_promotor.keys())}")
     if not X_por_promotor:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 

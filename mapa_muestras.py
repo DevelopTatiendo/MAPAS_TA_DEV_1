@@ -1051,6 +1051,13 @@ def generar_mapa_muestras(
             # Métricas por promotor (muestras)
             # Placeholder: preparar entrada de métricas de área por promotor (sin usar aún)
             try:
+                logging.info(
+                    f"[AREAS-DEBUG] ciudad={ciudad} centroope={centroope} "
+                    f"filas_df_filtrado={len(df_filtrado)} "
+                    f"cols={list(df_filtrado.columns)} "
+                    f"lat_nonnull={df_filtrado['coordenada_latitud'].notna().sum() if 'coordenada_latitud' in df_filtrado.columns else 'NO_COL'} "
+                    f"lon_nonnull={df_filtrado['coordenada_longitud'].notna().sum() if 'coordenada_longitud' in df_filtrado.columns else 'NO_COL'}"
+                )
                 df_area_prom = metricas_areas_muestras(df_filtrado, centroope)
             except Exception:
                 df_area_prom = pd.DataFrame(columns=["id_autor","area_m2","densidad_compacta_promotor"])
