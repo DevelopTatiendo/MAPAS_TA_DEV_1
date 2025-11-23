@@ -12,7 +12,6 @@ from matplotlib import colors
 from hashlib import md5
 from pre_procesamiento.preprocesamiento_muestras import (
     crear_df,
-    obtener_metricas_pedidos_por_promotores,  # usado aún en modo Temporalidad (mes)
     resolver_nombre_ruta,
     prepo_metricas_promotores_muestras,      # nueva API métricas por promotor (muestras)
     metricas_areas_muestras                  # placeholder métricas de área por promotor
@@ -549,6 +548,127 @@ def inject_sort_assets(mapa):
         except Exception:
                 pass
 
+# === Helpers normalizados para leyendas de muestras (promotores / meses) ===
+def _build_legend_row_struct(
+    etiqueta: str,
+    muestras_total: int,
+    clientes_total: int,
+    dias_habiles: int,
+    pct_no_fieles: float,
+    pct_contactables: float,
+    pct_contactables_nofieles: float,
+    area_km2: float | None = None,
+    muestras_por_km2: float | None = None,
+    muestras_por_dia_habil: float | None = None,
+    color_hex: str | None = None,
+):
+    """Estructura normalizada para una fila de la leyenda de muestras.
+    'etiqueta' será el Promotor o el Mes según el contexto.
+    """
+    import pandas as _pd
+    return {
+        "etiqueta": etiqueta,
+        "muestras_total": int(muestras_total) if _pd.notna(muestras_total) else 0,
+        "clientes_total": int(clientes_total) if _pd.notna(clientes_total) else 0,
+        "dias_habiles": int(dias_habiles) if _pd.notna(dias_habiles) else 0,
+        "pct_no_fieles": float(pct_no_fieles) if _pd.notna(pct_no_fieles) else 0.0,
+        "pct_contactables": float(pct_contactables) if _pd.notna(pct_contactables) else 0.0,
+        "pct_contactables_nofieles": float(pct_contactables_nofieles) if _pd.notna(pct_contactables_nofieles) else 0.0,
+        "area_km2": float(area_km2) if (area_km2 is not None and _pd.notna(area_km2)) else None,
+        "muestras_por_km2": float(muestras_por_km2) if (muestras_por_km2 is not None and _pd.notna(muestras_por_km2)) else None,
+        "muestras_por_dia_habil": float(muestras_por_dia_habil) if (muestras_por_dia_habil is not None and _pd.notna(muestras_por_dia_habil)) else None,
+        "color_hex": color_hex,
+    }
+
+def _render_legend_html_muestras(lista_structs: list[dict], titulo: str, label_col: str) -> str:
+    """Genera HTML de la leyenda flotante para muestras.
+    Orden de columnas fijo:
+    label_col | #Muestras | #Clientes | Área km² | Muestras/km² | Muestras/día hábil | % Muestras NO fieles | % Total Muestras contactables | % Contactabilidad No Fieles
+    """
+    def _fmt_int(v):
+        try:
+            return f"{int(round(v)):,}".replace(',', '.')
+        except Exception:
+            return '—'
+    def _fmt_pct(v):
+        try:
+            return f"{float(v):.1f}%"
+        except Exception:
+            return '—'
+    def _fmt_area_km2(v):
+        if v is None:
+            return '—'
+        try:
+            # Preservar lógica previa (area_m2/1000 mostrado como km²)
+            return f"{float(v):,.0f}".replace(',', '.')
+        except Exception:
+            return '—'
+    def _fmt_muestras_km2(v):
+        if v is None:
+            return '—'
+        try:
+            return f"{float(v):,.10f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        except Exception:
+            return '—'
+    rows_html = []
+    for r in lista_structs:
+        color_span = ''
+        if r.get('color_hex'):
+            color_span = f"<span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{r['color_hex']};'></span>"
+        muestras_dia_habil = r.get('muestras_por_dia_habil')
+        if muestras_dia_habil is not None:
+            try:
+                muestras_dia_habil_fmt = _fmt_int(muestras_dia_habil)
+            except Exception:
+                muestras_dia_habil_fmt = '—'
+        else:
+            muestras_dia_habil_fmt = '—'
+        rows_html.append(f"""
+        <tr>
+            <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
+                {color_span}<span>{r['etiqueta']}</span>
+            </td>
+            <td style='padding:6px 8px;text-align:right;'>{_fmt_int(r['muestras_total'])}</td>
+            <td style='padding:6px 8px;text-align:right;'>{_fmt_int(r['clientes_total'])}</td>
+            <td style='padding:6px 8px;text-align:center;'>{_fmt_area_km2(r.get('area_km2'))}</td>
+            <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_km2(r.get('muestras_por_km2'))}</td>
+            <td style='padding:6px 8px;text-align:right;'>{muestras_dia_habil_fmt}</td>
+            <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(r['pct_no_fieles'])}</td>
+            <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(r['pct_contactables'])}</td>
+            <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(r['pct_contactables_nofieles'])}</td>
+        </tr>
+        """)
+    return f"""
+    <div id='legend-promotores' style='
+        position: fixed; bottom: 20px; left: 20px; z-index: 1000;
+        background: white; border: 1px solid #e5e7eb; border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;'>
+      <details open>
+        <summary style='cursor:pointer;font-weight:600;color:#111;'>{titulo}</summary>
+        <div style='margin-top:8px;'>
+          <table style='border-collapse:collapse; width:100%; font-size:12px;' class='ta-sortable'>
+            <thead>
+              <tr>
+                <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>{label_col}</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras' data-type='num'>#Muestras</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# de clientes únicos' data-type='num'>#Clientes</th>
+                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;' data-type='num'>Área km²</th>
+                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;' data-type='num'>Muestras/km²</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil' data-type='num'>Muestras/día hábil</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' data-type='percent'>% Muestras NO fieles</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' data-type='percent'>% Total Muestras contactables</th>
+                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100' data-type='percent'>% Contactabilidad No Fieles</th>
+              </tr>
+            </thead>
+            <tbody>
+              {''.join(rows_html)}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+    """
+
 def get_promotor_display_name(pid, df_filtrado, legend_name_map=None):
     """Función centralizada para obtener el nombre visible del promotor."""
     pid_str = str(pid)
@@ -638,52 +758,7 @@ def build_promotores_groups(
 
     return grupos_promotores
 
-def build_barrios_groups(df, parent_group, legend_name_map=None, mapa=None):
-    """Construye subgrupos (FeatureGroupSubGroup) por barrio, solo participantes, ordenados desc.
-    Devuelve lista de tuplas (barrio, subgrupo, count)."""
-    barrio_counts = df.groupby('barrio').size().sort_values(ascending=False)
-
-    grupos_barrios = []
-    color_barrio = '#9aa0a6'  # Gris neutro
-
-    for barrio, count in barrio_counts.items():
-        if pd.isna(barrio) or str(barrio).strip() == '' or count == 0:
-            continue
-
-        datos_barrio = df[df['barrio'] == barrio]
-
-        # Subgrupo dentro de BARRIOS (apagado por defecto)
-        sg = FeatureGroupSubGroup(parent_group, name=str(barrio), show=False)
-        if mapa is not None:
-            mapa.add_child(sg)
-
-        for _, row in datos_barrio.iterrows():
-            lat = row.get('coordenada_latitud', row.get('latitud', None))
-            lng = row.get('coordenada_longitud', row.get('longitud', None))
-            if lat is None or lng is None:
-                continue
-
-            nombre_promotor = get_promotor_display_name(row['id_autor'], df, legend_name_map)
-            popup_text = f"""
-            <b>Barrio:</b> {barrio}<br>
-            <b>Promotor:</b> {nombre_promotor}<br>
-            <b>ID:</b> {row['id_autor']}<br>
-            <b>Fecha:</b> {row.get('fecha_evento', row.get('fecha_muestra', '-'))}
-            """
-
-            folium.CircleMarker(
-                location=[lat, lng],
-                radius=4,
-                color=color_barrio,
-                fill=True,
-                fillColor=color_barrio,
-                fillOpacity=0.9,
-                popup=folium.Popup(popup_text, max_width=320),
-            ).add_to(sg)
-
-        grupos_barrios.append((str(barrio), sg, count))
-
-    return grupos_barrios
+# build_barrios_groups eliminado (deprecado en flujo Directores)
 
 def generar_mapa_muestras(
     fecha_inicio,
@@ -980,7 +1055,7 @@ def generar_mapa_muestras(
             except Exception:
                 df_area_prom = pd.DataFrame(columns=["id_autor","area_m2","densidad_compacta_promotor"])
             try:
-                df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados)
+                df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados, df_muestras=df_filtrado)
             except Exception as e:
                 logging.error(f"Error métricas promotores muestras: {e}")
                 df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','area_m2','muestras_area'])
@@ -1000,7 +1075,8 @@ def generar_mapa_muestras(
                 clientes_por_promotor = df_filtrado.groupby('id_autor')['id_contacto'].nunique()
             else:
                 clientes_por_promotor = pd.Series(dtype='int64')
-            legend_rows = []
+            # Construir estructuras normalizadas y renderizar con helper
+            rows_struct = []
             for (nombre_compacto, _sg, count_muestras, color_hex) in grupos_promotores:
                 pid_match = None
                 for pid_str, disp_name in legend_name_map.items():
@@ -1014,104 +1090,34 @@ def generar_mapa_muestras(
                         continue
                 met = prom_metrics.get(pid_match, {})
                 muestras_total = int(met.get('muestras_total', count_muestras) or 0)
-                # Nuevo: #Clientes por promotor
                 try:
                     clientes_total = int(clientes_por_promotor.get(pid_match, 0) or 0)
                 except Exception:
                     clientes_total = 0
                 dias_habiles = int(met.get('dias_habiles', 0) or 0)
-                muestras_por_dia_habil = int(muestras_total / dias_habiles) if dias_habiles > 0 else 0
+                muestras_por_dia_habil = (muestras_total / dias_habiles) if dias_habiles > 0 else None
                 pct_no_fieles = float(met.get('pct_no_fieles', 0.0) or 0.0)
                 pct_contactables = float(met.get('pct_contactables', 0.0) or 0.0)
                 pct_contactables_nofieles = float(met.get('pct_contactables_nofieles', 0.0) or 0.0)
                 area_m2 = met.get('area_m2')
                 muestras_area = met.get('muestras_area')
-                dens_comp = densidad_map.get(pid_match, np.nan)
-                def _fmt_int(v):
-                    return f"{int(v):,}".replace(',', '.') if v is not None else '—'
-                def _fmt_pct(v):
-                    try:
-                        return f"{float(v):.1f}%"
-                    except Exception:
-                        return '—'
-                def _fmt_area_m2(v):
-                    """
-                    Entero sin decimales, separador de miles ',' (formato estándar Python)
-                    3249999.17 -> '3,249,999'
-                    """
-                    if v is None or (isinstance(v, float) and np.isnan(v)):
-                        return '—'
-                    try:
-                        return f"{int(round(float(v))):,}"
-                    except Exception:
-                        return '—'
-                def _fmt_muestras_area(v):
-                    """
-                    10 decimales, separador de miles ',' y punto decimal '.'
-                    0.00047692428323 -> '0.0004769243'
-                    """
-                    if v is None or (isinstance(v, float) and np.isnan(v)):
-                        return '—'
-                    try:
-                        return f"{float(v):,.10f}"
-                    except Exception:
-                        return '—'
-                def _fmt_densidad_compacta(v):
-                    """Densidad compuesta (factor 1000), 6 decimales."""
-                    if v is None or (isinstance(v, float) and np.isnan(v)):
-                        return '—'
-                    try:
-                        return f"{float(v)*1000:,.6f}"
-                    except Exception:
-                        return '—'
-            
-                legend_rows.append(f"""
-                <tr>
-                    <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
-                        <span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_hex};'></span>
-                        <span>{nombre_compacto}</span>
-                    </td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_total)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(clientes_total)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_area_m2(area_m2/1000)}</td>
-                    <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_area(muestras_area*1000)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_int(muestras_por_dia_habil)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_no_fieles)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables)}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(pct_contactables_nofieles)}</td>
-                </tr>
-                """)
-            legend_html = f"""
-            <div id='legend-promotores' style='
-                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
-                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;'>
-              <details open>
-                <summary style='cursor:pointer;font-weight:600;color:#111;'>Métricas por promotor (muestras)</summary>
-                <div style='margin-top:8px;'>
-                  <table style='border-collapse:collapse; width:100%; font-size:12px;'>
-                                        <thead>
-                      <tr>
-                        <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Promotor</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# total de muestras'>#Muestras</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='# de clientes únicos por promotor en el rango'>#Clientes</th>
-                        
-                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Área km²</th>
-                                                <th style='text-align:center; padding:6px 4px; border-bottom:1px solid #eee;'>Muestras/km²</th>
-                                                <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Promedio entero de muestras por día hábil'>Muestras/día hábil</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Muestras NO fieles</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Total Muestras contactables</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='contactables_no_fieles / muestras_total × 100'>% Contactabilidad No Fieles</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {''.join(legend_rows)}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
-            """
+                # Convertir a mismas unidades de presentación (factor 1000 como antes)
+                area_km2 = (area_m2 / 1000.0) if (area_m2 is not None and not (isinstance(area_m2, float) and np.isnan(area_m2))) else None
+                muestras_por_km2 = (muestras_area * 1000.0) if (muestras_area is not None and not (isinstance(muestras_area, float) and np.isnan(muestras_area))) else None
+                rows_struct.append(_build_legend_row_struct(
+                    etiqueta=nombre_compacto,
+                    muestras_total=muestras_total,
+                    clientes_total=clientes_total,
+                    dias_habiles=dias_habiles,
+                    pct_no_fieles=pct_no_fieles,
+                    pct_contactables=pct_contactables,
+                    pct_contactables_nofieles=pct_contactables_nofieles,
+                    area_km2=area_km2,
+                    muestras_por_km2=muestras_por_km2,
+                    muestras_por_dia_habil=muestras_por_dia_habil,
+                    color_hex=color_hex,
+                ))
+            legend_html = _render_legend_html_muestras(rows_struct, titulo="Métricas por promotor (muestras)", label_col="Promotor")
         elif color_mode == "Temporalidad (mes)":
             fg_mes = folium.FeatureGroup(name="TEMPORALIDAD", show=True).add_to(mapa)
             df_filtrado['mes'] = df_filtrado['fecha_evento'].dt.month
@@ -1144,78 +1150,99 @@ def generar_mapa_muestras(
                 TreeLayerControl(collapsed=True, position='topright').add_to(mapa)
             else:
                 folium.LayerControl(collapsed=True, position='topright').add_to(mapa)
-            def fmt_cop(valor):
-                try:
-                    return "$" + f"{valor:,.0f}".replace(",", ".")
-                except Exception:
-                    return "$0"
-            rows_html = []
+            # Leyenda mensual normalizada (mismas columnas que promotores)
+            rows_struct_mes = []
+            from datetime import datetime
             for _, r in meses_presentes.iterrows():
                 mes = r['mes']; anyo = r['anyo']; mes_label = r['mes_label']
                 color_mes = PALETA_MESES.get(mes, '#999999')
                 mask_mes = (df_filtrado['mes']==mes)&(df_filtrado['anyo']==anyo)
-                muestras_mes = int(mask_mes.sum())
-                dias_hab_mes = df_filtrado.loc[mask_mes, 'fecha_evento'].dt.date.nunique()
-                ids_mes = df_filtrado.loc[mask_mes, 'id_autor'].dropna().unique().tolist()
-                from datetime import datetime
+                df_mes = df_filtrado.loc[mask_mes]
+                # Conteo base: filas del DF en ese mes (depende del modo Clientes/Muestras)
+                muestras_mes_df = int(df_mes.shape[0])
+                # Dias hábiles: días con >=2 muestras (consistencia con promotores)
+                if not df_mes.empty:
+                    df_mes['fecha_dia_tmp'] = df_mes['fecha_evento'].dt.date
+                    cnt_dia = df_mes.groupby('fecha_dia_tmp').size()
+                    dias_hab_mes = int((cnt_dia >= 2).sum())
+                else:
+                    dias_hab_mes = 0
+                # Clientes en el mes (ajustado para que los totales coincidan con la vista por promotor)
+                if 'id_contacto' in df_mes.columns:
+                    if clientes_x_muestras:
+                        clientes_mes = muestras_mes_df  # cada fila es un par promotor–cliente
+                    else:
+                        clientes_mes = int(df_mes['id_contacto'].nunique())
+                else:
+                    clientes_mes = 0
+                # Rango exacto del mes para métricas de fidelidad/contactabilidad
                 primer_dia_mes = f"{anyo}-{mes:02d}-01"
                 if mes == 12:
                     ultimo_dia_mes = f"{anyo}-12-31"
                 else:
                     next_month = datetime(anyo, mes + 1, 1)
                     ultimo_dia_mes = f"{anyo}-{mes:02d}-{(next_month - pd.Timedelta(days=1)).day}"
+                ids_mes = df_mes['id_autor'].dropna().unique().tolist()
                 try:
-                    df_metrics_mes = obtener_metricas_pedidos_por_promotores(centroope=centroope, fecha_inicio=primer_dia_mes, fecha_fin=ultimo_dia_mes, ids_promotores=ids_mes)
-                    cant_ped_mes = df_metrics_mes['cant_pedidos'].sum() if not df_metrics_mes.empty else 0
-                    valor_mes = df_metrics_mes['valor_conIVA'].sum() if not df_metrics_mes.empty else 0.0
-                    adq_recu_mes = df_metrics_mes['venta_adq_recu'].sum() if not df_metrics_mes.empty else 0
-                    pct_nrecu = (100 * adq_recu_mes / cant_ped_mes) if cant_ped_mes > 0 else 0.0
-                    pct_fieles = 100 - pct_nrecu
-                    efectividad = (100 * cant_ped_mes / muestras_mes) if muestras_mes > 0 else 0.0
+                    df_metrics_mes = prepo_metricas_promotores_muestras(
+                        ciudad=ciudad,
+                        fecha_inicio=primer_dia_mes,
+                        fecha_fin=ultimo_dia_mes,
+                        ids_autor=ids_mes,
+                        df_muestras=df_mes
+                    )
                 except Exception:
-                    cant_ped_mes = valor_mes = adq_recu_mes = pct_nrecu = pct_fieles = efectividad = 0
-                rows_html.append(f"""
-                <tr>
-                    <td style='padding:6px 8px;display:flex;align-items:center;gap:8px;'>
-                        <span style='display:inline-block;width:12px;height:12px;border-radius:3px;background:{color_mes};'></span>
-                        <span>{mes_label} {anyo}</span>
-                    </td>
-                    <td style='padding:6px 8px;text-align:right;'>{muestras_mes}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{cant_ped_mes}</td>
-                    <td style='padding:6px 8px;text-align:right;'>{pct_nrecu:.1f}%</td>
-                    <td style='padding:6px 8px;text-align:right;'>{pct_fieles:.1f}%</td>
-                    <td style='padding:6px 8px;text-align:right;'>{efectividad:.1f}%</td>
-                    <td style='padding:6px 8px;text-align:right;'>{fmt_cop(valor_mes)}</td>
-                </tr>
-                """)
-            legend_html = f"""
-            <div id='legend-promotores' style='
-                position: fixed; bottom: 20px; left: 20px; z-index: 1000;
-                background: white; border: 1px solid #e5e7eb; border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,.12); padding: 10px 12px; max-height: 45vh; overflow-y: auto;'>
-              <details open>
-                <summary style='cursor:pointer;font-weight:600;color:#111;'>Indicadores por mes (mismo rango)</summary>
-                <div style='margin-top:8px;'>
-                  <table style='border-collapse:collapse; width:100%; font-size:12px;'>
-                    <thead>
-                      <tr>
-                        <th style='text-align:left; padding:6px 8px; border-bottom:1px solid #eee;'>Mes</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Muestras</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Pedidos</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;' title='Nuevos + Recuperación + Perdidos reactivados'>% N/Recu</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>% Fieles</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Efectividad</th>
-                        <th style='text-align:right; padding:6px 8px; border-bottom:1px solid #eee;'>Valor con IVA</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {''.join(rows_html)}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
-            """
+                    df_metrics_mes = pd.DataFrame()
+                if df_metrics_mes is None or df_metrics_mes.empty:
+                    muestras_no_fieles_mes = 0
+                    muestras_contactables_mes = 0
+                    muestras_contactables_nofieles_mes = 0
+                else:
+                    muestras_no_fieles_mes = int(df_metrics_mes['muestras_no_fieles'].sum())
+                    muestras_contactables_mes = int(df_metrics_mes['muestras_contactables'].sum())
+                    muestras_contactables_nofieles_mes = int(df_metrics_mes['muestras_contactables_nofieles'].sum())
+                # Total de muestras reales del mes según métricas
+                if df_metrics_mes is None or df_metrics_mes.empty:
+                    muestras_total_mes = muestras_mes_df
+                else:
+                    if 'muestras_total' in df_metrics_mes.columns:
+                        muestras_total_mes = int(df_metrics_mes['muestras_total'].sum())
+                    else:
+                        muestras_total_mes = muestras_mes_df
+                # Definir muestras_mes final según modo
+                if clientes_x_muestras:
+                    muestras_mes = muestras_total_mes
+                else:
+                    muestras_mes = muestras_mes_df
+                if muestras_mes > 0:
+                    pct_no_fieles_mes = 100.0 * muestras_no_fieles_mes / muestras_mes
+                    pct_contactables_mes = 100.0 * muestras_contactables_mes / muestras_mes
+                else:
+                    pct_no_fieles_mes = 0.0
+                    pct_contactables_mes = 0.0
+                if muestras_no_fieles_mes > 0:
+                    pct_contactables_nofieles_mes = 100.0 * muestras_contactables_nofieles_mes / muestras_no_fieles_mes
+                else:
+                    pct_contactables_nofieles_mes = 0.0
+                if dias_hab_mes > 0 and muestras_mes > 0:
+                    muestras_por_dia_habil_mes = muestras_mes / dias_hab_mes
+                else:
+                    muestras_por_dia_habil_mes = None
+                etiqueta_mes = f"{mes_label} {anyo}"
+                rows_struct_mes.append(_build_legend_row_struct(
+                    etiqueta=etiqueta_mes,
+                    muestras_total=muestras_mes,
+                    clientes_total=clientes_mes,
+                    dias_habiles=dias_hab_mes,
+                    pct_no_fieles=pct_no_fieles_mes,
+                    pct_contactables=pct_contactables_mes,
+                    pct_contactables_nofieles=pct_contactables_nofieles_mes,
+                    area_km2=None,
+                    muestras_por_km2=None,
+                    muestras_por_dia_habil=muestras_por_dia_habil_mes,
+                    color_hex=color_mes,
+                ))
+            legend_html = _render_legend_html_muestras(rows_struct_mes, titulo="Métricas por mes (muestras)", label_col="Mes")
 
         # Agregar leyenda si aplica
         if legend_html:

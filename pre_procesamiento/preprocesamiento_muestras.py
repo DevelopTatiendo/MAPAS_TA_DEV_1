@@ -47,6 +47,10 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 
+def _dbg_db(msg: str) -> None:
+    print(f"[DB-TRACE][MUESTRAS] {msg}")
+
+
 def _normalize_eventos_columns(df: pd.DataFrame, tz: str = 'America/Bogota') -> pd.DataFrame:
     """
     Normaliza un DataFrame de eventos asegurando columnas mínimas y tipos correctos.
@@ -142,6 +146,7 @@ def listar_promotores():
         p.apellido;
     """
     
+    _dbg_db("listar_promotores() → SELECT promotores (cargo=39) en fullclean_personal")
     df = sql_read(query, schema="fullclean_personal")
     
     # Asegurar tipos de datos apropiados
@@ -164,6 +169,7 @@ def obtener_nombre_promotor(id_autor: int) -> str | None:
             WHERE id = :id_autor
             LIMIT 1
         """
+        _dbg_db(f"obtener_nombre_promotor(id_autor={id_autor}) → consulta 1 fila en fullclean_personal")
         df = sql_read(query, params={"id_autor": id_autor}, schema="fullclean_personal")
         if df is None or df.empty:
             return None
@@ -188,6 +194,7 @@ def filtrar_ids_por_cargo(ids, cargo=39):
       WHERE p.id IN ({placeholders}) AND p.id_cargo = :cargo
     """
     param_dict['cargo'] = cargo
+    _dbg_db(f"filtrar_ids_por_cargo(cargo={cargo}, n_ids={len(ids)}) → filtro en fullclean_personal")
     df = sql_read(query, params=param_dict, schema="fullclean_personal")
     return df['id'].astype(int).tolist() if not df.empty else []
 
@@ -214,7 +221,8 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
         e.tipo_categoria,
         con.id_categoria AS id_contacto_categoria,
         con.ultima_llamada AS ultima_llamada,
-        con.id_barrio AS id_barrio,
+        bar.id        AS id_barrio,
+        bar.barrio    AS barrio,
         per.apellido AS apellido_autor
         
     FROM 
@@ -252,6 +260,8 @@ def consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores=None):
     
     query += ";"
     
+    n_prom = len(promotores) if promotores is not None else 0
+    _dbg_db(f"consultar_muestras_db(centroope={centroope}, rango={fecha_inicio}→{fecha_fin}, n_promotores={n_prom}) → vwEventos/fullclean_contactos")
     df = sql_read(query, params=param_dict, schema="fullclean_contactos")
     return df
 
@@ -261,20 +271,9 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
     Crea un DataFrame final al combinar los datos de la base de datos con las coordenadas de los barrios.
     Retorna un DataFrame listo para usar.
     """
-    # Obtener datos de muestras desde la base de datos
+    # Obtener datos de muestras directamente desde BD (sin CSV barrios)
     df_muestras = consultar_muestras_db(centroope, fecha_inicio, fecha_fin, promotores)
-
-    # Agregar columna id_muestra al inicio
-    #df_muestras.insert(0, 'id_muestra', range(len(df_muestras)))
-
-    # Leer el archivo de coordenadas
-    df_coord = pd.read_csv(ruta_coordenadas)
-
-    # Realizar el merge por 'id_barrio'
-    df_muestras_completo = pd.merge(df_muestras, df_coord, how='left', on='id_barrio')
-
-    # Verifica las columnas disponibles
-    #print("Columnas después del merge:", df_muestras_completo.columns.tolist())
+    df_muestras_completo = df_muestras.copy()
 
     # Asegurar tipos básicos requeridos por nuevas métricas
     if 'fecha_evento' in df_muestras_completo.columns and not pd.api.types.is_datetime64_any_dtype(df_muestras_completo['fecha_evento']):
@@ -290,8 +289,7 @@ def crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=No
 
     # Lista ampliada de columnas útiles para otros flujos existentes
     columnas_deseadas = columnas_minimas + [
-        'id_muestra', 'tipo_evento', 'tipo_categoria', 'id_barrio', 'barrio', 'id_estrato',
-        'latitud', 'longitud', 'ruta_cobro', 'nom_ruta'
+        'id_muestra', 'tipo_evento', 'tipo_categoria', 'id_barrio', 'barrio'
     ]
     # Filtra solo las columnas que existen
     columnas_existentes = [col for col in columnas_deseadas if col in df_muestras_completo.columns]
@@ -459,6 +457,8 @@ def fetch_contactabilidad_base(ciudad: str, fecha_inicio: str, fecha_fin: str, i
                 for i, v in enumerate(ids_list):
                     params[f"id_{i}"] = v
 
+        n_autores = len(ids_autor) if ids_autor else 0
+        _dbg_db(f"fetch_contactabilidad_base(ciudad={ciudad}, rango={fecha_inicio}→{fecha_fin}, n_autores={n_autores}) → vwEventos/fullclean_contactos")
         df = sql_read(query + ";", params=params, schema="fullclean_contactos")
 
         # Normalizar tipos
@@ -472,7 +472,13 @@ def fetch_contactabilidad_base(ciudad: str, fecha_inicio: str, fecha_fin: str, i
         logging.warning(f"fetch_contactabilidad_base error: {e}")
         return pd.DataFrame(columns=['id_autor', 'id_contacto', 'fecha_evento', 'ultima_llamada'])
 
-def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin: str, ids_autor=None) -> pd.DataFrame:
+def prepo_metricas_promotores_muestras(
+    ciudad: str,
+    fecha_inicio: str,
+    fecha_fin: str,
+    ids_autor=None,
+    df_muestras: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """
     Pipeline de preprocesamiento para métricas por promotor en Muestras.
 
@@ -484,16 +490,16 @@ def prepo_metricas_promotores_muestras(ciudad: str, fecha_inicio: str, fecha_fin
     # Resolver centroope y ruta de coordenadas de barrios de la ciudad
     ciudad_norm = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
     co = get_co(ciudad_norm)
-    # Ruta a CSV de barrios para la ciudad
-    root = Path(__file__).resolve().parents[1]
-    ruta_coordenadas = root / 'ciudades' / ciudad_norm / 'barrios.csv'
-
-    # Traer muestras del rango
-    try:
-        df_muestras = crear_df(co, fecha_inicio, fecha_fin, str(ruta_coordenadas), promotores=ids_autor)
-    except Exception:
-        # Fallback: si no existe CSV, traer sólo desde BD sin merge
+    # Si no se pasa un DataFrame, consultar BD (modo legacy). Si se pasa, reutilizarlo.
+    if df_muestras is None:
         df_muestras = consultar_muestras_db(co, fecha_inicio, fecha_fin, promotores=ids_autor)
+    else:
+        df_muestras = df_muestras.copy()
+        if ids_autor is not None:
+            try:
+                df_muestras = df_muestras[df_muestras['id_autor'].isin(ids_autor)]
+            except Exception:
+                pass
 
     # Normalizar tipos base necesarios
     if not df_muestras.empty:
@@ -639,6 +645,7 @@ def obtener_promotores_por_ids(ids):
             AND p.id_cargo = 39
         """
         
+        _dbg_db(f"obtener_promotores_por_ids(n_ids={len(ids)}) → fullclean_personal")
         df = sql_read(query, params=param_dict, schema="fullclean_personal")
         
         # Convertir a dict {str(id): nombre_completo}
@@ -652,104 +659,7 @@ def obtener_promotores_por_ids(ids):
         print(f"Error en obtener_promotores_por_ids: {e}")
         return {}
 
-def obtener_metricas_pedidos_por_promotores(centroope, fecha_inicio, fecha_fin, ids_promotores):
-    """
-    Devuelve un DataFrame con columnas:
-      - id_vendedor (INT)
-      - cant_pedidos (INT)
-      - valor_conIVA (FLOAT)  # SUM(p.total_conIVA)
-      - venta_adq_recu (INT)  # Pedidos a categorías {10,22,38}
-      - venta_fieles (INT)    # cant_pedidos - venta_adq_recu
-      - pct_nrecu (FLOAT)     # % N/Recu = 100 × venta_adq_recu / cant_pedidos
-      - pct_fieles (FLOAT)    # % Fieles = 100 - pct_nrecu
-    
-    Filtra por:
-      - p.estado_pedido = 1
-      - p.anulada = 0
-      - p.autorizar IN (1,2)
-      - p.autorizacion_descuento = 0
-      - p.tipo_documento < 2
-      - p.id_centroope = centroope
-      - p.fecha_hora_pedido BETWEEN fecha_inicio 00:00:00 y fecha_fin 23:59:59
-      - p.id_vendedor IN (lista de ids_promotores)
-      
-    Definiciones:
-      - N/Recu: Nuevos + Recuperación + Perdidos reactivados (categorías 10, 22, 38)
-      - Fieles: Resto de categorías (100% - % N/Recu)
-    """
-    if not ids_promotores:
-        # Retorna DF vacío con las columnas esperadas
-        return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA"])
-
-    # Normalizar parámetros
-    ids = [int(x) for x in ids_promotores if str(x).strip()]
-    
-    try:
-        # Convertir parámetros a formato dict para SQLAlchemy 2.x
-        param_dict = {
-            'centroope': centroope,
-            'fecha_inicio': f"{fecha_inicio} 00:00:00",
-            'fecha_fin': f"{fecha_fin} 23:59:59"
-        }
-        
-        # Agregar parámetros de categorías ADQ/RECU
-        for i, cat_id in enumerate(CATEGORIAS_ADQ_RECU):
-            param_dict[f'cat_{i}'] = cat_id
-        cat_placeholders = ",".join([f":cat_{i}" for i in range(len(CATEGORIAS_ADQ_RECU))])
-        
-        # Agregar parámetros de IDs de vendedores
-        for i, vid in enumerate(ids):
-            param_dict[f'vendedor_{i}'] = vid
-        
-        # Reescribir query con nombres de parámetros incluyendo JOIN y nuevas métricas
-        placeholders_named = ",".join([f":vendedor_{i}" for i in range(len(ids))])
-        query = f"""
-            SELECT
-                pe.id_vendedor AS id_vendedor,
-                COUNT(*) AS cant_pedidos,
-                SUM(pe.total_conIVA) AS valor_conIVA,
-                SUM(CASE WHEN c.id_categoria IN ({cat_placeholders}) THEN 1 ELSE 0 END) AS venta_adq_recu
-            FROM fullclean_telemercadeo.pedidos pe
-            JOIN fullclean_contactos.vwContactos c ON c.id = pe.id_contacto
-            WHERE
-                pe.estado_pedido = 1
-                AND pe.anulada = 0
-                AND pe.autorizar IN (1,2)
-                AND pe.autorizacion_descuento = 0
-                AND pe.tipo_documento < 2
-                AND pe.id_centroope = :centroope
-                AND pe.fecha_hora_pedido BETWEEN :fecha_inicio AND :fecha_fin
-                AND pe.id_vendedor IN ({placeholders_named})
-            GROUP BY pe.id_vendedor
-        """
-        
-        df = sql_read(query, params=param_dict, schema="fullclean_telemercadeo")
-        
-        # Post-proceso para calcular métricas derivadas
-        if not df.empty:
-            # Asegurar tipos base
-            df["id_vendedor"] = df["id_vendedor"].astype("int64")
-            df["cant_pedidos"] = df["cant_pedidos"].astype("int64") 
-            df["valor_conIVA"] = df["valor_conIVA"].astype("float64")
-            df["venta_adq_recu"] = df["venta_adq_recu"].fillna(0).astype("int64")
-            
-            # Calcular métricas derivadas
-            df["venta_fieles"] = (df["cant_pedidos"] - df["venta_adq_recu"]).clip(lower=0).astype("int64")
-            
-            # Calcular porcentajes
-            mask = df["cant_pedidos"] > 0
-            df["pct_nrecu"] = 0.0
-            df.loc[mask, "pct_nrecu"] = (df.loc[mask, "venta_adq_recu"] / df.loc[mask, "cant_pedidos"]) * 100.0
-            df["pct_fieles"] = 100.0 - df["pct_nrecu"]
-            
-            # Asegurar tipos finales
-            df["pct_nrecu"] = df["pct_nrecu"].astype("float64")
-            df["pct_fieles"] = df["pct_fieles"].astype("float64")
-
-        return df
-    except Exception as e:
-        print(f"Error en obtener_metricas_pedidos_por_promotores: {e}")
-        return pd.DataFrame(columns=["id_vendedor", "cant_pedidos", "valor_conIVA", "venta_adq_recu", "venta_fieles", "pct_nrecu", "pct_fieles"])
+# (Deprecado) obtener_metricas_pedidos_por_promotores eliminado: ya no se usa en módulo de Directores
 
 
 # (Eliminado) compute_ism_metrics_por_cuadrante y toda lógica ISM
@@ -765,6 +675,7 @@ def _cache_nombres_rutas(ciudad: str):
     key = ''.join(c for c in unicodedata.normalize('NFD', ciudad) if unicodedata.category(c) != 'Mn').upper()
     if key not in _RUTAS_CACHE:
         try:
+            _dbg_db(f"_cache_nombres_rutas(ciudad={ciudad}) → listar_rutas_simple(key={key}) [INDIRECTO BD]")
             df = listar_rutas_simple(key)  # columnas: id_ruta, ruta
             _RUTAS_CACHE[key] = {int(r.id_ruta): str(r.ruta) for _, r in df.iterrows()} if df is not None and not df.empty else {}
         except Exception as e:
