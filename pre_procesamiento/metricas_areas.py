@@ -43,7 +43,7 @@ def get_transformer_utm(centroope: int | None) -> Transformer:
 # Constantes tomadas de la lógica M2 (solo geométricas)
 # =============================================================
 # Poda global y por subcluster (M2)
-P_OUTLIER: float = 0.025
+P_OUTLIER: float = 0.05
 SUBK_P_OUTLIER: float = 0.025
 
 # Selección de K para subclustering (M2)
