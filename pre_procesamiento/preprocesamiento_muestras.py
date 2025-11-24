@@ -48,7 +48,8 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 
 def _dbg_db(msg: str) -> None:
-    print(f"[DB-TRACE][MUESTRAS] {msg}")
+    # print(f"[DB-TRACE][MUESTRAS] {msg}")  # DEBUG deshabilitado
+    pass
 
 
 def _normalize_eventos_columns(df: pd.DataFrame, tz: str = 'America/Bogota') -> pd.DataFrame:
@@ -478,6 +479,7 @@ def prepo_metricas_promotores_muestras(
     fecha_fin: str,
     ids_autor=None,
     df_muestras: pd.DataFrame | None = None,
+    df_areas_precalculadas: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """
     Pipeline de preprocesamiento para métricas por promotor en Muestras.
@@ -585,11 +587,18 @@ def prepo_metricas_promotores_muestras(
         out[c] = out[c].astype('float64')
 
     # --- Integrar métricas de área por promotor (M2) ---
-    try:
-        df_areas = metricas_areas_muestras(df_muestras, co, origen="mapa_muestras")
-    except Exception as e:
-        logging.error(f"Error en metricas_areas_muestras: {e}")
-        df_areas = pd.DataFrame(columns=["id_autor", "area_m2"])
+    # Reutilizar áreas pre-calculadas si se proveen para evitar recomputar (optimización rendimiento)
+    if df_areas_precalculadas is not None:
+        try:
+            df_areas = df_areas_precalculadas.copy()
+        except Exception:
+            df_areas = pd.DataFrame(columns=["id_autor", "area_m2"])
+    else:
+        try:
+            df_areas = metricas_areas_muestras(df_muestras, co, origen="mapa_muestras")
+        except Exception as e:
+            logging.error(f"Error en metricas_areas_muestras: {e}")
+            df_areas = pd.DataFrame(columns=["id_autor", "area_m2"])
 
     if not df_areas.empty:
         df_areas = df_areas.set_index("id_autor")

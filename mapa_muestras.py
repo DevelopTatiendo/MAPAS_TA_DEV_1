@@ -839,7 +839,9 @@ def generar_mapa_muestras(
             return filename, 0, None
 
         # Preparar columnas de fecha y filtrado
-        df['fecha_evento'] = pd.to_datetime(df.get('fecha_evento', df.get('fecha')), errors='coerce')
+        # crear_df ya normaliza fecha_evento cuando proviene de BD; aquí solo safeguard
+        if 'fecha_evento' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['fecha_evento']):
+            df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
         df['fecha_dia'] = df['fecha_evento'].dt.date
 
         # Modo opcional: Clientes x Muestras (una fila por cliente y promotor)
@@ -1051,18 +1053,25 @@ def generar_mapa_muestras(
             # Métricas por promotor (muestras)
             # Placeholder: preparar entrada de métricas de área por promotor (sin usar aún)
             try:
-                logging.info(
-                    f"[AREAS-DEBUG] ciudad={ciudad} centroope={centroope} "
-                    f"filas_df_filtrado={len(df_filtrado)} "
-                    f"cols={list(df_filtrado.columns)} "
-                    f"lat_nonnull={df_filtrado['coordenada_latitud'].notna().sum() if 'coordenada_latitud' in df_filtrado.columns else 'NO_COL'} "
-                    f"lon_nonnull={df_filtrado['coordenada_longitud'].notna().sum() if 'coordenada_longitud' in df_filtrado.columns else 'NO_COL'}"
-                )
+                # logging.info(
+                #     f"[AREAS-DEBUG] ciudad={ciudad} centroope={centroope} "
+                #     f"filas_df_filtrado={len(df_filtrado)} "
+                #     f"cols={list(df_filtrado.columns)} "
+                #     f"lat_nonnull={df_filtrado['coordenada_latitud'].notna().sum() if 'coordenada_latitud' in df_filtrado.columns else 'NO_COL'} "
+                #     f"lon_nonnull={df_filtrado['coordenada_longitud'].notna().sum() if 'coordenada_longitud' in df_filtrado.columns else 'NO_COL'}"
+                # )  # DEBUG deshabilitado
                 df_area_prom = metricas_areas_muestras(df_filtrado, centroope)
             except Exception:
                 df_area_prom = pd.DataFrame(columns=["id_autor","area_m2","densidad_compacta_promotor"])
             try:
-                df_prom = prepo_metricas_promotores_muestras(ciudad=ciudad, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, ids_autor=promotores_ordenados, df_muestras=df_filtrado)
+                df_prom = prepo_metricas_promotores_muestras(
+                    ciudad=ciudad,
+                    fecha_inicio=fecha_inicio,
+                    fecha_fin=fecha_fin,
+                    ids_autor=promotores_ordenados,
+                    df_muestras=df_filtrado,
+                    df_areas_precalculadas=df_area_prom,
+                )
             except Exception as e:
                 logging.error(f"Error métricas promotores muestras: {e}")
                 df_prom = pd.DataFrame(columns=['id_autor','muestras_total','dias_habiles','muestras_no_fieles','pct_no_fieles','muestras_contactables','pct_contactables','muestras_contactables_nofieles','pct_contactables_nofieles','area_m2','muestras_area'])

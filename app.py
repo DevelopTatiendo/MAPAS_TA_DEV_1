@@ -225,8 +225,10 @@ elif st.session_state["last_selection"] != current_selection:
     st.session_state["muestras_last_filename"] = None
     st.session_state["last_selection"] = current_selection
 
-# Cargar datos según la ciudad seleccionada
-datos_ciudad = cargar_datos_ciudad(ciudad)
+# Cargar datos según la ciudad seleccionada SOLO para tipos que lo requieren
+datos_ciudad = None
+if tipo_mapa in ("Consultores", "Pedidos", "Visitas", "Facturas Vencidas"):
+    datos_ciudad = cargar_datos_ciudad(ciudad)
 
 st.divider()
 
@@ -488,25 +490,17 @@ with st.form(key="filtros_form"):
 # Cerrar card "Configuración y Filtros"
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Actualizar pill dinámico (solo si hay fechas disponibles)
-if submit_button and 'fecha_inicio' in locals() and 'fecha_fin' in locals():
-    st.markdown(
-        f'<div class="pill" style="text-align: center; margin: 1rem 0;">{ciudad} · {str(fecha_inicio)} → {str(fecha_fin)}</div>',
-        unsafe_allow_html=True
-    )
+# (Eliminado) Pill dinámico con ciudad y fechas: se solicita no mostrar nada aquí.
+# if submit_button and 'fecha_inicio' in locals() and 'fecha_fin' in locals():
+#     st.markdown(
+#         f'<div class="pill" style="text-align: center; margin: 1rem 0;">{ciudad} · {str(fecha_inicio)} → {str(fecha_fin)}</div>',
+#         unsafe_allow_html=True
+#     )
 
 # Card "Resultados y Descargas"
 
-# Enlace del mapa (anti-embed)
+# Placeholder único para enlace de mapa
 link_placeholder = st.empty()
-if "map_url" in st.session_state and st.session_state["map_url"]:
-    link_placeholder.markdown(
-      f'<div class="btn-row"><div><a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" class="pill">'
-      '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>',
-      unsafe_allow_html=True
-    )
-else:
-    link_placeholder.markdown('<div class="muted" style="text-align:center;">Genere un mapa para habilitar el enlace.</div>', unsafe_allow_html=True)
 
 # Descargas (tres botones centrados)
 
@@ -866,25 +860,17 @@ if submit_button:
             map_type = "pruebas"
 
         if filename:
-            # Agregar cache-busting al URL del mapa
+            # Nuevo mapa generado: construir URL, resetear auto-open
             timestamp = int(time.time())
             map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
             st.session_state["map_url"] = map_url
-            # Actualizar el placeholder con el enlace
-            link_placeholder.markdown(
-                f'<div class="btn-row"><div><a href="{map_url}" target="_blank" rel="noopener" class="pill">'
-                '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>', 
-                unsafe_allow_html=True
-            )
-            
-
-            
+            st.session_state["map_auto_opened"] = False  # reset para permitir auto-open
             # Warning si hay filtro y no hubo puntos
             if tipo_mapa in ("Muestras", "Clientes") and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
         else:
-            # Si no se generó filename, limpiar enlace para evitar mapa congelado
             st.session_state["map_url"] = None
+            st.session_state["map_auto_opened"] = False
             link_placeholder.markdown(
                 '<div class="muted" style="text-align:center;">No se generó ningún mapa. Ajusta los filtros e inténtalo de nuevo.</div>',
                 unsafe_allow_html=True
@@ -897,13 +883,27 @@ if submit_button:
         st.session_state["map_url"] = None
         st.session_state["muestras_last_filename"] = None
 
-# Manejar el enlace en el placeholder basado en session state
-if "map_url" in st.session_state and st.session_state["map_url"] is not None:
-    if not submit_button:  # Solo mostrar si no acabamos de procesar (evita duplicación)
-        link_placeholder.markdown(
-            f'<div class="btn-row"><div><a href="{st.session_state["map_url"]}" target="_blank" rel="noopener" class="pill">'
-            '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>', 
-            unsafe_allow_html=True
+# Bloque único de auto-open + botón respaldo
+map_url = st.session_state.get("map_url")
+if map_url:
+    if not st.session_state.get("map_auto_opened", False):
+        st.session_state["map_auto_opened"] = True
+        st.markdown(
+            f"""
+            <script>
+            try {{ window.open('{map_url}', '_blank'); }}
+            catch(e) {{ console.log('Popup bloqueado:', e); }}
+            </script>
+            """,
+            unsafe_allow_html=True,
         )
-elif not submit_button:
-    link_placeholder.empty()
+    link_placeholder.markdown(
+        f'<div class="btn-row"><div><a href="{map_url}" target="_blank" rel="noopener" class="pill">'
+        '🗺️ Ver Mapa en Nueva Pestaña</a></div></div>',
+        unsafe_allow_html=True
+    )
+else:
+    link_placeholder.markdown(
+        '<div class="muted" style="text-align:center;">No se ha generado ningún mapa. Ajusta los filtros e inténtalo de nuevo.</div>',
+        unsafe_allow_html=True
+    )

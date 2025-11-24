@@ -27,7 +27,7 @@ def guardar_mapa_controlado(mapa, tipo_mapa, permitir_multiples=False, carpeta='
     # Siempre guardar (sobrescribir si existe en modo único)
     try:
         mapa.save(filepath)
-        logger.info(f"Mapa guardado en {filepath}")
+        # logger.info(f"Mapa guardado en {filepath}")  # DEBUG deshabilitado
     except Exception as e:
         logger.error(f"Error guardando mapa en {filepath}: {e}")
 

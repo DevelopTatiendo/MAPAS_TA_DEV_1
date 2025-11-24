@@ -595,18 +595,18 @@ def calcular_areas_por_promotor(
     - df: DataFrame con al menos columnas de lat/lon estándar y 'id_autor'.
     - centroope: código del centro de operación (2=CALI, 3=MEDELLIN, etc.).
     """
-    logging.info(f"[AREAS-DEBUG] inicio calcular_areas_por_promotor centroope={centroope} n_filas={0 if df is None else len(df)}")
+    # logging.info(f"[AREAS-DEBUG] inicio calcular_areas_por_promotor centroope={centroope} n_filas={0 if df is None else len(df)}")  # DEBUG deshabilitado
     if df is None or df.empty:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     _ensure_id_autor(df)
     df_ll = _resolver_lat_lon(df)
-    logging.info(f"[AREAS-DEBUG] df_ll_rows={len(df_ll)} cols={list(df_ll.columns)}")
+    # logging.info(f"[AREAS-DEBUG] df_ll_rows={len(df_ll)} cols={list(df_ll.columns)}")  # DEBUG deshabilitado
     if df_ll.empty:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
     X_por_promotor = _build_X_por_promotor(df_ll, centroope)
-    logging.info(f"[AREAS-DEBUG] n_promotores_X={len(X_por_promotor)} keys={list(X_por_promotor.keys())}")
+    # logging.info(f"[AREAS-DEBUG] n_promotores_X={len(X_por_promotor)} keys={list(X_por_promotor.keys())}")  # DEBUG deshabilitado
     if not X_por_promotor:
         return pd.DataFrame(columns=["id_autor", "area_total_m2", "puntos_usados_total", "puntos_totales", "densidad_compacta_promotor"])
 
