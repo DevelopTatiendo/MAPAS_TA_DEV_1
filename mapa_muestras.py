@@ -832,6 +832,8 @@ def generar_mapa_muestras(
 
         # Construir DF base
         df = crear_df(centroope, fecha_inicio, fecha_fin, ruta_coordenadas, promotores=promotores)
+        # Copia base de todas las muestras (fuente primaria para métricas de muestras)
+        df_muestras_base = df.copy()
         if df.empty:
             logging.warning(f"No hay datos para las fechas {fecha_inicio} - {fecha_fin}")
             mapa = folium.Map(location=location, zoom_start=12)
@@ -844,17 +846,20 @@ def generar_mapa_muestras(
             df['fecha_evento'] = pd.to_datetime(df['fecha_evento'], errors='coerce')
         df['fecha_dia'] = df['fecha_evento'].dt.date
 
-        # Modo opcional: Clientes x Muestras (una fila por cliente y promotor)
-        if clientes_x_muestras and {'id_autor', 'id_contacto'}.issubset(df.columns):
-            df = (
-                df.sort_values('fecha_evento')
-                  .drop_duplicates(subset=['id_autor', 'id_contacto'], keep='last')
-            )
+        # Filtro por barrios aplicado a la base de muestras
+        df_muestras_base_filtrado = df_muestras_base.copy()
+        if barrios and 'barrio' in df_muestras_base_filtrado.columns:
+            df_muestras_base_filtrado = df_muestras_base_filtrado[df_muestras_base_filtrado['barrio'].isin(barrios)]
 
-        df_filtrado = df.copy()
-        if barrios:
-            if 'barrio' in df_filtrado.columns:
-                df_filtrado = df_filtrado[df_filtrado['barrio'].isin(barrios)]
+        # DF de puntos para el mapa (puede deduplicar clientes si se activa modo clientes)
+        df_puntos = df_muestras_base_filtrado.copy()
+        if clientes_x_muestras and {'id_autor', 'id_contacto'}.issubset(df_puntos.columns):
+            df_puntos = (
+                df_puntos.sort_values('fecha_evento')
+                        .drop_duplicates(subset=['id_autor', 'id_contacto'], keep='last')
+            )
+        # Mantener nombre esperado por el resto del código
+        df_filtrado = df_puntos.copy()
 
         # Estadísticas para resumen
         dias_activos_global = _dias_activos_global(df_filtrado)
@@ -1060,7 +1065,8 @@ def generar_mapa_muestras(
                 #     f"lat_nonnull={df_filtrado['coordenada_latitud'].notna().sum() if 'coordenada_latitud' in df_filtrado.columns else 'NO_COL'} "
                 #     f"lon_nonnull={df_filtrado['coordenada_longitud'].notna().sum() if 'coordenada_longitud' in df_filtrado.columns else 'NO_COL'}"
                 # )  # DEBUG deshabilitado
-                df_area_prom = metricas_areas_muestras(df_filtrado, centroope)
+                # Áreas calculadas sobre todas las muestras (no deduplicadas por cliente)
+                df_area_prom = metricas_areas_muestras(df_muestras_base_filtrado, centroope)
             except Exception:
                 df_area_prom = pd.DataFrame(columns=["id_autor","area_m2","densidad_compacta_promotor"])
             try:
@@ -1069,7 +1075,8 @@ def generar_mapa_muestras(
                     fecha_inicio=fecha_inicio,
                     fecha_fin=fecha_fin,
                     ids_autor=promotores_ordenados,
-                    df_muestras=df_filtrado,
+                    # Fuente original (sin dedup de clientes) para métricas de muestras
+                    df_muestras=df_muestras_base_filtrado,
                     df_areas_precalculadas=df_area_prom,
                 )
             except Exception as e:
