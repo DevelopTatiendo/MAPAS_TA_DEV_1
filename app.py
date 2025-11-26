@@ -19,12 +19,17 @@ import base64
 # from mapa_pedidos import generar_mapa_pedidos
 # from mapa_facturas_vencidas import generar_mapa_facturas_vencidas
 # from mapa_visitas import generar_mapa_visitas_individuales
-from mapa_muestras_auditoria import generar_mapa_muestras_auditoria  # Modo auditoría Muestras
-from mapa_muestras import generar_mapa_muestras
+# Nuevo flujo (datos + visual)
+from new_mapa_muestras import (
+    generar_mapa_muestras as generar_mapa_muestras_datos,
+    generar_mapa_muestras_visual,
+    generar_mapa_muestras_clientes,
+    generar_mapa_muestras_auditoria,
+)
+from pre_procesamiento.new_preprocesamiento_muestras import listar_promotores
 from mapa_consultores import generar_mapa_consultores
 from mapa_consultores_simple import generar_mapa_consultores_simple
 from mapa_pruebas import generar_mapa_pruebas
-from pre_procesamiento.preprocesamiento_muestras import listar_promotores
 import validators
 
 #serbot software de verificacion y certificacion de https
@@ -88,6 +93,16 @@ LOGO_FILE = BASE_DIR / "static" / "img" / "Atlas_TA.png"
 
 def img_to_b64(p: Path) -> str:
     return base64.b64encode(p.read_bytes()).decode("utf-8")
+
+# === Helpers Auditoría ===
+MESES_AUDITORIA = [
+    (1, "Enero"), (2, "Febrero"), (3, "Marzo"), (4, "Abril"),
+    (5, "Mayo"), (6, "Junio"), (7, "Julio"), (8, "Agosto"),
+    (9, "Septiembre"), (10, "Octubre"), (11, "Noviembre"), (12, "Diciembre"),
+]
+
+def obtener_meses_auditoria():
+    return MESES_AUDITORIA
 
 # Configuración de la página - DEBE ser el PRIMER st.* del archivo
 st.set_page_config(
@@ -209,8 +224,9 @@ ciudad = st.sidebar.radio("Ciudad:", ciudades, index=3)
 # Card "Configuración y Filtros"
 #st.markdown('<div class="card"><div class="card-header">Configuración y Filtros</div>', unsafe_allow_html=True)
 
-tipos_mapa = ["Clientes", "Muestras"]
+tipos_mapa = ["Clientes X Muestras"]
 tipo_mapa = st.selectbox("Tipo de Mapa:", tipos_mapa)
+ES_MAPA_MUESTRAS = (tipo_mapa == "Clientes X Muestras")
 
 # Compatibilidad temporal para sesiones con "Gestores"
 if tipo_mapa == "Gestores":
@@ -234,20 +250,6 @@ st.divider()
 
 # Formulario dinámico de filtros
 
-# Estado por defecto (UI de promotores oculta)
-if "promotores_sel" not in st.session_state:
-    st.session_state["promotores_sel"] = None
-if "filtrar_por_promotor" not in st.session_state:
-    st.session_state["filtrar_por_promotor"] = False
-
-# Estado por defecto para modo auditoría (mantener, UI oculta)
-if "muestras_modo_auditoria" not in st.session_state:
-    st.session_state["muestras_modo_auditoria"] = False
-if "promotor_auditoria" not in st.session_state:
-    st.session_state["promotor_auditoria"] = None
-
-    
-
 with st.form(key="filtros_form"):
     # if tipo_mapa == "Pedidos":
     #     rutas_disponibles = datos_ciudad["rutas_logistica"]["nombre_ruta"].sort_values().unique()
@@ -259,7 +261,7 @@ with st.form(key="filtros_form"):
     #     edad_max = st.number_input("Edad máxima (días):", min_value=0, value=120)
     #     rutas_cobro_disponibles = datos_ciudad["rutas_cobro"]["ruta"].sort_values().unique()
     #     ruta_cobro = st.selectbox("Seleccione una ruta de cobro (opcional):", options=[""] + list(rutas_cobro_disponibles))
-    if tipo_mapa in ("Muestras", "Clientes"):
+    if ES_MAPA_MUESTRAS:
         # Barrios (filtro desactivado en UI)
         barrios = []
         
@@ -270,39 +272,108 @@ with st.form(key="filtros_form"):
         with c2: 
             fecha_fin = st.date_input("Fecha de Fin")
         
-        # --- Agrupar por ---
-      
-
-        # Labels visibles en la UI
-        agrupacion_labels = ["Promotores", "Meses"]
-
-        # Mapa label → valor lógico usado por el backend
-        agrupacion_value_map = {
-            "Promotores": "Promotores",
-            "Meses": "Temporalidad (mes)",
-        }
-
-        # Leer selección previa (si existe) para mantener estado
-        default_label = st.session_state.get("color_mode_muestras_label", "Promotores")
-        if default_label not in agrupacion_labels:
-            default_label = "Promotores"
-        default_idx = agrupacion_labels.index(default_label)
-
-        # Radio guarda el LABEL, no el valor interno
-        color_mode_label = st.radio(
+        # Nuevo selector de agrupación (sustituye color_mode)
+        agrupar_por = st.selectbox(
             "Agrupar por:",
-            agrupacion_labels,
-            index=default_idx,
-            key="color_mode_muestras_label",
+            options=["Promotor", "Mes"],
+            index=0,
         )
 
-        # Convertir a valor interno para el backend
-        color_mode = agrupacion_value_map[color_mode_label]
-
-        # Mantener también el valor lógico en session_state
+        # Compat: mapear a color_mode legacy si se usa el flujo anterior
+        color_mode = "Promotores" if agrupar_por == "Promotor" else "Temporalidad (mes)"
         st.session_state["color_mode_muestras"] = color_mode
 
         # (Opciones avanzadas y cuadrantes ocultos en esta versión de UI)
+        # === Panel Auditoría (Clientes X Muestras) ===
+        agrupar_por_local = "Promotor" if st.session_state.get("color_mode_muestras") == "Promotores" else "Mes"
+        if "muestras_modo_auditoria" not in st.session_state:
+            st.session_state["muestras_modo_auditoria"] = False
+        if "promotor_auditoria" not in st.session_state:
+            st.session_state["promotor_auditoria"] = None
+        if "mes_auditoria" not in st.session_state:
+            st.session_state["mes_auditoria"] = None
+
+        with st.expander("Auditoría de Muestras", expanded=False):
+            activar = st.checkbox(
+                "Activar modo auditoría",
+                value=st.session_state["muestras_modo_auditoria"],
+                help="Enfoca el mapa en un promotor o mes específico según agrupación"
+            )
+            st.session_state["muestras_modo_auditoria"] = activar
+            if activar:
+                if agrupar_por_local == "Promotor":
+                    from new_mapa_muestras import CENTROOPES
+
+                    ciudad_norm = ciudad.upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
+                    centroope = CENTROOPES.get(ciudad_norm)
+
+                    if centroope is not None:
+                        cache_key = f"audit_promotores_{ciudad_norm}_{fecha_inicio}_{fecha_fin}"
+                        if st.session_state.get("audit_promotores_cache_key") != cache_key:
+                            try:
+                                df_prom = listar_promotores(centroope, str(fecha_inicio), str(fecha_fin))
+                            except Exception:
+                                df_prom = pd.DataFrame()
+
+                            prom_rows = []
+                            if not df_prom.empty:
+                                col_id = "id_promotor"
+                                col_nombre = "apellido_promotor" if "apellido_promotor" in df_prom.columns else "nombre_promotor"
+                                tmp = df_prom[[col_id, col_nombre]].dropna(subset=[col_id]).drop_duplicates(col_id)
+
+                                for _, r in tmp.iterrows():
+                                    pid = int(r[col_id])
+                                    nombre = str(r[col_nombre] or pid).strip()
+                                    prom_rows.append((pid, nombre))
+
+                            st.session_state["audit_promotores_cache"] = prom_rows
+                            st.session_state["audit_promotores_cache_key"] = cache_key
+
+                        lista_prom = st.session_state.get("audit_promotores_cache", [])
+                        opciones_prom = [f"{pid} - {nombre}" for pid, nombre in lista_prom]
+
+                        sel_prom = st.selectbox(
+                            "Promotor a auditar",
+                            options=["(ninguno)"] + opciones_prom,
+                            index=0,
+                        )
+
+                        if sel_prom != "(ninguno)" and lista_prom:
+                            try:
+                                pid_str = sel_prom.split(" - ", 1)[0].strip()
+                                st.session_state["promotor_auditoria"] = int(pid_str)
+                            except Exception:
+                                st.session_state["promotor_auditoria"] = None
+                        else:
+                            st.session_state["promotor_auditoria"] = None
+                    else:
+                        st.info("No se encontró centro de operación para esta ciudad.")
+                        st.session_state["promotor_auditoria"] = None
+                    # En modo Promotor no necesitamos mes
+                    st.session_state["mes_auditoria"] = None
+                elif agrupar_por_local == "Mes":
+                    meses = obtener_meses_auditoria()
+                    opciones_meses = [f"{num:02d} - {nombre}" for num, nombre in meses]
+
+                    sel_mes = st.selectbox(
+                        "Mes a auditar",
+                        options=["(ninguno)"] + opciones_meses,
+                        index=0,
+                    )
+
+                    if sel_mes != "(ninguno)":
+                        try:
+                            mes_num = int(sel_mes.split(" - ", 1)[0])
+                            st.session_state["mes_auditoria"] = mes_num
+                        except Exception:
+                            st.session_state["mes_auditoria"] = None
+                    else:
+                        st.session_state["mes_auditoria"] = None
+                    # En modo Mes no necesitamos promotor
+                    st.session_state["promotor_auditoria"] = None
+            else:
+                st.session_state["promotor_auditoria"] = None
+                st.session_state["mes_auditoria"] = None
     elif tipo_mapa == "Visitas":
         # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -505,7 +576,7 @@ link_placeholder = st.empty()
 # Descargas (tres botones centrados)
 
 # 1. Descarga HTML del mapa
-if tipo_mapa in ("Muestras", "Clientes"):
+if ES_MAPA_MUESTRAS:
     map_filename = st.session_state.get("muestras_last_filename")
     
     if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
@@ -601,7 +672,7 @@ if tipo_mapa == "Consultores":
             help="Genere un mapa para habilitar esta descarga."
         )
 
-elif tipo_mapa in ("Muestras", "Clientes"):
+elif ES_MAPA_MUESTRAS:
     df_export = st.session_state.get("muestras_export_df")
     export_meta = st.session_state.get("muestras_export_meta")
     
@@ -738,61 +809,111 @@ if submit_button:
         # elif tipo_mapa == "Facturas Vencidas":
         #     filename = manejar_error(generar_mapa_facturas_vencidas, ciudad, edad_min, edad_max, ruta_cobro)
         #     map_type = "facturas"
-        if tipo_mapa in ("Muestras", "Clientes"):
+        if ES_MAPA_MUESTRAS:
             override_fc = st.session_state.get("muestras_override_fc")
             promotores_sel = st.session_state.get("promotores_sel")  # filtro normal múltiple
             # Lectura de estado de auditoría
             modo_auditoria = st.session_state.get("muestras_modo_auditoria", False)
             promotor_auditoria = st.session_state.get("promotor_auditoria")
+            mes_auditoria = st.session_state.get("mes_auditoria")
 
             # Flag para modo clientes únicos
-            clientes_x_muestras = (tipo_mapa == "Clientes")
+            clientes_x_muestras = True
 
-            # Desvío según modo auditoría
-            if modo_auditoria and promotor_auditoria is not None:
-                resultado = manejar_error(
-                    generar_mapa_muestras_auditoria,
-                    fecha_inicio,
-                    fecha_fin,
-                    ciudad,
-                    promotor_auditoria,
-                    clientes_x_muestras,  # pasar flag también a auditoría
-                )
-            else:
-                resultado = manejar_error(
-                    generar_mapa_muestras,
-                    fecha_inicio,
-                    fecha_fin,
-                    ciudad,
-                    barrios,
-                    promotores_sel,
-                    override_fc,
-                    color_mode,
-                    False,              # verificar_areas desactivado en esta versión
-                    clientes_x_muestras # NUEVO parámetro
-                )
+            # Recalcular agrupar_por_local (ya definido en formulario)
+            agrupar_por_local = "Promotor" if st.session_state.get("color_mode_muestras") == "Promotores" else "Mes"
 
-            if resultado:
-                # Formato final: (filename, n_puntos, df_export)
-                if isinstance(resultado, tuple) and len(resultado) == 3:
-                    filename, n_puntos, df_export = resultado
-                    st.session_state["muestras_export_df"] = df_export
-                    st.session_state["muestras_export_meta"] = {
-                        "ciudad": ciudad, 
-                        "fecha_inicio": str(fecha_inicio),  # YYYY-MM-DD
-                        "fecha_fin": str(fecha_fin)         # YYYY-MM-DD
-                    }
+            if modo_auditoria:
+                if agrupar_por_local == "Promotor" and promotor_auditoria is not None:
+                    resultado = manejar_error(
+                        generar_mapa_muestras_auditoria,
+                        fecha_inicio=str(fecha_inicio),
+                        fecha_fin=str(fecha_fin),
+                        ciudad=ciudad,
+                        agrupar_por="Promotor",
+                        id_promotor=promotor_auditoria,
+                        mes_auditoria=None,
+                    )
+                    if resultado:
+                        try:
+                            map_filename, n_puntos, df_areas = resultado
+                            filename = map_filename
+                            st.session_state["muestras_export_df"] = None
+                            st.session_state["muestras_export_meta"] = None
+                        except Exception:
+                            filename, n_puntos = None, 0
+                        st.session_state["muestras_last_filename"] = filename
+                    else:
+                        filename, n_puntos = None, 0
+                        st.session_state["muestras_last_filename"] = None
+                elif agrupar_por_local == "Mes" and mes_auditoria is not None:
+                    resultado = manejar_error(
+                        generar_mapa_muestras_auditoria,
+                        fecha_inicio=str(fecha_inicio),
+                        fecha_fin=str(fecha_fin),
+                        ciudad=ciudad,
+                        agrupar_por="Mes",
+                        id_promotor=None,
+                        mes_auditoria=mes_auditoria,
+                    )
+                    if resultado:
+                        try:
+                            map_filename, n_puntos, df_areas = resultado
+                            filename = map_filename
+                            st.session_state["muestras_export_df"] = None
+                            st.session_state["muestras_export_meta"] = None
+                        except Exception:
+                            filename, n_puntos = None, 0
+                        st.session_state["muestras_last_filename"] = filename
+                    else:
+                        filename, n_puntos = None, 0
+                        st.session_state["muestras_last_filename"] = None
                 else:
-                    filename, n_puntos = resultado
+                    st.warning("Modo auditoría activo pero falta seleccionar Promotor/Mes válido.")
+                    filename, n_puntos = None, 0
+                    st.session_state["muestras_last_filename"] = None
                     st.session_state["muestras_export_df"] = None
                     st.session_state["muestras_export_meta"] = None
-                # Guardar filename para el botón de descarga HTML
-                st.session_state["muestras_last_filename"] = filename
             else:
-                filename, n_puntos = None, 0
-                st.session_state["muestras_last_filename"] = None
-                st.session_state["muestras_export_df"] = None
-                st.session_state["muestras_export_meta"] = None
+                # Flujo normal clientes X muestras
+                try:
+                    df_original, df_filtrado, df_agrupado = generar_mapa_muestras_datos(
+                        fecha_inicio=str(fecha_inicio),
+                        fecha_fin=str(fecha_fin),
+                        ciudad=ciudad,
+                        agrupar_por=agrupar_por_local,
+                    )
+                except Exception as e:
+                    logging.error(f"Error generando datos (nuevo flujo clientes): {e}")
+                    df_original = pd.DataFrame(); df_filtrado = pd.DataFrame(); df_agrupado = pd.DataFrame()
+                resultado = manejar_error(
+                    generar_mapa_muestras_clientes,
+                    fecha_inicio=str(fecha_inicio),
+                    fecha_fin=str(fecha_fin),
+                    ciudad=ciudad,
+                    color_mode=st.session_state.get("color_mode_muestras", "Promotores"),
+                    barrios=None,
+                )
+                if resultado:
+                    try:
+                        map_filename, df_export, export_meta, _legend_html = resultado
+                        filename = map_filename
+                        try:
+                            n_puntos = int(len(df_filtrado)) if isinstance(df_filtrado, pd.DataFrame) else (len(df_export) if df_export is not None else 0)
+                        except Exception:
+                            n_puntos = 0
+                        st.session_state["muestras_export_df"] = df_export
+                        st.session_state["muestras_export_meta"] = export_meta
+                    except Exception:
+                        filename, n_puntos = None, 0
+                        st.session_state["muestras_export_df"] = None
+                        st.session_state["muestras_export_meta"] = None
+                    st.session_state["muestras_last_filename"] = filename
+                else:
+                    filename, n_puntos = None, 0
+                    st.session_state["muestras_last_filename"] = None
+                    st.session_state["muestras_export_df"] = None
+                    st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
             # Validar que se haya seleccionado una ruta válida
@@ -866,7 +987,7 @@ if submit_button:
             st.session_state["map_url"] = map_url
             st.session_state["map_auto_opened"] = False  # reset para permitir auto-open
             # Warning si hay filtro y no hubo puntos
-            if tipo_mapa in ("Muestras", "Clientes") and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
+            if ES_MAPA_MUESTRAS and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
         else:
             st.session_state["map_url"] = None
@@ -907,3 +1028,57 @@ else:
         '<div class="muted" style="text-align:center;">No se ha generado ningún mapa. Ajusta los filtros e inténtalo de nuevo.</div>',
         unsafe_allow_html=True
     )
+
+# Leyenda detalle y resumen cuando se usa el nuevo flujo
+try:
+    if ES_MAPA_MUESTRAS and 'df_agrupado' in locals() and isinstance(df_agrupado, pd.DataFrame) and not df_agrupado.empty:
+        st.divider()
+        st.subheader("Detalle de métricas")
+
+        df_leg = df_agrupado.copy()
+        # Calcular clientes_por_area_m2
+        if 'area_m2' in df_leg.columns and 'clientes_total' in df_leg.columns:
+            df_leg['clientes_por_area_m2'] = df_leg.apply(lambda r: (r['clientes_total'] / r['area_m2']) if (pd.notna(r.get('area_m2')) and float(r['area_m2']) > 0) else None, axis=1)
+
+        # Renombrar columnas para UI
+        rename_cols = {
+            'apellido_promotor': 'Promotor',
+            'muestras_total': '#Muestras',
+            'clientes_total': '#Clientes',
+            'area_m2': 'Área (m²)',
+            'clientes_por_dia_habil': 'Clientes/día hábil',
+            'pct_clientes_no_fieles': '% Clientes NO fieles',
+            'pct_total_muestras_contactables': '% Clientes contactables',
+            'pct_contactabilidad_no_fieles': '% Contactabilidad NO fieles',
+            'clientes_por_area_m2': 'Clientes/m²',
+        }
+        df_leg_show = df_leg.rename(columns=rename_cols)
+
+        if 'mes' in df_leg_show.columns and agrupar_por == "Mes":
+            nombre_mes = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+            df_leg_show['Mes'] = df_leg_show['mes'].map(nombre_mes)
+            order_cols = ['Mes', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
+            order_cols = [c for c in order_cols if c in df_leg_show.columns]
+            df_leg_show = df_leg_show.sort_values('mes').reset_index(drop=True)
+        else:
+            order_cols = ['Promotor', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
+            order_cols = [c for c in order_cols if c in df_leg_show.columns]
+            # por defecto ordenar por #Clientes desc si disponible
+            sort_key = '#Clientes' if '#Clientes' in df_leg_show.columns else '#Muestras'
+            df_leg_show = df_leg_show.sort_values(sort_key, ascending=False).reset_index(drop=True)
+
+        st.dataframe(df_leg_show[order_cols], use_container_width=True)
+
+        # Resumen superior
+        if 'df_original' in locals() and isinstance(df_original, pd.DataFrame):
+            total_muestras = len(df_original)
+            total_clientes = int(df_filtrado['id_contacto'].nunique()) if 'id_contacto' in df_filtrado.columns else len(df_filtrado)
+            dias_habiles_global = int(df_original['fecha_evento'].dt.date.nunique()) if 'fecha_evento' in df_original.columns else 0
+            clientes_por_dia = (total_clientes / dias_habiles_global) if dias_habiles_global > 0 else 0.0
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total eventos", f"{total_muestras:,}")
+            c2.metric("Total clientes", f"{total_clientes:,}")
+            c3.metric("Días hábiles", f"{dias_habiles_global}")
+            c4.metric("Clientes/día hábil", f"{clientes_por_dia:.1f}")
+except Exception as _e:
+    logging.warning(f"Detalle nuevo flujo no disponible: {_e}")

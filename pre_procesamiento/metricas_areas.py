@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import logging
-from typing import Dict, Tuple, Iterable, List
+from typing import Dict, Tuple, Iterable, List, Literal
 from dataclasses import dataclass
 
 from shapely.geometry import Point, MultiPoint, Polygon, mapping
@@ -730,35 +730,94 @@ def generar_geojson_subclusters_promotor(
 def areas_muestras_resumen(
     df: pd.DataFrame,
     centroope: int | None,
+    agrupar_por: Literal["Promotor", "Mes"] = "Promotor",
 ) -> pd.DataFrame:
     """
-    Punto de entrada pensado para el módulo de Muestras en modo normal
-    (llamado desde `mapa_muestras` a través de `preprocesamiento_muestras.metricas_areas_muestras`).
+    Resumen de áreas para el módulo de Muestras.
 
-    - Recibe el mismo df que se usa para generar el mapa de muestras.
-    - Internamente delega en `calcular_areas_por_promotor` **sin cambiar su lógica**.
-    - Devuelve un DataFrame con las columnas:
-        * id_autor
-        * area_m2    (alias de area_total_m2)
-
-    Este wrapper NO hace ningún filtrado adicional ni cálculos nuevos.
+    - agrupar_por="Promotor": comportamiento actual, devuelve columnas
+      [id_autor, area_m2, densidad_compacta_promotor].
+    - agrupar_por="Mes": suma de áreas por mes, devuelve columnas [mes, area_m2].
     """
-    df_base = calcular_areas_por_promotor(df, centroope)
-    if df_base is None or df_base.empty:
-        return pd.DataFrame(columns=["id_autor", "area_m2", "densidad_compacta_promotor"])
+    # Estructuras vacías según agrupación
+    if df is None or df.empty:
+        if agrupar_por == "Promotor":
+            return pd.DataFrame(columns=["id_autor", "area_m2", "densidad_compacta_promotor"])
+        else:
+            return pd.DataFrame(columns=["mes", "area_m2"])
 
-    out = (
-        df_base[["id_autor", "area_total_m2", "densidad_compacta_promotor"]]
-        .copy()
-        .rename(columns={"area_total_m2": "area_m2"})
-    )
-    # Aseguramos tipos limpios
-    out["id_autor"] = pd.to_numeric(out["id_autor"], errors="coerce").astype("Int64")
-    out["area_m2"] = pd.to_numeric(out["area_m2"], errors="coerce")
-    if "densidad_compacta_promotor" in out.columns:
-        out["densidad_compacta_promotor"] = pd.to_numeric(out["densidad_compacta_promotor"], errors="coerce")
-    out = out.dropna(subset=["id_autor"]).reset_index(drop=True)
-    return out
+    if agrupar_por == "Promotor":
+        df_base = calcular_areas_por_promotor(df, centroope)
+        if df_base is None or df_base.empty:
+            return pd.DataFrame(columns=["id_autor", "area_m2", "densidad_compacta_promotor", "n_puntos", "clientes_por_km2"])
+
+        out = (
+            df_base[["id_autor", "area_total_m2", "densidad_compacta_promotor", "puntos_totales"]]
+            .copy()
+            .rename(columns={"area_total_m2": "area_m2"})
+        )
+        # Aseguramos tipos limpios
+        out["id_autor"] = pd.to_numeric(out["id_autor"], errors="coerce").astype("Int64")
+        out["area_m2"] = pd.to_numeric(out["area_m2"], errors="coerce")
+        if "densidad_compacta_promotor" in out.columns:
+            out["densidad_compacta_promotor"] = pd.to_numeric(
+                out["densidad_compacta_promotor"], errors="coerce"
+            )
+        # n_puntos para compatibilidad con densidad legacy
+        out = out.rename(columns={"puntos_totales": "n_puntos"})
+        out["n_puntos"] = pd.to_numeric(out["n_puntos"], errors="coerce").fillna(0).astype(int)
+        # Densidad legacy (factor 1000): clientes_por_km2 = n_puntos * 1000 / area_m2
+        # Nota: replica la convención antigua para continuidad de interpretación.
+        out["clientes_por_km2"] = out.apply(
+            lambda r: (float(r["n_puntos"]) * 1000.0 / float(r["area_m2"])) if pd.notna(r["area_m2"]) and float(r["area_m2"]) > 0 else None,
+            axis=1,
+        )
+        out = out.dropna(subset=["id_autor"]).reset_index(drop=True)
+        return out
+
+    elif agrupar_por == "Mes":
+        df_local = df.copy()
+        # Asegurar columna 'mes'
+        if "mes" not in df_local.columns:
+            if "fecha_evento" not in df_local.columns:
+                raise ValueError("Para agrupar por 'Mes' se requiere columna 'mes' o 'fecha_evento'.")
+            df_local["mes"] = pd.to_datetime(df_local["fecha_evento"], errors="coerce").dt.month
+
+        meses = sorted(pd.Series(df_local["mes"]).dropna().unique().tolist())
+        rows: List[dict] = []
+        for m in meses:
+            try:
+                m_int = int(m)
+            except Exception:
+                continue
+            df_mes = df_local[df_local["mes"].astype("Int64") == m_int]
+            if df_mes.empty:
+                continue
+            df_prom_mes = calcular_areas_por_promotor(df_mes, centroope)
+            if df_prom_mes is None or df_prom_mes.empty:
+                area_total_mes = 0.0
+                puntos_total_mes = 0
+            else:
+                area_total_mes = float(pd.to_numeric(df_prom_mes["area_total_m2"], errors="coerce").fillna(0).sum())
+                puntos_total_mes = int(pd.to_numeric(df_prom_mes["puntos_totales"], errors="coerce").fillna(0).sum())
+            # Densidad legacy por mes: n_puntos_total * 1000 / area_m2_total
+            clientes_por_km2_mes = (puntos_total_mes * 1000.0 / area_total_mes) if area_total_mes > 0 else None
+            rows.append({"mes": m_int, "area_m2": area_total_mes, "n_puntos": puntos_total_mes, "clientes_por_km2": clientes_por_km2_mes})
+
+        if not rows:
+            return pd.DataFrame(columns=["mes", "area_m2"])
+
+        out = pd.DataFrame(rows)
+        out["mes"] = pd.to_numeric(out["mes"], errors="coerce").astype("Int64")
+        out["area_m2"] = pd.to_numeric(out["area_m2"], errors="coerce")
+        if "n_puntos" in out.columns:
+            out["n_puntos"] = pd.to_numeric(out["n_puntos"], errors="coerce").fillna(0).astype(int)
+        # clientes_por_km2 ya calculado arriba por fila
+        out = out.dropna(subset=["mes"]).reset_index(drop=True)
+        return out
+
+    else:
+        raise ValueError(f"Valor no soportado para agrupar_por: {agrupar_por}")
 
 
 # Alias explícito para auditoría de Muestras: retorna (df_metrics, feature_collection)
