@@ -282,7 +282,9 @@ def _render_legend_html_muestras(lista_structs: list[dict], titulo: str, label_c
             <td style='padding:6px 8px;text-align:right;'>{_fmt_int(r['muestras_total'])}</td>
             <td style='padding:6px 8px;text-align:right;'>{_fmt_int(r['clientes_total'])}</td>
             <td style='padding:6px 8px;text-align:center;'>{_fmt_area_km2(r.get('area_km2'))}</td>
-            <td style='padding:6px 8px;text-align:center;'>{_fmt_muestras_km2(r.get('muestras_por_km2')/1000)}</td>
+            <td style='padding:6px 8px;text-align:center;'>
+                { _fmt_muestras_km2(r.get('muestras_por_km2')/1000.0) if r.get('muestras_por_km2') is not None else '—' }
+            </td>
             <td style='padding:6px 8px;text-align:right;'>{muestras_dia_habil_fmt}</td>
             <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(r['pct_no_fieles'])}</td>
             <td style='padding:6px 8px;text-align:right;'>{_fmt_pct(r['pct_contactables'])}</td>
@@ -1034,7 +1036,8 @@ def generar_mapa_muestras_visual(
                 pid = r.get('id_promotor')
                 etiqueta = compactar_dos_palabras(r.get('apellido_promotor'), pid) if pd.notna(r.get('apellido_promotor')) else get_promotor_display_name(pid, df_filtrado, legend_name_map)
                 area_m2 = r.get('area_m2')
-                area_km2 = (area_m2 / 1000) if (pd.notna(area_m2) and float(area_m2) > 0) else None
+                # Convertir siempre a km² correctamente
+                area_km2 = (float(area_m2) / 1_000_000.0) if (pd.notna(area_m2) and float(area_m2) > 0) else None
                 clientes_total = int(r.get('clientes_total') or 0)
                 muestras_por_km2 = (clientes_total / area_km2) if (area_km2 is not None and area_km2 > 0) else None
                 rows_struct.append(_build_legend_row_struct(
@@ -1088,7 +1091,15 @@ def generar_mapa_muestras_visual(
         # Leyenda por mes usando df_agrupado
         rows_struct_mes = []
         if not df_agrupado.empty and 'mes' in df_agrupado.columns:
-            df_leg = df_agrupado.sort_values('muestras_total', ascending=False)
+            # Ordenar leyenda por el orden natural de los meses (1..12)
+            orden_meses = list(range(1, 13))
+            df_leg = (
+                df_agrupado
+                .copy()
+                .assign(_orden=lambda d: d['mes'].map({m: i for i, m in enumerate(orden_meses)}) )
+                .sort_values(['_orden', 'mes'], ascending=True)
+                .drop(columns=['_orden'])
+            )
             for _, r in df_leg.iterrows():
                 mes = int(r.get('mes')) if pd.notna(r.get('mes')) else None
                 if mes is None:
