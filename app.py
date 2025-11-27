@@ -291,88 +291,89 @@ with st.form(key="filtros_form"):
             st.session_state["promotor_auditoria"] = None
         if "mes_auditoria" not in st.session_state:
             st.session_state["mes_auditoria"] = None
+        #ACTIVAR DESACTIVAR MODO AUDITORIA
 
-        with st.expander("Auditoría de Muestras", expanded=False):
-            activar = st.checkbox(
-                "Activar modo auditoría",
-                value=st.session_state["muestras_modo_auditoria"],
-                help="Enfoca el mapa en un promotor o mes específico según agrupación"
-            )
-            st.session_state["muestras_modo_auditoria"] = activar
-            if activar:
-                if agrupar_por_local == "Promotor":
-                    from new_mapa_muestras import CENTROOPES
+        # with st.expander("Auditoría de Muestras", expanded=False):
+        #     activar = st.checkbox(
+        #         "Activar modo auditoría",
+        #         value=st.session_state["muestras_modo_auditoria"],
+        #         help="Enfoca el mapa en un promotor o mes específico según agrupación"
+        #     )
+        #     st.session_state["muestras_modo_auditoria"] = activar
+        #     if activar:
+        #         if agrupar_por_local == "Promotor":
+        #             from new_mapa_muestras import CENTROOPES
 
-                    ciudad_norm = ciudad.upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
-                    centroope = CENTROOPES.get(ciudad_norm)
+        #             ciudad_norm = ciudad.upper().replace("Á","A").replace("É","E").replace("Í","I").replace("Ó","O").replace("Ú","U")
+        #             centroope = CENTROOPES.get(ciudad_norm)
 
-                    if centroope is not None:
-                        cache_key = f"audit_promotores_{ciudad_norm}_{fecha_inicio}_{fecha_fin}"
-                        if st.session_state.get("audit_promotores_cache_key") != cache_key:
-                            try:
-                                df_prom = listar_promotores(centroope, str(fecha_inicio), str(fecha_fin))
-                            except Exception:
-                                df_prom = pd.DataFrame()
+        #             if centroope is not None:
+        #                 cache_key = f"audit_promotores_{ciudad_norm}_{fecha_inicio}_{fecha_fin}"
+        #                 if st.session_state.get("audit_promotores_cache_key") != cache_key:
+        #                     try:
+        #                         df_prom = listar_promotores(centroope, str(fecha_inicio), str(fecha_fin))
+        #                     except Exception:
+        #                         df_prom = pd.DataFrame()
 
-                            prom_rows = []
-                            if not df_prom.empty:
-                                col_id = "id_promotor"
-                                col_nombre = "apellido_promotor" if "apellido_promotor" in df_prom.columns else "nombre_promotor"
-                                tmp = df_prom[[col_id, col_nombre]].dropna(subset=[col_id]).drop_duplicates(col_id)
+        #                     prom_rows = []
+        #                     if not df_prom.empty:
+        #                         col_id = "id_promotor"
+        #                         col_nombre = "apellido_promotor" if "apellido_promotor" in df_prom.columns else "nombre_promotor"
+        #                         tmp = df_prom[[col_id, col_nombre]].dropna(subset=[col_id]).drop_duplicates(col_id)
 
-                                for _, r in tmp.iterrows():
-                                    pid = int(r[col_id])
-                                    nombre = str(r[col_nombre] or pid).strip()
-                                    prom_rows.append((pid, nombre))
+        #                         for _, r in tmp.iterrows():
+        #                             pid = int(r[col_id])
+        #                             nombre = str(r[col_nombre] or pid).strip()
+        #                             prom_rows.append((pid, nombre))
 
-                            st.session_state["audit_promotores_cache"] = prom_rows
-                            st.session_state["audit_promotores_cache_key"] = cache_key
+        #                     st.session_state["audit_promotores_cache"] = prom_rows
+        #                     st.session_state["audit_promotores_cache_key"] = cache_key
 
-                        lista_prom = st.session_state.get("audit_promotores_cache", [])
-                        opciones_prom = [f"{pid} - {nombre}" for pid, nombre in lista_prom]
+        #                 lista_prom = st.session_state.get("audit_promotores_cache", [])
+        #                 opciones_prom = [f"{pid} - {nombre}" for pid, nombre in lista_prom]
 
-                        sel_prom = st.selectbox(
-                            "Promotor a auditar",
-                            options=["(ninguno)"] + opciones_prom,
-                            index=0,
-                        )
+        #                 sel_prom = st.selectbox(
+        #                     "Promotor a auditar",
+        #                     options=["(ninguno)"] + opciones_prom,
+        #                     index=0,
+        #                 )
 
-                        if sel_prom != "(ninguno)" and lista_prom:
-                            try:
-                                pid_str = sel_prom.split(" - ", 1)[0].strip()
-                                st.session_state["promotor_auditoria"] = int(pid_str)
-                            except Exception:
-                                st.session_state["promotor_auditoria"] = None
-                        else:
-                            st.session_state["promotor_auditoria"] = None
-                    else:
-                        st.info("No se encontró centro de operación para esta ciudad.")
-                        st.session_state["promotor_auditoria"] = None
-                    # En modo Promotor no necesitamos mes
-                    st.session_state["mes_auditoria"] = None
-                elif agrupar_por_local == "Mes":
-                    meses = obtener_meses_auditoria()
-                    opciones_meses = [f"{num:02d} - {nombre}" for num, nombre in meses]
+        #                 if sel_prom != "(ninguno)" and lista_prom:
+        #                     try:
+        #                         pid_str = sel_prom.split(" - ", 1)[0].strip()
+        #                         st.session_state["promotor_auditoria"] = int(pid_str)
+        #                     except Exception:
+        #                         st.session_state["promotor_auditoria"] = None
+        #                 else:
+        #                     st.session_state["promotor_auditoria"] = None
+        #             else:
+        #                 st.info("No se encontró centro de operación para esta ciudad.")
+        #                 st.session_state["promotor_auditoria"] = None
+        #             # En modo Promotor no necesitamos mes
+        #             st.session_state["mes_auditoria"] = None
+        #         elif agrupar_por_local == "Mes":
+        #             meses = obtener_meses_auditoria()
+        #             opciones_meses = [f"{num:02d} - {nombre}" for num, nombre in meses]
 
-                    sel_mes = st.selectbox(
-                        "Mes a auditar",
-                        options=["(ninguno)"] + opciones_meses,
-                        index=0,
-                    )
+        #             sel_mes = st.selectbox(
+        #                 "Mes a auditar",
+        #                 options=["(ninguno)"] + opciones_meses,
+        #                 index=0,
+        #             )
 
-                    if sel_mes != "(ninguno)":
-                        try:
-                            mes_num = int(sel_mes.split(" - ", 1)[0])
-                            st.session_state["mes_auditoria"] = mes_num
-                        except Exception:
-                            st.session_state["mes_auditoria"] = None
-                    else:
-                        st.session_state["mes_auditoria"] = None
-                    # En modo Mes no necesitamos promotor
-                    st.session_state["promotor_auditoria"] = None
-            else:
-                st.session_state["promotor_auditoria"] = None
-                st.session_state["mes_auditoria"] = None
+        #             if sel_mes != "(ninguno)":
+        #                 try:
+        #                     mes_num = int(sel_mes.split(" - ", 1)[0])
+        #                     st.session_state["mes_auditoria"] = mes_num
+        #                 except Exception:
+        #                     st.session_state["mes_auditoria"] = None
+        #             else:
+        #                 st.session_state["mes_auditoria"] = None
+        #             # En modo Mes no necesitamos promotor
+        #             st.session_state["promotor_auditoria"] = None
+        #     else:
+        #         st.session_state["promotor_auditoria"] = None
+        #         st.session_state["mes_auditoria"] = None
     elif tipo_mapa == "Visitas":
         # Lista de rutas desde BD (id_ruta, ruta) - usando mismo flujo que Consultores
         from pre_procesamiento.preprocesamiento_consultores import listar_rutas_simple
@@ -967,7 +968,7 @@ if submit_button:
         elif tipo_mapa == "Pruebas":
             # id_ruta_pruebas puede ser None (para "TODOS") o un int
             resultado = manejar_error(
-                generar_mapa_pruebas,
+                
                 ciudad,               # str (con acentos tal como viene del radio)
                 id_ruta_pruebas,      # int | None (None para "TODOS")
                 fecha_inicio,         # date
@@ -1028,56 +1029,57 @@ else:
         unsafe_allow_html=True
     )
 
-# Leyenda detalle y resumen cuando se usa el nuevo flujo
-try:
-    if ES_MAPA_MUESTRAS and 'df_agrupado' in locals() and isinstance(df_agrupado, pd.DataFrame) and not df_agrupado.empty:
-        st.divider()
-        st.subheader("Detalle de métricas")
+# Leyenda detalle y resumen cuando se usa el nuevo flujo 
+# DESACTIVAR EL DETALLE DE METRICAS RESUMEN 
+# try:
+#     if ES_MAPA_MUESTRAS and 'df_agrupado' in locals() and isinstance(df_agrupado, pd.DataFrame) and not df_agrupado.empty:
+#         st.divider()
+#         st.subheader("Detalle de métricas")
 
-        df_leg = df_agrupado.copy()
-        # Calcular clientes_por_area_m2
-        if 'area_m2' in df_leg.columns and 'clientes_total' in df_leg.columns:
-            df_leg['clientes_por_area_m2'] = df_leg.apply(lambda r: (r['clientes_total'] / r['area_m2']) if (pd.notna(r.get('area_m2')) and float(r['area_m2']) > 0) else None, axis=1)
+#         df_leg = df_agrupado.copy()
+#         # Calcular clientes_por_area_m2
+#         if 'area_m2' in df_leg.columns and 'clientes_total' in df_leg.columns:
+#             df_leg['clientes_por_area_m2'] = df_leg.apply(lambda r: (r['clientes_total'] / r['area_m2']) if (pd.notna(r.get('area_m2')) and float(r['area_m2']) > 0) else None, axis=1)
 
-        # Renombrar columnas para UI
-        rename_cols = {
-            'apellido_promotor': 'Promotor',
-            'muestras_total': '#Muestras',
-            'clientes_total': '#Clientes',
-            'area_m2': 'Área (m²)',
-            'clientes_por_dia_habil': 'Clientes/día hábil',
-            'pct_clientes_no_fieles': '% Clientes NO fieles',
-            'pct_total_muestras_contactables': '% Clientes contactables',
-            'pct_contactabilidad_no_fieles': '% Contactabilidad NO fieles',
-            'clientes_por_area_m2': 'Clientes/m²',
-        }
-        df_leg_show = df_leg.rename(columns=rename_cols)
+#         # Renombrar columnas para UI
+#         rename_cols = {
+#             'apellido_promotor': 'Promotor',
+#             'muestras_total': '#Muestras',
+#             'clientes_total': '#Clientes',
+#             'area_m2': 'Área (m²)',
+#             'clientes_por_dia_habil': 'Clientes/día hábil',
+#             'pct_clientes_no_fieles': '% Clientes NO fieles',
+#             'pct_total_muestras_contactables': '% Clientes contactables',
+#             'pct_contactabilidad_no_fieles': '% Contactabilidad NO fieles',
+#             'clientes_por_area_m2': 'Clientes/m²',
+#         }
+#         df_leg_show = df_leg.rename(columns=rename_cols)
 
-        if 'mes' in df_leg_show.columns and agrupar_por == "Mes":
-            nombre_mes = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
-            df_leg_show['Mes'] = df_leg_show['mes'].map(nombre_mes)
-            order_cols = ['Mes', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
-            order_cols = [c for c in order_cols if c in df_leg_show.columns]
-            df_leg_show = df_leg_show.sort_values('mes').reset_index(drop=True)
-        else:
-            order_cols = ['Promotor', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
-            order_cols = [c for c in order_cols if c in df_leg_show.columns]
-            # por defecto ordenar por #Clientes desc si disponible
-            sort_key = '#Clientes' if '#Clientes' in df_leg_show.columns else '#Muestras'
-            df_leg_show = df_leg_show.sort_values(sort_key, ascending=False).reset_index(drop=True)
+#         if 'mes' in df_leg_show.columns and agrupar_por == "Mes":
+#             nombre_mes = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
+#             df_leg_show['Mes'] = df_leg_show['mes'].map(nombre_mes)
+#             order_cols = ['Mes', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
+#             order_cols = [c for c in order_cols if c in df_leg_show.columns]
+#             df_leg_show = df_leg_show.sort_values('mes').reset_index(drop=True)
+#         else:
+#             order_cols = ['Promotor', '#Muestras', '#Clientes', 'Área (m²)', 'Clientes/m²', 'Clientes/día hábil', '% Clientes NO fieles', '% Clientes contactables', '% Contactabilidad NO fieles']
+#             order_cols = [c for c in order_cols if c in df_leg_show.columns]
+#             # por defecto ordenar por #Clientes desc si disponible
+#             sort_key = '#Clientes' if '#Clientes' in df_leg_show.columns else '#Muestras'
+#             df_leg_show = df_leg_show.sort_values(sort_key, ascending=False).reset_index(drop=True)
 
-        st.dataframe(df_leg_show[order_cols], use_container_width=True)
+#         st.dataframe(df_leg_show[order_cols], use_container_width=True)
 
-        # Resumen superior
-        if 'df_original' in locals() and isinstance(df_original, pd.DataFrame):
-            total_muestras = len(df_original)
-            total_clientes = int(df_filtrado['id_contacto'].nunique()) if 'id_contacto' in df_filtrado.columns else len(df_filtrado)
-            dias_habiles_global = int(df_original['fecha_evento'].dt.date.nunique()) if 'fecha_evento' in df_original.columns else 0
-            clientes_por_dia = (total_clientes / dias_habiles_global) if dias_habiles_global > 0 else 0.0
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total eventos", f"{total_muestras:,}")
-            c2.metric("Total clientes", f"{total_clientes:,}")
-            c3.metric("Días hábiles", f"{dias_habiles_global}")
-            c4.metric("Clientes/día hábil", f"{clientes_por_dia:.1f}")
-except Exception as _e:
-    logging.warning(f"Detalle nuevo flujo no disponible: {_e}")
+#         # Resumen superior
+#         if 'df_original' in locals() and isinstance(df_original, pd.DataFrame):
+#             total_muestras = len(df_original)
+#             total_clientes = int(df_filtrado['id_contacto'].nunique()) if 'id_contacto' in df_filtrado.columns else len(df_filtrado)
+#             dias_habiles_global = int(df_original['fecha_evento'].dt.date.nunique()) if 'fecha_evento' in df_original.columns else 0
+#             clientes_por_dia = (total_clientes / dias_habiles_global) if dias_habiles_global > 0 else 0.0
+#             c1, c2, c3, c4 = st.columns(4)
+#             c1.metric("Total eventos", f"{total_muestras:,}")
+#             c2.metric("Total clientes", f"{total_clientes:,}")
+#             c3.metric("Días hábiles", f"{dias_habiles_global}")
+#             c4.metric("Clientes/día hábil", f"{clientes_por_dia:.1f}")
+# except Exception as _e:
+#     logging.warning(f"Detalle nuevo flujo no disponible: {_e}")
