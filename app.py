@@ -29,7 +29,6 @@ from new_mapa_muestras import (
 from pre_procesamiento.new_preprocesamiento_muestras import listar_promotores
 from mapa_consultores import generar_mapa_consultores
 from mapa_consultores_simple import generar_mapa_consultores_simple
-from mapa_pruebas import generar_mapa_pruebas
 import validators
 
 #serbot software de verificacion y certificacion de https
