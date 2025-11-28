@@ -578,6 +578,8 @@ link_placeholder = st.empty()
 # 1. Descarga HTML del mapa
 if ES_MAPA_MUESTRAS:
     map_filename = st.session_state.get("muestras_last_filename")
+    if map_filename:
+        print(f"[MAPAS] Archivo generado correctamente: {map_filename}")
     
     if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
         from datetime import datetime
@@ -981,11 +983,22 @@ if submit_button:
             map_type = "pruebas"
 
         if filename:
-            # Nuevo mapa generado: construir URL, resetear auto-open
-            timestamp = int(time.time())
-            map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
-            st.session_state["map_url"] = map_url
-            st.session_state["map_auto_opened"] = False  # reset para permitir auto-open
+            # Validación: asegurar que el archivo existe en static/maps
+            try:
+                if not os.path.exists(os.path.join("static", "maps", filename)):
+                    raise FileNotFoundError(f"No se encontró el mapa generado: {filename}")
+            except Exception as _e:
+                logging.error(f"Validación de mapa falló: {_e}")
+                st.error("❌ No se encontró el mapa generado. Reintenta o verifica el backend.")
+                st.session_state["map_url"] = None
+                st.session_state["muestras_last_filename"] = None
+                st.session_state["map_auto_opened"] = False
+            else:
+                # Nuevo mapa generado: construir URL, resetear auto-open
+                timestamp = int(time.time())
+                map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
+                st.session_state["map_url"] = map_url
+                st.session_state["map_auto_opened"] = False  # reset para permitir auto-open
             # Warning si hay filtro y no hubo puntos
             if ES_MAPA_MUESTRAS and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
