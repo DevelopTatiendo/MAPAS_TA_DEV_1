@@ -579,7 +579,11 @@ link_placeholder = st.empty()
 if ES_MAPA_MUESTRAS:
     map_filename = st.session_state.get("muestras_last_filename")
     if map_filename:
-        print(f"[MAPAS] Archivo generado correctamente: {map_filename}")
+        try:
+            _abs_session = os.path.abspath(os.path.join("static", "maps", map_filename))
+            print(f"[STREAMLIT] Mapa muestras filename en sesión: {map_filename} | abs={_abs_session} | exists={os.path.exists(_abs_session)}", flush=True)
+        except Exception as _e_sess:
+            print(f"[STREAMLIT] Error verificando filename en sesión: {_e_sess}", flush=True)
     
     if map_filename and os.path.exists(os.path.join("static", "maps", map_filename)):
         from datetime import datetime
@@ -906,6 +910,12 @@ if submit_button:
                             n_puntos = 0
                         st.session_state["muestras_export_df"] = df_export
                         st.session_state["muestras_export_meta"] = export_meta
+                        # Debug: filename generado y verificación de existencia local antes de invocar Flask
+                        try:
+                            _abs_gen = os.path.abspath(os.path.join("static", "maps", filename))
+                            print(f"[STREAMLIT] mapa_muestras filename generado: {filename} | abs={_abs_gen} | exists={os.path.exists(_abs_gen)}", flush=True)
+                        except Exception as _e_gen:
+                            print(f"[STREAMLIT] Error verificando ruta generada: {_e_gen}", flush=True)
                     except Exception:
                         filename, n_puntos = None, 0
                         st.session_state["muestras_export_df"] = None
@@ -996,9 +1006,10 @@ if submit_button:
             else:
                 # Nuevo mapa generado: construir URL, resetear auto-open
                 timestamp = int(time.time())
-                map_url = f"{FLASK_SERVER}/maps/{filename}?t={timestamp}"
+                map_url = f"{FLASK_SERVER}/static/maps/{filename}?t={timestamp}"
                 st.session_state["map_url"] = map_url
                 st.session_state["map_auto_opened"] = False  # reset para permitir auto-open
+                print(f"[STREAMLIT] map_url generado (static): {map_url}", flush=True)
             # Warning si hay filtro y no hubo puntos
             if ES_MAPA_MUESTRAS and st.session_state.get("filtrar_por_promotor") and st.session_state.get("promotores_sel") and n_puntos == 0:
                 st.warning("No hay datos para los promotores seleccionados en el rango de fechas.")
