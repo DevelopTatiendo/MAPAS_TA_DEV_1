@@ -16,6 +16,7 @@ import pandas as pd
 from pre_procesamiento.preprocesamiento_consultores import (
     eventos_con_coordenadas_ciudad_y_rango
 )
+from utils.gestor_mapas import guardar_mapa_controlado
 
 # Configurar logging
 logger = logging.getLogger(__name__)
@@ -332,4 +333,91 @@ def generar_mapa_pruebas(ciudad: str, id_ruta: int | None, fecha_inicio, fecha_f
         
     except Exception as e:
         logger.error(f"[PRUEBAS] Error generando mapa: {str(e)}")
+        raise
+
+
+def generar_mapa_anclas_prospectos(df_puntos: pd.DataFrame, ciudad: str = "CALI") -> str:
+    """
+    Genera un mapa con ANCLAS (rojo) y PROSPECTOS (azul), círculos de 300m alrededor de cada ancla,
+    y guarda el HTML en static/maps usando guardar_mapa_controlado.
+
+    df_puntos: DataFrame resultado de asignar_prospectos_a_anclas con columnas mínimas:
+      - lat, lon, tipo_punto ('ANCLA'|'PROSPECTO'), id_contacto, id_contacto_ancla,
+        distancia_m, barrio, ciudad, apellido_autor
+    """
+    try:
+        if df_puntos is None or df_puntos.empty:
+            # Crear mapa base centrado en la ciudad
+            m_center = _city_center(ciudad, None)
+            m = folium.Map(location=m_center, zoom_start=12)
+        else:
+            # Centro: media de lat/lon con coerción segura a numérico
+            df = df_puntos.copy()
+            df["lat"] = pd.to_numeric(df["lat"], errors="coerce")
+            df["lon"] = pd.to_numeric(df["lon"], errors="coerce")
+            df_anclas = df[df["tipo_punto"] == "ANCLA"]
+            if not df_anclas.empty:
+                lat_c = float(df_anclas["lat"].mean())
+                lon_c = float(df_anclas["lon"].mean())
+            else:
+                lat_c = float(df["lat"].mean())
+                lon_c = float(df["lon"].mean())
+            m = folium.Map(location=[lat_c, lon_c], zoom_start=14)
+
+            # Capa para anclas y prospectos
+            fg_anclas = folium.FeatureGroup(name="Anclas", show=True).add_to(m)
+            fg_pros = folium.FeatureGroup(name="Prospectos", show=True).add_to(m)
+
+            # Renderizar ANCLAS: marcador rojo + círculo 300m
+            for _, r in df[df["tipo_punto"] == "ANCLA"].iterrows():
+                lat = float(r["lat"]) ; lon = float(r["lon"]) ; contacto = r.get("id_contacto")
+                if pd.isna(lat) or pd.isna(lon):
+                    continue
+                barrio = r.get("barrio", "") ; ap = r.get("apellido_autor", "")
+                popup_html = f"""
+                <div style='font-family: Arial; font-size: 12px;'>
+                  <b>ANCLA</b><br>
+                  <b>ID Contacto:</b> {contacto}<br>
+                  <b>Barrio:</b> {barrio}<br>
+                  <b>Autor:</b> {ap}
+                </div>
+                """
+                folium.CircleMarker(
+                    location=[lat, lon], radius=6, color="#dc2626", weight=2,
+                    fill=True, fillColor="#dc2626", fillOpacity=0.9,
+                    popup=folium.Popup(popup_html, max_width=280)
+                ).add_to(fg_anclas)
+                folium.Circle(
+                    location=[lat, lon], radius=100,
+                    color="#ef4444", weight=1, fill=True, fillOpacity=0.15
+                ).add_to(fg_anclas)
+
+            # Renderizar PROSPECTOS: marcador azul
+            for _, r in df[df["tipo_punto"] == "PROSPECTO"].iterrows():
+                lat = float(r["lat"]) ; lon = float(r["lon"]) ; contacto = r.get("id_contacto")
+                if pd.isna(lat) or pd.isna(lon):
+                    continue
+                barrio = r.get("barrio", "") ; dist = r.get("distancia_m") ; ancla = r.get("id_contacto_ancla")
+                popup_html = f"""
+                <div style='font-family: Arial; font-size: 12px;'>
+                  <b>PROSPECTO</b><br>
+                  <b>ID Contacto:</b> {contacto}<br>
+                  <b>Barrio:</b> {barrio}<br>
+                  <b>Ancla asignada:</b> {ancla}<br>
+                  <b>Distancia:</b> {dist:.0f} m
+                </div>
+                """
+                folium.CircleMarker(
+                    location=[lat, lon], radius=5, color="#2563eb", weight=2,
+                    fill=True, fillColor="#2563eb", fillOpacity=0.85,
+                    popup=folium.Popup(popup_html, max_width=280)
+                ).add_to(fg_pros)
+
+            folium.LayerControl(collapsed=True).add_to(m)
+
+        # Guardar controlado
+        filename = guardar_mapa_controlado(m, "mapa_anclas_prospectos", carpeta="static/maps")
+        return filename
+    except Exception as e:
+        logger.error(f"[PRUEBAS] Error generando mapa anclas/prospectos: {e}")
         raise

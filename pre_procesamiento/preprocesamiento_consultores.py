@@ -159,9 +159,10 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5 AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 5
-        AND e.id_evento_tipo = 10 --  not in (48,51, 66,65)
+       -- AND ca.Id_cargo = 5
+        -- AND e.id_evento_tipo = 10 --  not in (48,51, 66,65)
       -- AND ca.Id_cargo in (181, 5)
+      And e.id_autor = 17415
     ORDER BY e.fecha_evento ASC;
     """
     
@@ -984,8 +985,9 @@ def eventos_con_coordenadas_ciudad_y_rango(ciudad: str, f_ini: str, f_fin: str, 
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 5
-      AND id_evento_tipo = 10 
+      -- AND ca.Id_cargo = 5
+      -- AND id_evento_tipo = 10 
+       AND e.id_autor = 17415
     ORDER BY e.fecha_evento ASC;
     """
 
