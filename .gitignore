@@ -78,6 +78,7 @@ desktop.ini
 # =========================
 # Mapas HTML generados por la app (mantén solo los de esta carpeta)
 static/maps/*.html
+Pruebas/*
 
 # ⚠️ No ignores todo *.html / *.pdf globalmente
 # Si necesitas ignorar PDFs de informes, hazlo por carpeta:
