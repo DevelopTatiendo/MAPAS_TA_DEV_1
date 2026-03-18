@@ -4,7 +4,7 @@
     "type": "visible_layers_export",
     "city": "PEREIRA",
     "total_features": 69,
-    "export_timestamp": "2026-01-26T16:16:15.734Z",
+    "export_timestamp": "2026-01-26T16:30:58.464Z",
     "editor_version": "3.1",
     "export_source": "Visible Layers Only"
   },
@@ -202,7 +202,7 @@
         "id_ruta": 1511,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#19D3F3",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -456,7 +456,7 @@
         "id_ruta": 1511,
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#19D3F3",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -526,7 +526,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -732,7 +732,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -790,7 +790,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -976,7 +976,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -1150,7 +1150,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -1420,7 +1420,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -1694,7 +1694,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -1872,7 +1872,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -2254,7 +2254,7 @@
         "id_ruta": 1512,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FF97FF",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -2544,7 +2544,7 @@
         "id_ruta": 1513,
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#FFA15A",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -2874,7 +2874,7 @@
         "id_ruta": 1513,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FFA15A",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -3172,7 +3172,7 @@
         "id_ruta": 1513,
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#FFA15A",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -3338,7 +3338,7 @@
         "id_ruta": 1513,
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#FFA15A",
+        "fillColor": "#F46036",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -9132,6 +9132,139 @@
       "type": "Feature",
       "properties": {
         "nivel": "cuadrante",
+        "code": "PR_ruta_3008_98",
+        "codigo": "PR_ruta_3008_98",
+        "city": "PR",
+        "ciudad": "PR",
+        "tipo": "PADRE",
+        "system": "RUTA",
+        "route_id": 3008,
+        "base_code": "PR_ruta_3008",
+        "dup_index": 98,
+        "route_name": "APOYO GESTORES FRAILES",
+        "id_ruta": 3008,
+        "ruta_publica": "APOYO GESTORES FRAILES",
+        "fillColor": "#F46036",
+        "fillOpacity": 0.35,
+        "weight": 2,
+        "color": "#000000"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -75.658067,
+              4.8131
+            ],
+            [
+              -75.660696,
+              4.811796
+            ],
+            [
+              -75.661436,
+              4.811005
+            ],
+            [
+              -75.663089,
+              4.810352
+            ],
+            [
+              -75.663764,
+              4.810235
+            ],
+            [
+              -75.665438,
+              4.80939
+            ],
+            [
+              -75.667976,
+              4.809898
+            ],
+            [
+              -75.668812,
+              4.810481
+            ],
+            [
+              -75.669928,
+              4.810663
+            ],
+            [
+              -75.671682,
+              4.811689
+            ],
+            [
+              -75.672525,
+              4.812672
+            ],
+            [
+              -75.671843,
+              4.813768
+            ],
+            [
+              -75.671355,
+              4.814522
+            ],
+            [
+              -75.670105,
+              4.815238
+            ],
+            [
+              -75.669429,
+              4.815484
+            ],
+            [
+              -75.669118,
+              4.815473
+            ],
+            [
+              -75.668308,
+              4.814934
+            ],
+            [
+              -75.6679,
+              4.814239
+            ],
+            [
+              -75.666661,
+              4.814265
+            ],
+            [
+              -75.665781,
+              4.815292
+            ],
+            [
+              -75.662616,
+              4.815014
+            ],
+            [
+              -75.661329,
+              4.81542
+            ],
+            [
+              -75.660857,
+              4.81526
+            ],
+            [
+              -75.659902,
+              4.814276
+            ],
+            [
+              -75.658625,
+              4.814019
+            ],
+            [
+              -75.658067,
+              4.8131
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nivel": "cuadrante",
         "codigo": "PR_ruta_3019_01",
         "ciudad": "PR",
         "id_ruta": 3019,
@@ -11360,145 +11493,12 @@
       "type": "Feature",
       "properties": {
         "nivel": "cuadrante",
-        "code": "PR_ruta_3019_98",
-        "codigo": "PR_ruta_3019_98",
-        "city": "PR",
-        "ciudad": "PR",
-        "tipo": "PADRE",
-        "system": "RUTA",
-        "route_id": 3019,
-        "base_code": "PR_ruta_3019",
-        "dup_index": 98,
-        "route_name": "APOYO GESTORES FRAILES",
-        "id_ruta": 3019,
-        "ruta_publica": "APOYO GESTORES FRAILES",
-        "fillColor": "#2E91E5",
-        "fillOpacity": 0.35,
-        "weight": 2,
-        "color": "#000000"
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -75.658067,
-              4.8131
-            ],
-            [
-              -75.660696,
-              4.811796
-            ],
-            [
-              -75.661436,
-              4.811005
-            ],
-            [
-              -75.663089,
-              4.810352
-            ],
-            [
-              -75.663764,
-              4.810235
-            ],
-            [
-              -75.665438,
-              4.80939
-            ],
-            [
-              -75.667976,
-              4.809898
-            ],
-            [
-              -75.668812,
-              4.810481
-            ],
-            [
-              -75.669928,
-              4.810663
-            ],
-            [
-              -75.671682,
-              4.811689
-            ],
-            [
-              -75.672525,
-              4.812672
-            ],
-            [
-              -75.671843,
-              4.813768
-            ],
-            [
-              -75.671355,
-              4.814522
-            ],
-            [
-              -75.670105,
-              4.815238
-            ],
-            [
-              -75.669429,
-              4.815484
-            ],
-            [
-              -75.669118,
-              4.815473
-            ],
-            [
-              -75.668308,
-              4.814934
-            ],
-            [
-              -75.6679,
-              4.814239
-            ],
-            [
-              -75.666661,
-              4.814265
-            ],
-            [
-              -75.665781,
-              4.815292
-            ],
-            [
-              -75.662616,
-              4.815014
-            ],
-            [
-              -75.661329,
-              4.81542
-            ],
-            [
-              -75.660857,
-              4.81526
-            ],
-            [
-              -75.659902,
-              4.814276
-            ],
-            [
-              -75.658625,
-              4.814019
-            ],
-            [
-              -75.658067,
-              4.8131
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "nivel": "cuadrante",
         "codigo": "PR_ruta_790_01",
         "ciudad": "PR",
         "id_ruta": 790,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FECB52",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -11800,7 +11800,7 @@
         "id_ruta": 790,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FECB52",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -12221,7 +12221,7 @@
         "id_ruta": 790,
         "tipo": "PADRE",
         "tipo_cuadrante": "PAP",
-        "fillColor": "#FECB52",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
@@ -12427,7 +12427,7 @@
         "id_ruta": 790,
         "tipo": "PADRE",
         "tipo_cuadrante": "RUTA",
-        "fillColor": "#FECB52",
+        "fillColor": "#FFA600",
         "fillOpacity": 0.35,
         "weight": 2,
         "color": "#000000",
