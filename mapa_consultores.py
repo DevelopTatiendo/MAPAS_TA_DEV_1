@@ -574,12 +574,18 @@ def generar_mapa_consultores(fecha_inicio, fecha_fin, ciudad, ruta_id, ruta_nomb
     location, comunas_geojson_path = centers[ciudadN]
     
     # 2) Resolver ID de ruta real
-    try:
-        id_ruta_real, nombre_ruta_resuelto = resolve_route_id(ruta_id, ruta_nombre, ciudad)
-        logger.info(f"Ruta resuelta: {ruta_nombre} -> ID {id_ruta_real}")
-    except ValueError as e:
-        logger.error(f"Error resolviendo ruta: {e}")
-        return None, 0, pd.DataFrame()
+    # Detectar "TODOS" antes de llamar a resolve_route_id para evitar fallo de lookup
+    if ruta_nombre and ruta_nombre.strip().upper() == "TODOS":
+        id_ruta_real = None
+        nombre_ruta_resuelto = "TODOS"
+        logger.info("Modo TODOS: sin filtro de ruta")
+    else:
+        try:
+            id_ruta_real, nombre_ruta_resuelto = resolve_route_id(ruta_id, ruta_nombre, ciudad)
+            logger.info(f"Ruta resuelta: {ruta_nombre} -> ID {id_ruta_real}")
+        except ValueError as e:
+            logger.error(f"Error resolviendo ruta: {e}")
+            return None, 0, pd.DataFrame()
     
     # 3) Intentar cargar archivo GeoJSON de cuadrantes (opcional - no bloqueante)
     geojson_completo = None

@@ -120,49 +120,50 @@ def eventos_por_ruta_en_rango(centroope:int, id_ruta:int, f_ini:str, f_fin:str)-
     Columnas principales: id_evento, id_autor, id_consultor, apellido, lat, lon, fecha_evento, id_cargo, cargo
     """
     q = """
-    SELECT  e.idEvento                AS idEvento,
-            e.id_autor                AS id_autor,         -- Semántica original (EVENTOS)
-            p.apellido                AS apellido,         -- Alias estándar que usa el mapa
-            e.id_contacto             AS id_contacto,
-            e.fecha_evento            AS fecha_evento,
-            e.id_evento_tipo          AS id_evento_tipo,
-            e.tipo_evento             AS tipo_evento,
-            e.coordenada_longitud     AS coordenada_longitud,
-            e.coordenada_latitud      AS coordenada_latitud,
-            e.coordenada_altitud      AS coordenada_altitud,
-            e.medio_contacto          AS medio_contacto,
-            
-            -- Aliases legacy / técnicos para mantener compatibilidad aguas abajo
-            e.idEvento                AS id_evento,
-            e.coordenada_latitud      AS lat,
-            e.coordenada_longitud     AS lon,
-            p.id_cargo                AS id_cargo,
-            ca.cargo                  AS cargo,
-            
-            -- Alias técnico para no romper groupby/rutas: id_consultor := id_autor (EVENTOS)
-            e.id_autor                AS id_consultor
-    FROM fullclean_contactos.vwEventos e
-    JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
-    JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
-    JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
-    JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
-    JOIN fullclean_personal.personal p               ON p.id = e.id_autor
-    JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
-    WHERE c.estado = 1
-      AND c.estado_cxc IN (0,1)
-      AND r.id_centroope = %s
-      AND r.id = %s
-      AND e.fecha_evento BETWEEN %s AND %s
-      AND e.coordenada_latitud  IS NOT NULL
-      AND e.coordenada_longitud IS NOT NULL
-      AND e.coordenada_latitud  <> 0
-      AND e.coordenada_longitud <> 0
-      AND e.coordenada_latitud  BETWEEN -5 AND 13
-      AND e.coordenada_longitud BETWEEN -81 AND -66
-       AND ca.Id_cargo = 5
-        AND e.id_evento_tipo = 10 --  not in (48,51, 66,65)
-      -- AND ca.Id_cargo in (181, 5)
-    ORDER BY e.fecha_evento ASC;
+            SELECT  e.idEvento                AS idEvento,
+                    e.id_autor                AS id_autor,         -- Semántica original (EVENTOS)
+                    p.apellido                AS apellido,         -- Alias estándar que usa el mapa
+                    e.id_contacto             AS id_contacto,
+                    e.fecha_evento            AS fecha_evento,
+                    e.id_evento_tipo          AS id_evento_tipo,
+                    e.tipo_evento             AS tipo_evento,
+                    e.coordenada_longitud     AS coordenada_longitud,
+                    e.coordenada_latitud      AS coordenada_latitud,
+                    e.coordenada_altitud      AS coordenada_altitud,
+                    e.medio_contacto          AS medio_contacto,
+                    
+                    -- Aliases legacy / técnicos para mantener compatibilidad aguas abajo
+                    e.idEvento                AS id_evento,
+                    e.coordenada_latitud      AS lat,
+                    e.coordenada_longitud     AS lon,
+                    p.id_cargo                AS id_cargo,
+                    ca.cargo                  AS cargo,
+                    
+                    -- Alias técnico para no romper groupby/rutas: id_consultor := id_autor (EVENTOS)
+                    e.id_autor                AS id_consultor
+            FROM fullclean_contactos.vwEventos e
+            JOIN fullclean_contactos.vwContactos c           ON c.id = e.id_contacto
+            JOIN fullclean_contactos.barrios b               ON b.id = c.id_barrio
+            JOIN fullclean_contactos.rutas_cobro_zonas rc    ON rc.id_barrio = b.id
+            JOIN fullclean_contactos.rutas_cobro r           ON r.id = rc.id_ruta_cobro
+            JOIN fullclean_personal.personal p               ON p.id = e.id_autor
+            JOIN fullclean_personal.cargos ca                ON ca.Id_cargo = p.id_cargo
+            WHERE c.estado = 1
+            AND c.estado_cxc IN (0,1)
+            AND r.id_centroope = %s
+            AND r.id = %s
+            AND e.fecha_evento BETWEEN %s AND %s
+            AND e.coordenada_latitud  IS NOT NULL
+            AND e.coordenada_longitud IS NOT NULL
+            AND e.coordenada_latitud  <> 0
+            AND e.coordenada_longitud <> 0
+            AND e.coordenada_latitud  BETWEEN -5 AND 13
+            AND e.coordenada_longitud BETWEEN -81 AND -66
+            AND ca.Id_cargo = 181
+            AND e.id_evento_tipo NOT IN (3,10,11,13,15,16,17,21,22,
+            40,45,46,55,56,57,58,62,64,71,73,74,77,78)
+            -- AND ca.Id_cargo = 181 -- in (181, 5)
+            ORDER BY e.fecha_evento ASC;
     """
     
     try:
@@ -203,14 +204,14 @@ def nombre_ruta(centroope: int, id_ruta: int) -> str:
         logging.error(f"[BD] Error en nombre_ruta: {e}")
         raise
 
-def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
     Trae eventos crudos filtrados para consultores (cargo=5) con coordenadas válidas.
     Consulta SQL específica para el módulo Consultores (simple) sin cuadrantes ni métricas.
     
     Args:
         co (int): ID del centro de operaciones
-        id_ruta (int): ID de la ruta de cobro
+        id_ruta (int | None): ID de la ruta de cobro; None para todas las rutas del CO.
         f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
         f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
     
@@ -224,8 +225,16 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
     inicio_tiempo = time.time()
     logging.info(f"[CONSULTA_EVENTOS] CO={co} ruta={id_ruta} f_ini={f_ini} f_fin={f_fin}")
     
+    # Construir filtro de ruta dinámicamente: None = todas las rutas del CO
+    if id_ruta is None:
+        ruta_filter = ""
+        params_dict = {'co': co, 'f_ini': f_ini, 'f_fin': f_fin}
+    else:
+        ruta_filter = "AND r.id = :id_ruta"
+        params_dict = {'co': co, 'id_ruta': id_ruta, 'f_ini': f_ini, 'f_fin': f_fin}
+    
     # Consulta SQL específica para Consultores (simple) con columnas exactas según especificaciones
-    q = """
+    q = f"""
     SELECT
         e.idEvento            AS id_evento,
         e.id_contacto         AS id_contacto,
@@ -234,7 +243,8 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
         e.fecha_evento        AS fecha_evento,
         e.id_evento_tipo      AS id_evento_tipo,
         e.tipo_evento         AS tipo_evento,
-        p.apellido            AS apellido
+        p.apellido            AS apellido,
+        p.id                  AS id_autor
     FROM fullclean_contactos.vwEventos e
     JOIN fullclean_contactos.vwContactos c      ON c.id = e.id_contacto
     JOIN fullclean_contactos.barrios b          ON b.Id = c.id_barrio
@@ -245,7 +255,7 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
     WHERE c.estado = 1
       AND c.estado_cxc IN (0,1)
       AND r.id_centroope = :co
-      AND r.id = :id_ruta
+      {ruta_filter}
       AND e.fecha_evento BETWEEN :f_ini AND :f_fin
       AND e.coordenada_latitud  IS NOT NULL
       AND e.coordenada_longitud IS NOT NULL
@@ -253,14 +263,13 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
       AND e.coordenada_longitud <> 0
       AND e.coordenada_latitud  BETWEEN -5  AND 13
       AND e.coordenada_longitud BETWEEN -81 AND -66
-      AND ca.Id_cargo = 5
-      AND e.id_evento_tipo = 10 -- IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,76,77,78)
+      AND ca.Id_cargo = 181 -- 5
+      AND e.id_evento_tipo IN (3,10,11,13,15,16,17,21,22,40,45,46,55,56,57,58,62,64,71,73,74,76,77,78)
     ORDER BY e.fecha_evento ASC;
     """
     
     try:
         # Usar SQLAlchemy Engine a través del helper db_utils con parámetros con nombres
-        params_dict = {'co': co, 'id_ruta': id_ruta, 'f_ini': f_ini, 'f_fin': f_fin}
         df = sql_read(q, params=params_dict)
         
         # Logging de resultado
@@ -268,9 +277,7 @@ def eventos_con_coordenadas_por_ruta_y_rango(co: int, id_ruta: int, f_ini: str, 
         logging.info(f"[CONSULTA_EVENTOS] CO={co} ruta={id_ruta} f_ini={f_ini} f_fin={f_fin} → rows={filas_resultado}")
         
         if filas_resultado == 0:
-            # Warning con query parametrizada para depuración (sin credenciales)
-            query_debug = q.replace(':co', str(co)).replace(':id_ruta', str(id_ruta)).replace(':f_ini', f"'{f_ini}'").replace(':f_fin', f"'{f_fin}'")
-            logging.warning(f"Query sin resultados: {query_debug}")
+            logging.warning(f"Query sin resultados: CO={co} ruta={id_ruta} f_ini={f_ini} f_fin={f_fin}")
         
         # Normalizar tipos de datos según especificaciones exactas
         if not df.empty:
@@ -721,13 +728,13 @@ def ventas_totales_por_consultores(fi: str, ff: str, ids_consultor: list[int]) -
         logging.error(f"[BD] Error en ventas_totales_por_consultores: {str(e)}")
         raise
 
-def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_ini: str, f_fin: str) -> pd.DataFrame:
+def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta, f_ini: str, f_fin: str) -> pd.DataFrame:
     """
     Obtiene contadores agregados por consultor sin exigir coordenadas (para popup padre).
     
     Args:
         id_centroope (int): ID del centro de operaciones
-        id_ruta (int): ID de la ruta de cobro
+        id_ruta (int | None): ID de la ruta de cobro; None para todas las rutas del CO.
         f_ini (str): Fecha inicio en formato 'YYYY-MM-DD HH:MM:SS'
         f_fin (str): Fecha fin en formato 'YYYY-MM-DD HH:MM:SS'
     
@@ -741,8 +748,16 @@ def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_i
     inicio_tiempo = time.time()
     logging.info(f"Iniciando conteo_eventos_sin_coords_por_consultor - CO:{id_centroope}, Ruta:{id_ruta}, Rango:{f_ini} a {f_fin}")
     
+    # Construir filtro de ruta dinámicamente: None = todas las rutas del CO
+    if id_ruta is None:
+        ruta_filter = ""
+        params = [id_centroope, f_ini, f_fin]
+    else:
+        ruta_filter = "AND r.id = %s"
+        params = [id_centroope, id_ruta, f_ini, f_fin]
+    
     # EV_AGG_SIN_COORDS: contadores por consultor sin exigir coordenadas
-    q = """
+    q = f"""
     /* EV_AGG_SIN_COORDS: contadores por consultor sin exigir coordenadas */
     SELECT
         p.id                         AS id_consultor,
@@ -764,7 +779,7 @@ def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_i
       AND c.estado_cxc IN (0,1)
       AND p.id_cargo = 181
       AND r.id_centroope = %s
-      AND r.id = %s
+      {ruta_filter}
       AND e.fecha_evento BETWEEN %s AND %s
       AND e.id_evento_tipo NOT IN (48,51,50,66,65)
     GROUP BY p.id, p.apellido;
@@ -772,7 +787,7 @@ def conteo_eventos_sin_coords_por_consultor(id_centroope: int, id_ruta: int, f_i
     
     try:
         with _get_conn() as cn:
-            df = pd.read_sql(q, cn, params=[id_centroope, id_ruta, f_ini, f_fin])
+            df = pd.read_sql(q, cn, params=params)
         
         # Normalizar tipos de datos
         if not df.empty:

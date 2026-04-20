@@ -437,10 +437,18 @@ with st.form(key="filtros_form"):
             options_dict = {ruta_nombre: id_ruta for id_ruta, ruta_nombre, _ in rutas_list}
             options_list = [ruta_nombre for _, ruta_nombre, _ in rutas_list]
             
-            # Selector que muestra solo el nombre de la ruta
-            ruta_seleccionada = st.selectbox("Seleccione la ruta (obligatorio):", options=options_list)
-            id_ruta = options_dict.get(ruta_seleccionada) if ruta_seleccionada else None
-            nombre_ruta_ui = ruta_seleccionada if ruta_seleccionada else None
+            # Agregar opción "TODOS" al inicio
+            options_list_plus = ["TODOS"] + options_list
+            
+            # Selector mostrando el nombre de ruta (incluye "TODOS")
+            ruta_seleccionada = st.selectbox("Seleccione la ruta:", options=options_list_plus, index=0)
+            
+            if ruta_seleccionada == "TODOS":
+                id_ruta = None               # None significa NO filtrar por ruta
+                nombre_ruta_ui = "TODOS"
+            else:
+                id_ruta = options_dict.get(ruta_seleccionada)
+                nombre_ruta_ui = ruta_seleccionada
         
         # Fechas en dos columnas
         c1, c2 = st.columns(2)
@@ -950,8 +958,8 @@ if submit_button:
                 st.session_state["muestras_export_meta"] = None
             map_type = "muestras"
         elif tipo_mapa == "Consultores":
-            # Validar que se haya seleccionado una ruta válida
-            if not id_ruta:
+            # Validar: permitir ruta concreta válida O selección "TODOS"
+            if not nombre_ruta_ui:
                 st.error("Seleccione una ruta válida.")
                 filename = None
                 n_puntos = 0
@@ -962,9 +970,10 @@ if submit_button:
                     resultado = manejar_error(
                         generar_mapa_consultores_simple,
                         ciudad,
-                        int(id_ruta),
-                        fecha_inicio,  # Pasar date directamente
-                        fecha_fin      # Pasar date directamente
+                        id_ruta,         # None cuando nombre_ruta_ui == "TODOS"
+                        fecha_inicio,
+                        fecha_fin,
+                        nombre_ruta_ui
                     )
                     if resultado:
                         filename, n_puntos = resultado
@@ -980,7 +989,7 @@ if submit_button:
                         str(fecha_inicio),
                         str(fecha_fin),
                         ciudad,
-                        int(id_ruta),
+                        id_ruta,         # None cuando nombre_ruta_ui == "TODOS"
                         nombre_ruta_ui if nombre_ruta_ui else "",
                         mostrar_fuera
                     )
